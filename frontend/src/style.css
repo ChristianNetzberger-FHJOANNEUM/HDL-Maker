@@ -1,0 +1,125 @@
+:root {
+  color: #1c2430;
+  background: #e7ebf0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+.mono {
+  font-family: Consolas, "Cascadia Mono", monospace;
+}
+
+.studio {
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr) 180px;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 14px;
+  background: #1e2430;
+  color: #f4f6f8;
+}
+
+.topbar strong {
+  font-weight: 650;
+}
+
+.topbar span,
+.topbar p {
+  color: #c5cad3;
+  font-size: 12px;
+}
+
+.topbar div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.topbar p {
+  margin: 0;
+}
+
+.dot {
+  margin: 0 4px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 360px;
+  min-height: 0;
+  background: #fff;
+}
+
+.workspace > :first-child,
+.workspace > :last-child {
+  border-right: 1px solid #d0d5dd;
+  min-height: 0;
+}
+
+.workspace > :last-child {
+  border-right: 0;
+  border-left: 1px solid #d0d5dd;
+}
+
+.center {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #d0d5dd;
+  background: #f7f8fa;
+}
+
+.tabs button {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.tabs button.active {
+  background: #fff;
+  border-color: #d0d5dd;
+}
+
+.stage {
+  flex: 1;
+  min-height: 0;
+}
+
+.studio > :last-child {
+  border-top: 1px solid #d0d5dd;
+}

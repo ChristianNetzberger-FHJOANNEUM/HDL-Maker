@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hdl-design-studio.local/schemas/design.schema.json",
+  "title": "HDL Design Studio library inventory",
+  "description": "Schema version 1 stores imported libraries and design-unit interfaces. Graphical diagrams are a separate future document and are intentionally absent so layout cannot become the semantic model. Keep this file aligned with backend/app/models/design.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "name", "libraries", "design_units"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "project_id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "libraries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/library" }
+    },
+    "design_units": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/designUnit" }
+    }
+  },
+  "$defs": {
+    "severity": { "enum": ["error", "warning", "info"] },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "code", "message"],
+      "properties": {
+        "severity": { "$ref": "#/$defs/severity" },
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "path": { "type": ["string", "null"] },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "unit_id": { "type": ["string", "null"] }
+      }
+    },
+    "sourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "start_line", "end_line"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "type_text", "width_status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "direction": {
+          "type": ["string", "null"],
+          "enum": ["in", "out", "inout", "buffer", "linkage", null]
+        },
+        "type_text": { "type": "string", "minLength": 1 },
+        "range_text": { "type": ["string", "null"] },
+        "width": { "type": ["integer", "null"], "minimum": 1 },
+        "width_status": {
+          "enum": ["literal", "scalar", "not_applicable", "unresolved"]
+        },
+        "default_text": { "type": ["string", "null"] }
+      }
+    },
+    "generic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "generic_kind"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "generic_kind": {
+          "enum": ["value", "type", "package", "function", "procedure", "unknown"]
+        },
+        "type_text": { "type": ["string", "null"] },
+        "default_text": { "type": ["string", "null"] }
+      }
+    },
+    "designUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "library_id",
+        "kind",
+        "name",
+        "language",
+        "source",
+        "parse_status"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "library_id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "entity",
+            "architecture",
+            "package",
+            "package_body",
+            "configuration",
+            "context"
+          ]
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "language": { "enum": ["vhdl", "systemverilog", "verilog", "unknown"] },
+        "parent_name": { "type": ["string", "null"] },
+        "generics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/generic" }
+        },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/port" }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "source": { "$ref": "#/$defs/sourceSpan" },
+        "parse_status": {
+          "enum": ["parsed", "partial", "unsupported", "skipped"]
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diagnostic" }
+        }
+      }
+    },
+    "fileEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "extension", "size", "role", "classification", "binary"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "extension": { "type": "string" },
+        "size": { "type": "integer", "minimum": 0 },
+        "role": {
+          "enum": [
+            "vhdl",
+            "systemverilog",
+            "verilog",
+            "metadata_candidate",
+            "unrecognized"
+          ]
+        },
+        "classification": { "type": "string" },
+        "binary": { "type": "boolean" }
+      }
+    },
+    "importReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "library_id",
+        "library_name",
+        "root_path",
+        "scanned_at",
+        "files",
+        "unit_ids",
+        "counts",
+        "diagnostics"
+      ],
+      "properties": {
+        "library_id": { "type": "string", "minLength": 1 },
+        "library_name": { "type": "string", "minLength": 1 },
+        "root_path": { "type": "string", "minLength": 1 },
+        "scanned_at": { "type": "string", "format": "date-time" },
+        "files": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fileEntry" }
+        },
+        "unit_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diagnostic" }
+        }
+      }
+    },
+    "library": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "root_path", "imported_at", "updated_at"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "root_path": { "type": "string", "minLength": 1 },
+        "imported_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "last_import": {
+          "oneOf": [{ "$ref": "#/$defs/importReport" }, { "type": "null" }]
+        }
+      }
+    }
+  }
+}

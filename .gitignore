@@ -1,0 +1,15 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime project data. Imported libraries stay in their original folders.
+workspace/
+
+*.log
+Thumbs.db
+Desktop.ini
+.DS_Store
