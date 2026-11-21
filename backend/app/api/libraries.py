@@ -5,10 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.boards import BoardCatalog, list_boards
 from app.importers.errors import ScanError
 from app.importers.inventory import examples_library_path, import_library, read_unit_source
 from app.models.design import DesignUnit, ProjectFile, SourceText
 from app.storage.project_store import load_project
+from app.storage.ui_store import UiSettings, load_ui, save_ui
 
 router = APIRouter(tags=["libraries"])
 
@@ -16,6 +18,7 @@ router = APIRouter(tags=["libraries"])
 class ScanRequest(BaseModel):
     path: str = Field(min_length=1)
     library_name: str | None = None
+    include_side_data: bool = False
 
 
 class ExamplesPath(BaseModel):
@@ -32,15 +35,30 @@ def get_project() -> ProjectFile:
     return load_project()
 
 
+@router.get("/ui", response_model=UiSettings)
+def get_ui() -> UiSettings:
+    return load_ui()
+
+
+@router.put("/ui", response_model=UiSettings)
+def put_ui(body: UiSettings) -> UiSettings:
+    return save_ui(body)
+
+
 @router.get("/examples/path", response_model=ExamplesPath)
 def get_examples_path() -> ExamplesPath:
     return ExamplesPath(path=examples_library_path())
 
 
+@router.get("/boards", response_model=BoardCatalog)
+def get_boards() -> BoardCatalog:
+    return list_boards()
+
+
 @router.post("/libraries/scan", response_model=ProjectFile)
 def scan_library(body: ScanRequest) -> ProjectFile:
     try:
-        return import_library(body.path, body.library_name)
+        return import_library(body.path, body.library_name, include_side_data=body.include_side_data)
     except ScanError as exc:
         raise _scan_error(exc) from exc
 

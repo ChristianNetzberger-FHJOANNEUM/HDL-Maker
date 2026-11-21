@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.importers.vhdl.hierarchy import instantiation_names
 from app.models.design import Diagnostic, GenericKind, GenericPort, ParseStatus, Port, Severity
 
 _UNIT_RE = re.compile(
@@ -75,6 +76,7 @@ class ExtractedUnit:
     generics: list[GenericPort] = field(default_factory=list)
     ports: list[Port] = field(default_factory=list)
     dependencies: list[str] = field(default_factory=list)
+    instantiates: list[str] = field(default_factory=list)
     start_line: int = 1
     end_line: int = 1
     parse_status: ParseStatus = "parsed"
@@ -117,6 +119,8 @@ def extract_design_units(text: str) -> list[ExtractedUnit]:
         )
         if kind == "entity":
             _read_entity_interface(text, blanked, match.end(), end, unit)
+        elif kind == "architecture":
+            unit.instantiates = instantiation_names(blanked[match.end() : end])
         elif kind in {"package", "package_body", "configuration", "context"}:
             unit.parse_status = "skipped"
             unit.diagnostics.append(

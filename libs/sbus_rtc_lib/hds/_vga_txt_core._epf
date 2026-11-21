@@ -1,0 +1,2 @@
+DEFAULT_FILE atom vga_txt_core/struct.bd
+DEFAULT_ARCHITECTURE atom struct

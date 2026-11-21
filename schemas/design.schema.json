@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://hdl-design-studio.local/schemas/design.schema.json",
   "title": "HDL Design Studio library inventory",
-  "description": "Schema version 1 stores imported libraries and design-unit interfaces. Graphical diagrams are a separate future document and are intentionally absent so layout cannot become the semantic model. Keep this file aligned with backend/app/models/design.py.",
+  "description": "Schema version 2 stores imported libraries, design-unit interfaces, and read-only diagram documents. Version 1 files still load. Diagram coordinates are not part of the VHDL interface. Keep this file aligned with backend/app/models/design.py.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "project_id", "name", "libraries", "design_units"],
+    "required": ["schema_version", "project_id", "name", "libraries", "design_units", "diagrams"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "enum": [1, 2] },
     "project_id": { "type": "string", "minLength": 1 },
     "name": { "type": "string", "minLength": 1 },
     "libraries": {
@@ -17,6 +17,10 @@
     "design_units": {
       "type": "array",
       "items": { "$ref": "#/$defs/designUnit" }
+    },
+    "diagrams": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagram" }
     }
   },
   "$defs": {
@@ -119,6 +123,10 @@
           "type": "array",
           "items": { "type": "string" }
         },
+        "instantiates": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "source": { "$ref": "#/$defs/sourceSpan" },
         "parse_status": {
           "enum": ["parsed", "partial", "unsupported", "skipped"]
@@ -142,6 +150,13 @@
             "vhdl",
             "systemverilog",
             "verilog",
+            "block_diagram",
+            "symbol",
+            "state_diagram",
+            "interface_diagram",
+            "flowchart",
+            "truth_table",
+            "view_reference",
             "metadata_candidate",
             "unrecognized"
           ]
@@ -183,6 +198,10 @@
         "diagnostics": {
           "type": "array",
           "items": { "$ref": "#/$defs/diagnostic" }
+        },
+        "view_references": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/viewReference" }
         }
       }
     },
@@ -199,6 +218,181 @@
         "last_import": {
           "oneOf": [{ "$ref": "#/$defs/importReport" }, { "type": "null" }]
         }
+      }
+    },
+    "diagram": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "library_id", "source_path", "sha256", "view", "parse_status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "library_id": { "type": "string", "minLength": 1 },
+        "source_path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+        "view": { "enum": ["block", "symbol", "state", "unknown"] },
+        "format_version": { "type": ["string", "null"] },
+        "app_version": { "type": ["string", "null"] },
+        "entity_name": { "type": ["string", "null"] },
+        "architecture_name": { "type": ["string", "null"] },
+        "machine_name": { "type": ["string", "null"] },
+        "state_signal_name": { "type": ["string", "null"] },
+        "parse_status": { "enum": ["parsed", "partial", "unsupported", "skipped"] },
+        "instances": { "type": "array", "items": { "$ref": "#/$defs/diagramInstance" } },
+        "ports": { "type": "array", "items": { "$ref": "#/$defs/diagramPort" } },
+        "nets": { "type": "array", "items": { "$ref": "#/$defs/diagramNet" } },
+        "wires": { "type": "array", "items": { "$ref": "#/$defs/diagramWire" } },
+        "embedded_blocks": { "type": "array", "items": { "$ref": "#/$defs/embeddedBlock" } },
+        "junctions": { "type": "array", "items": { "$ref": "#/$defs/diagramJunction" } },
+        "record_counts": { "type": "object", "additionalProperties": { "type": "integer" } },
+        "preserved_records": { "type": "array", "items": { "$ref": "#/$defs/preservedRecord" } },
+        "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
+        "vhdl_check": { "type": "array", "items": { "$ref": "#/$defs/vhdlCheck" } }
+      }
+    },
+    "diagramGeneric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type_text": { "type": ["string", "null"] },
+        "value": { "type": ["string", "null"] }
+      }
+    },
+    "point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "integer" },
+        "y": { "type": "integer" }
+      }
+    },
+    "diagramPort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "direction": { "type": ["string", "null"], "enum": ["in", "out", "inout", "buffer", "linkage", null] },
+        "type_text": { "type": ["string", "null"] },
+        "range_text": { "type": ["string", "null"] },
+        "hds_uid": { "type": ["string", "null"] },
+        "hds_object": { "type": ["integer", "null"] },
+        "marker_m": { "type": ["integer", "null"] },
+        "x1": { "type": ["integer", "null"] },
+        "y1": { "type": ["integer", "null"] },
+        "x2": { "type": ["integer", "null"] },
+        "y2": { "type": ["integer", "null"] }
+      }
+    },
+    "diagramInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "component_name": { "type": ["string", "null"] },
+        "component_library": { "type": ["string", "null"] },
+        "hds_uid": { "type": ["string", "null"] },
+        "hds_object": { "type": ["integer", "null"] },
+        "x1": { "type": ["integer", "null"] },
+        "y1": { "type": ["integer", "null"] },
+        "x2": { "type": ["integer", "null"] },
+        "y2": { "type": ["integer", "null"] },
+        "generics": { "type": "array", "items": { "$ref": "#/$defs/diagramGeneric" } },
+        "ports": { "type": "array", "items": { "$ref": "#/$defs/diagramPort" } }
+      }
+    },
+    "diagramNet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "type_text": { "type": ["string", "null"] },
+        "range_text": { "type": ["string", "null"] },
+        "hds_uid": { "type": ["string", "null"] },
+        "hds_object": { "type": ["integer", "null"] }
+      }
+    },
+    "diagramWire": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "hds_uid": { "type": ["string", "null"] },
+        "hds_object": { "type": ["integer", "null"] },
+        "start_object": { "type": ["integer", "null"] },
+        "end_object": { "type": ["integer", "null"] },
+        "net_object": { "type": ["integer", "null"] },
+        "slice_text": { "type": ["string", "null"] },
+        "points": { "type": "array", "items": { "$ref": "#/$defs/point" } }
+      }
+    },
+    "embeddedBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "number": { "type": ["string", "null"] },
+        "text": { "type": ["string", "null"] },
+        "hds_uid": { "type": ["string", "null"] },
+        "hds_object": { "type": ["integer", "null"] },
+        "x1": { "type": ["integer", "null"] },
+        "y1": { "type": ["integer", "null"] },
+        "x2": { "type": ["integer", "null"] },
+        "y2": { "type": ["integer", "null"] }
+      }
+    },
+    "diagramJunction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "x", "y"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "hds_uid": { "type": ["string", "null"] },
+        "hds_object": { "type": ["integer", "null"] },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" }
+      }
+    },
+    "preservedRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type_name", "line", "payload"],
+      "properties": {
+        "type_name": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 },
+        "hds_object": { "type": ["integer", "null"] },
+        "payload": { "type": "string" }
+      }
+    },
+    "vhdlCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "code", "message"],
+      "properties": {
+        "severity": { "$ref": "#/$defs/severity" },
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "viewReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "default_file": { "type": ["string", "null"] },
+        "default_architecture": { "type": ["string", "null"] },
+        "unrecognized_lines": { "type": "array", "items": { "type": "string" } }
       }
     }
   }

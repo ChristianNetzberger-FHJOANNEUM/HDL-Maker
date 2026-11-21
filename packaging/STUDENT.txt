@@ -1,0 +1,35 @@
+HDL-Maker 0.1.0 — portable Windows-Fassung
+==========================================
+
+Start
+-----
+HDL-Maker.exe starten. Es öffnet sich ein Konsolenfenster und der Standardbrowser
+mit http://127.0.0.1:8000/ . Python, Node.js und npm werden nicht benötigt.
+
+Beenden
+-------
+Das Konsolenfenster schließen. Damit endet auch der lokale Server.
+
+Erneut starten
+--------------
+Ein zweiter Start öffnet den Browser erneut und startet keinen zweiten Server.
+
+Projekte
+--------
+Eigene Projekte und Einstellungen liegen unter
+
+    Dokumente\HDL-Maker\Projects
+
+Ein Update der Programmdateien ersetzt diesen Ordner nicht.
+
+Bibliothek öffnen
+-----------------
+Im Programm ein Verzeichnis mit VHDL-Dateien angeben und auf Scan klicken.
+Die Schaltfläche Examples öffnet die mitgelieferten kleinen Beispiele.
+Die Original-HDL-Designer-Bibliothek ist nicht enthalten und wird nicht verändert.
+
+Diese Fassung
+-------------
+Enthalten sind Bibliotheksimport, Blockdiagramme und das Anlegen eigener Designs.
+FSM-Editor, VHDL-Generierung und Simulation sind noch nicht enthalten.
+Der Server ist nur auf diesem PC erreichbar, nicht im Netzwerk.

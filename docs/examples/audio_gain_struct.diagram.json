@@ -1,0 +1,1118 @@
+{
+  "id": "dg_audio_gain_struct",
+  "library_id": "lib_example",
+  "source_path": "hds/audio_gain/struct.bd",
+  "sha256": "8e322919f9815861a7082f3b0905cc0b3e5e400730da38adf8ffffb44523b631",
+  "view": "block",
+  "format_version": "1.1",
+  "app_version": "2017.1a (Build 5)",
+  "entity_name": "audio_gain",
+  "architecture_name": "struct",
+  "machine_name": null,
+  "state_signal_name": null,
+  "parse_status": "parsed",
+  "instances": [
+    {
+      "id": "inst_994_0",
+      "name": "U_0",
+      "component_name": "comp_barrelshifter",
+      "component_library": "sbus_rtc_lib",
+      "hds_uid": "994,0",
+      "hds_object": 45,
+      "x1": -41000,
+      "y1": 46000,
+      "x2": -22000,
+      "y2": 52000,
+      "generics": [
+        {
+          "name": "nbits_g",
+          "type_text": "integer",
+          "value": "24"
+        }
+      ],
+      "ports": [
+        {
+          "id": "pin_966_0",
+          "name": "sig_i",
+          "direction": null,
+          "type_text": "std_logic_vector",
+          "range_text": "(nbits_g-1 downto 0)",
+          "hds_uid": "966,0",
+          "hds_object": 46,
+          "marker_m": null,
+          "x1": -41750,
+          "y1": 46625,
+          "x2": -41000,
+          "y2": 47375
+        },
+        {
+          "id": "pin_970_0",
+          "name": "shift",
+          "direction": null,
+          "type_text": "std_logic_vector",
+          "range_text": "(3 downto 0)",
+          "hds_uid": "970,0",
+          "hds_object": 47,
+          "marker_m": null,
+          "x1": -41750,
+          "y1": 47625,
+          "x2": -41000,
+          "y2": 48375
+        },
+        {
+          "id": "pin_974_0",
+          "name": "enable_i",
+          "direction": null,
+          "type_text": "std_logic",
+          "range_text": null,
+          "hds_uid": "974,0",
+          "hds_object": 48,
+          "marker_m": null,
+          "x1": -41750,
+          "y1": 48625,
+          "x2": -41000,
+          "y2": 49375
+        },
+        {
+          "id": "pin_978_0",
+          "name": "reset",
+          "direction": null,
+          "type_text": "std_logic",
+          "range_text": null,
+          "hds_uid": "978,0",
+          "hds_object": 49,
+          "marker_m": null,
+          "x1": -41750,
+          "y1": 49625,
+          "x2": -41000,
+          "y2": 50375
+        },
+        {
+          "id": "pin_982_0",
+          "name": "clk",
+          "direction": null,
+          "type_text": "std_logic",
+          "range_text": null,
+          "hds_uid": "982,0",
+          "hds_object": 50,
+          "marker_m": null,
+          "x1": -41750,
+          "y1": 50625,
+          "x2": -41000,
+          "y2": 51375
+        },
+        {
+          "id": "pin_986_0",
+          "name": "sig_o",
+          "direction": null,
+          "type_text": "std_logic_vector",
+          "range_text": "(nbits_g-1 downto 0)",
+          "hds_uid": "986,0",
+          "hds_object": 51,
+          "marker_m": 1,
+          "x1": -22000,
+          "y1": 46625,
+          "x2": -21250,
+          "y2": 47375
+        },
+        {
+          "id": "pin_990_0",
+          "name": "enable_o",
+          "direction": null,
+          "type_text": "std_logic",
+          "range_text": null,
+          "hds_uid": "990,0",
+          "hds_object": 52,
+          "marker_m": 1,
+          "x1": -22000,
+          "y1": 47625,
+          "x2": -21250,
+          "y2": 48375
+        }
+      ]
+    },
+    {
+      "id": "inst_1075_0",
+      "name": "U_1",
+      "component_name": "comp_barrelshifter",
+      "component_library": "sbus_rtc_lib",
+      "hds_uid": "1075,0",
+      "hds_object": 56,
+      "x1": -41000,
+      "y1": 56000,
+      "x2": -22000,
+      "y2": 62000,
+      "generics": [
+        {
+          "name": "nbits_g",
+          "type_text": "integer",
+          "value": "24"
+        }
+      ],
+      "ports": [
+        {
+          "id": "pin_1047_0",
+          "name": "sig_i",
+          "direction": null,
+          "type_text": "std_logic_vector",
+          "range_text": "(nbits_g-1 downto 0)",
+          "hds_uid": "1047,0",
+          "hds_object": 57,
+          "marker_m": null,
+          "x1": -41750,
+          "y1": 56625,
+          "x2": -41000,
+          "y2": 57375
+        },
+        {
+          "id": "pin_1051_0",
+          "name": "shift",
+          "direction": null,
+          "type_text": "std_logic_vector",
+          "range_text": "(3 downto 0)",
+          "hds_uid": "1051,0",
+          "hds_object": 58,
+          "marker_m": null,
+          "x1": -41750,
+          "y1": 57625,
+          "x2": -41000,
+          "y2": 58375
+        },
+        {
+          "id": "pin_1055_0",
+          "name": "enable_i",
+          "direction": null,
+          "type_text": "std_logic",
+          "range_text": null,
+          "hds_uid": "1055,0",
+          "hds_object": 59,
+          "marker_m": null,
+          "x1": -41750,
+          "y1": 58625,
+          "x2": -41000,
+          "y2": 59375
+        },
+        {
+          "id": "pin_1059_0",
+          "name": "reset",
+          "direction": null,
+          "type_text": "std_logic",
+          "range_text": null,
+          "hds_uid": "1059,0",
+          "hds_object": 60,
+          "marker_m": null,
+          "x1": -41750,
+          "y1": 59625,
+          "x2": -41000,
+          "y2": 60375
+        },
+        {
+          "id": "pin_1063_0",
+          "name": "clk",
+          "direction": null,
+          "type_text": "std_logic",
+          "range_text": null,
+          "hds_uid": "1063,0",
+          "hds_object": 61,
+          "marker_m": null,
+          "x1": -41750,
+          "y1": 60625,
+          "x2": -41000,
+          "y2": 61375
+        },
+        {
+          "id": "pin_1067_0",
+          "name": "sig_o",
+          "direction": null,
+          "type_text": "std_logic_vector",
+          "range_text": "(nbits_g-1 downto 0)",
+          "hds_uid": "1067,0",
+          "hds_object": 62,
+          "marker_m": 1,
+          "x1": -22000,
+          "y1": 56625,
+          "x2": -21250,
+          "y2": 57375
+        },
+        {
+          "id": "pin_1071_0",
+          "name": "enable_o",
+          "direction": null,
+          "type_text": "std_logic",
+          "range_text": null,
+          "hds_uid": "1071,0",
+          "hds_object": 63,
+          "marker_m": 1,
+          "x1": -22000,
+          "y1": 57625,
+          "x2": -21250,
+          "y2": 58375
+        }
+      ]
+    }
+  ],
+  "ports": [
+    {
+      "id": "dport_9_0",
+      "name": "audio_in_right_o",
+      "direction": "out",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "9,0",
+      "hds_object": 1,
+      "marker_m": null,
+      "x1": -1000,
+      "y1": 56625,
+      "x2": 1000,
+      "y2": 57375
+    },
+    {
+      "id": "dport_37_0",
+      "name": "audio_in_left_i",
+      "direction": "in",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "37,0",
+      "hds_object": 2,
+      "marker_m": null,
+      "x1": -56000,
+      "y1": 46625,
+      "x2": -54000,
+      "y2": 47375
+    },
+    {
+      "id": "dport_51_0",
+      "name": "audio_in_right_i",
+      "direction": "in",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "51,0",
+      "hds_object": 3,
+      "marker_m": null,
+      "x1": -56000,
+      "y1": 56625,
+      "x2": -54000,
+      "y2": 57375
+    },
+    {
+      "id": "dport_65_0",
+      "name": "audioloop_en",
+      "direction": "in",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "65,0",
+      "hds_object": 4,
+      "marker_m": null,
+      "x1": -56000,
+      "y1": 32625,
+      "x2": -54000,
+      "y2": 33375
+    },
+    {
+      "id": "dport_79_0",
+      "name": "audio_out_left_o",
+      "direction": "out",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "79,0",
+      "hds_object": 5,
+      "marker_m": null,
+      "x1": -21000,
+      "y1": 34625,
+      "x2": -19000,
+      "y2": 35375
+    },
+    {
+      "id": "dport_93_0",
+      "name": "audio_out_right_o",
+      "direction": "out",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "93,0",
+      "hds_object": 6,
+      "marker_m": null,
+      "x1": -21000,
+      "y1": 35625,
+      "x2": -19000,
+      "y2": 36375
+    },
+    {
+      "id": "dport_419_0",
+      "name": "audio_in_scale",
+      "direction": "in",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "419,0",
+      "hds_object": 24,
+      "marker_m": null,
+      "x1": -56000,
+      "y1": 47625,
+      "x2": -54000,
+      "y2": 48375
+    },
+    {
+      "id": "dport_825_0",
+      "name": "audio_in_left_o",
+      "direction": "out",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "825,0",
+      "hds_object": 36,
+      "marker_m": null,
+      "x1": -1000,
+      "y1": 46625,
+      "x2": 1000,
+      "y2": 47375
+    },
+    {
+      "id": "dport_881_0",
+      "name": "audio_out_left_i",
+      "direction": "in",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "881,0",
+      "hds_object": 38,
+      "marker_m": null,
+      "x1": -56000,
+      "y1": 34625,
+      "x2": -54000,
+      "y2": 35375
+    },
+    {
+      "id": "dport_889_0",
+      "name": "audio_out_right_i",
+      "direction": "in",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "889,0",
+      "hds_object": 40,
+      "marker_m": null,
+      "x1": -56000,
+      "y1": 35625,
+      "x2": -54000,
+      "y2": 36375
+    },
+    {
+      "id": "dport_911_0",
+      "name": "reset",
+      "direction": "in",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "911,0",
+      "hds_object": 43,
+      "marker_m": null,
+      "x1": -46000,
+      "y1": 49625,
+      "x2": -44000,
+      "y2": 50375
+    },
+    {
+      "id": "dport_917_0",
+      "name": "clk",
+      "direction": "in",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "917,0",
+      "hds_object": 44,
+      "marker_m": null,
+      "x1": -46000,
+      "y1": 50625,
+      "x2": -44000,
+      "y2": 51375
+    },
+    {
+      "id": "dport_1191_0",
+      "name": "audio_mute_right",
+      "direction": "in",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "1191,0",
+      "hds_object": 69,
+      "marker_m": null,
+      "x1": -56000,
+      "y1": 30625,
+      "x2": -54000,
+      "y2": 31375
+    },
+    {
+      "id": "dport_1197_0",
+      "name": "audio_mute_left",
+      "direction": "in",
+      "type_text": null,
+      "range_text": null,
+      "hds_uid": "1197,0",
+      "hds_object": 70,
+      "marker_m": null,
+      "x1": -56000,
+      "y1": 29625,
+      "x2": -54000,
+      "y2": 30375
+    }
+  ],
+  "nets": [
+    {
+      "id": "net_133_0",
+      "name": "clk",
+      "type_text": "std_logic",
+      "range_text": null,
+      "hds_uid": "133,0",
+      "hds_object": 7
+    },
+    {
+      "id": "net_147_0",
+      "name": "reset",
+      "type_text": "std_logic",
+      "range_text": null,
+      "hds_uid": "147,0",
+      "hds_object": 8
+    },
+    {
+      "id": "net_425_0",
+      "name": "enable_i",
+      "type_text": "std_logic",
+      "range_text": null,
+      "hds_uid": "425,0",
+      "hds_object": 25
+    },
+    {
+      "id": "net_705_0",
+      "name": "audio_in_scale",
+      "type_text": "std_logic_vector",
+      "range_text": "(3 downto 0)",
+      "hds_uid": "705,0",
+      "hds_object": 30
+    },
+    {
+      "id": "net_815_0",
+      "name": "audio_out_left_o",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 DOWNTO 0)",
+      "hds_uid": "815,0",
+      "hds_object": 31
+    },
+    {
+      "id": "net_817_0",
+      "name": "audio_out_right_o",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 DOWNTO 0)",
+      "hds_uid": "817,0",
+      "hds_object": 32
+    },
+    {
+      "id": "net_819_0",
+      "name": "audio_in_left_i",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 DOWNTO 0)",
+      "hds_uid": "819,0",
+      "hds_object": 33
+    },
+    {
+      "id": "net_821_0",
+      "name": "audio_in_right_i",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 DOWNTO 0)",
+      "hds_uid": "821,0",
+      "hds_object": 34
+    },
+    {
+      "id": "net_823_0",
+      "name": "audio_in_right_o",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 DOWNTO 0)",
+      "hds_uid": "823,0",
+      "hds_object": 35
+    },
+    {
+      "id": "net_837_0",
+      "name": "audio_in_left_o",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 DOWNTO 0)",
+      "hds_uid": "837,0",
+      "hds_object": 37
+    },
+    {
+      "id": "net_887_0",
+      "name": "audio_out_left_i",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 DOWNTO 0)",
+      "hds_uid": "887,0",
+      "hds_object": 39
+    },
+    {
+      "id": "net_901_0",
+      "name": "audio_out_right_i",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 DOWNTO 0)",
+      "hds_uid": "901,0",
+      "hds_object": 41
+    },
+    {
+      "id": "net_907_0",
+      "name": "audioloop_en",
+      "type_text": "std_logic",
+      "range_text": null,
+      "hds_uid": "907,0",
+      "hds_object": 42
+    },
+    {
+      "id": "net_1187_0",
+      "name": "audio_mute_right",
+      "type_text": "std_logic",
+      "range_text": null,
+      "hds_uid": "1187,0",
+      "hds_object": 67
+    },
+    {
+      "id": "net_1189_0",
+      "name": "audio_mute_left",
+      "type_text": "std_logic",
+      "range_text": null,
+      "hds_uid": "1189,0",
+      "hds_object": 68
+    },
+    {
+      "id": "net_1219_0",
+      "name": "audio_out_left_tmp",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 DOWNTO 0)",
+      "hds_uid": "1219,0",
+      "hds_object": 71
+    },
+    {
+      "id": "net_1221_0",
+      "name": "audio_out_right_tmp",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 DOWNTO 0)",
+      "hds_uid": "1221,0",
+      "hds_object": 72
+    },
+    {
+      "id": "net_1355_0",
+      "name": "audio_in_left_tmp",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 downto 0)",
+      "hds_uid": "1355,0",
+      "hds_object": 77
+    },
+    {
+      "id": "net_1365_0",
+      "name": "audio_in_right_tmp",
+      "type_text": "std_logic_vector",
+      "range_text": "(23 downto 0)",
+      "hds_uid": "1365,0",
+      "hds_object": 78
+    }
+  ],
+  "wires": [
+    {
+      "id": "wire_15_0",
+      "hds_uid": "15,0",
+      "hds_object": 79,
+      "start_object": 1,
+      "end_object": 73,
+      "net_object": 35,
+      "points": [
+        {
+          "x": -1000,
+          "y": 57000
+        },
+        {
+          "x": -6000,
+          "y": 57000
+        }
+      ]
+    },
+    {
+      "id": "wire_43_0",
+      "hds_uid": "43,0",
+      "hds_object": 80,
+      "start_object": 2,
+      "end_object": 46,
+      "net_object": 33,
+      "points": [
+        {
+          "x": -54000,
+          "y": 47000
+        },
+        {
+          "x": -41750,
+          "y": 47000
+        }
+      ]
+    },
+    {
+      "id": "wire_57_0",
+      "hds_uid": "57,0",
+      "hds_object": 82,
+      "start_object": 3,
+      "end_object": 57,
+      "net_object": 34,
+      "points": [
+        {
+          "x": -54000,
+          "y": 57000
+        },
+        {
+          "x": -41750,
+          "y": 57000
+        }
+      ]
+    },
+    {
+      "id": "wire_71_0",
+      "hds_uid": "71,0",
+      "hds_object": 84,
+      "start_object": 4,
+      "end_object": 20,
+      "net_object": 42,
+      "points": [
+        {
+          "x": -54000,
+          "y": 33000
+        },
+        {
+          "x": -40000,
+          "y": 33000
+        }
+      ]
+    },
+    {
+      "id": "wire_85_0",
+      "hds_uid": "85,0",
+      "hds_object": 85,
+      "start_object": 5,
+      "end_object": 20,
+      "net_object": 31,
+      "points": [
+        {
+          "x": -21000,
+          "y": 35000
+        },
+        {
+          "x": -34000,
+          "y": 35000
+        }
+      ]
+    },
+    {
+      "id": "wire_99_0",
+      "hds_uid": "99,0",
+      "hds_object": 86,
+      "start_object": 6,
+      "end_object": 20,
+      "net_object": 32,
+      "points": [
+        {
+          "x": -21000,
+          "y": 36000
+        },
+        {
+          "x": -34000,
+          "y": 36000
+        }
+      ]
+    },
+    {
+      "id": "wire_285_0",
+      "hds_uid": "285,0",
+      "hds_object": 87,
+      "start_object": 60,
+      "end_object": null,
+      "net_object": 8,
+      "points": [
+        {
+          "x": -41750,
+          "y": 60000
+        },
+        {
+          "x": -45000,
+          "y": 60000
+        }
+      ]
+    },
+    {
+      "id": "wire_293_0",
+      "hds_uid": "293,0",
+      "hds_object": 88,
+      "start_object": null,
+      "end_object": 61,
+      "net_object": 7,
+      "points": [
+        {
+          "x": -45000,
+          "y": 61000
+        },
+        {
+          "x": -41750,
+          "y": 61000
+        }
+      ]
+    },
+    {
+      "id": "wire_387_0",
+      "hds_uid": "387,0",
+      "hds_object": 89,
+      "start_object": 49,
+      "end_object": 43,
+      "net_object": 8,
+      "points": [
+        {
+          "x": -41750,
+          "y": 50000
+        },
+        {
+          "x": -44000,
+          "y": 50000
+        }
+      ]
+    },
+    {
+      "id": "wire_395_0",
+      "hds_uid": "395,0",
+      "hds_object": 90,
+      "start_object": 44,
+      "end_object": 50,
+      "net_object": 7,
+      "points": [
+        {
+          "x": -44000,
+          "y": 51000
+        },
+        {
+          "x": -41750,
+          "y": 51000
+        }
+      ]
+    },
+    {
+      "id": "wire_405_0",
+      "hds_uid": "405,0",
+      "hds_object": 91,
+      "start_object": 47,
+      "end_object": 24,
+      "net_object": 30,
+      "points": [
+        {
+          "x": -41750,
+          "y": 48000
+        },
+        {
+          "x": -54000,
+          "y": 48000
+        }
+      ]
+    },
+    {
+      "id": "wire_427_0",
+      "hds_uid": "427,0",
+      "hds_object": 93,
+      "start_object": 48,
+      "end_object": 26,
+      "net_object": 25,
+      "points": [
+        {
+          "x": -41750,
+          "y": 49000
+        },
+        {
+          "x": -63000,
+          "y": 49000
+        }
+      ]
+    },
+    {
+      "id": "wire_437_0",
+      "hds_uid": "437,0",
+      "hds_object": 95,
+      "start_object": 94,
+      "end_object": 59,
+      "net_object": 25,
+      "points": [
+        {
+          "x": -49995,
+          "y": 49000
+        },
+        {
+          "x": -49995,
+          "y": 59000
+        },
+        {
+          "x": -41750,
+          "y": 59000
+        }
+      ]
+    },
+    {
+      "id": "wire_831_0",
+      "hds_uid": "831,0",
+      "hds_object": 96,
+      "start_object": 36,
+      "end_object": 73,
+      "net_object": 37,
+      "points": [
+        {
+          "x": -1000,
+          "y": 47000
+        },
+        {
+          "x": -6000,
+          "y": 47000
+        }
+      ]
+    },
+    {
+      "id": "wire_839_0",
+      "hds_uid": "839,0",
+      "hds_object": 97,
+      "start_object": 58,
+      "end_object": 92,
+      "net_object": 30,
+      "points": [
+        {
+          "x": -41750,
+          "y": 58000
+        },
+        {
+          "x": -48997,
+          "y": 58000
+        },
+        {
+          "x": -48997,
+          "y": 48000
+        }
+      ]
+    },
+    {
+      "id": "wire_845_0",
+      "hds_uid": "845,0",
+      "hds_object": 98,
+      "start_object": 81,
+      "end_object": 20,
+      "net_object": 33,
+      "points": [
+        {
+          "x": -51998,
+          "y": 47000
+        },
+        {
+          "x": -51998,
+          "y": 38000
+        },
+        {
+          "x": -40000,
+          "y": 38000
+        }
+      ]
+    },
+    {
+      "id": "wire_853_0",
+      "hds_uid": "853,0",
+      "hds_object": 99,
+      "start_object": 83,
+      "end_object": 20,
+      "net_object": 34,
+      "points": [
+        {
+          "x": -50998,
+          "y": 57000
+        },
+        {
+          "x": -50998,
+          "y": 39000
+        },
+        {
+          "x": -40000,
+          "y": 39000
+        }
+      ]
+    },
+    {
+      "id": "wire_875_0",
+      "hds_uid": "875,0",
+      "hds_object": 100,
+      "start_object": 38,
+      "end_object": 20,
+      "net_object": 39,
+      "points": [
+        {
+          "x": -54000,
+          "y": 35000
+        },
+        {
+          "x": -40000,
+          "y": 35000
+        }
+      ]
+    },
+    {
+      "id": "wire_895_0",
+      "hds_uid": "895,0",
+      "hds_object": 101,
+      "start_object": 40,
+      "end_object": 20,
+      "net_object": 41,
+      "points": [
+        {
+          "x": -54000,
+          "y": 36000
+        },
+        {
+          "x": -40000,
+          "y": 36000
+        }
+      ]
+    },
+    {
+      "id": "wire_1171_0",
+      "hds_uid": "1171,0",
+      "hds_object": 102,
+      "start_object": 69,
+      "end_object": 20,
+      "net_object": 67,
+      "points": [
+        {
+          "x": -54000,
+          "y": 31000
+        },
+        {
+          "x": -40000,
+          "y": 31000
+        }
+      ]
+    },
+    {
+      "id": "wire_1179_0",
+      "hds_uid": "1179,0",
+      "hds_object": 103,
+      "start_object": 70,
+      "end_object": 20,
+      "net_object": 68,
+      "points": [
+        {
+          "x": -54000,
+          "y": 30000
+        },
+        {
+          "x": -40000,
+          "y": 30000
+        }
+      ]
+    },
+    {
+      "id": "wire_1203_0",
+      "hds_uid": "1203,0",
+      "hds_object": 104,
+      "start_object": null,
+      "end_object": 20,
+      "net_object": 71,
+      "points": [
+        {
+          "x": -20000,
+          "y": 31000
+        },
+        {
+          "x": -34000,
+          "y": 31000
+        }
+      ]
+    },
+    {
+      "id": "wire_1211_0",
+      "hds_uid": "1211,0",
+      "hds_object": 105,
+      "start_object": null,
+      "end_object": 20,
+      "net_object": 72,
+      "points": [
+        {
+          "x": -20000,
+          "y": 32000
+        },
+        {
+          "x": -34000,
+          "y": 32000
+        }
+      ]
+    },
+    {
+      "id": "wire_1349_0",
+      "hds_uid": "1349,0",
+      "hds_object": 106,
+      "start_object": 51,
+      "end_object": 73,
+      "net_object": 77,
+      "points": [
+        {
+          "x": -21250,
+          "y": 47000
+        },
+        {
+          "x": -11000,
+          "y": 47000
+        }
+      ]
+    },
+    {
+      "id": "wire_1357_0",
+      "hds_uid": "1357,0",
+      "hds_object": 107,
+      "start_object": 62,
+      "end_object": 73,
+      "net_object": 78,
+      "points": [
+        {
+          "x": -21250,
+          "y": 57000
+        },
+        {
+          "x": -11000,
+          "y": 57000
+        }
+      ]
+    }
+  ],
+  "embedded_blocks": [
+    {
+      "id": "emb_377_0",
+      "name": "mux",
+      "number": "19",
+      "hds_uid": "377,0",
+      "hds_object": 20,
+      "x1": -40000,
+      "y1": 29000,
+      "x2": -34000,
+      "y2": 42000
+    },
+    {
+      "id": "emb_587_0",
+      "name": "eb1",
+      "number": "1",
+      "hds_uid": "587,0",
+      "hds_object": 26,
+      "x1": -71000,
+      "y1": 47000,
+      "x2": -63000,
+      "y2": 50000
+    },
+    {
+      "id": "emb_1341_0",
+      "name": "eb2",
+      "number": "2",
+      "hds_uid": "1341,0",
+      "hds_object": 73,
+      "x1": -11000,
+      "y1": 46000,
+      "x2": -6000,
+      "y2": 59000
+    }
+  ],
+  "preserved_records": [],
+  "diagnostics": [],
+  "vhdl_check": [
+    {
+      "severity": "info",
+      "code": "vhdl_struct_matches",
+      "message": "Instance names, components, generics, and connected ports match hdl/audio_gain_struct.vhd."
+    }
+  ]
+}

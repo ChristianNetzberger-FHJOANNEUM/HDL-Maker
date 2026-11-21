@@ -1,0 +1,2 @@
+DEFAULT_ARCHITECTURE atom fsm
+DEFAULT_FILE atom audio_fifo_ctrl/fsm.sm

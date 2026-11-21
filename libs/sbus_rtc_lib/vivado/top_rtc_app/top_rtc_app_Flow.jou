@@ -1,0 +1,20 @@
+#-----------------------------------------------------------
+# Vivado v2019.1 (64-bit)
+# SW Build 2552052 on Fri May 24 14:49:42 MDT 2019
+# IP Build 2548770 on Fri May 24 18:01:18 MDT 2019
+# Start of session at: Tue Feb  8 11:16:50 2022
+# Process ID: 27180
+# Current directory: D:/HDL/ip_repo/sbus_rtc_lib/vivado/top_rtc_app
+# Command line: vivado.exe -mode gui -journal ./top_rtc_app_Flow.jou -log ./top_rtc_app_Flow.log -source ./HDS_Scripts/top_rtc_app_Flow.tcl
+# Log file: D:/HDL/ip_repo/sbus_rtc_lib/vivado/top_rtc_app/./top_rtc_app_Flow.log
+# Journal file: D:/HDL/ip_repo/sbus_rtc_lib/vivado/top_rtc_app\./top_rtc_app_Flow.jou
+#-----------------------------------------------------------
+start_gui
+source ./HDS_Scripts/top_rtc_app_Flow.tcl
+update_compile_order -fileset sources_1
+ipx::open_ipxact_file {d:\hdl\ip_repo\sbus_rtc_lib\component.xml}
+set_property core_revision 2 [ipx::current_core]
+ipx::create_xgui_files [ipx::current_core]
+ipx::update_checksums [ipx::current_core]
+ipx::save_core [ipx::current_core]
+update_ip_catalog -rebuild -repo_path d:/HDL/ip_repo

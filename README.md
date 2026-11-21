@@ -2,7 +2,9 @@
 
 License-independent, browser-based studio for migrating existing HDL Designer libraries and editing hierarchical VHDL designs. This is not a clone of Siemens HDL Designer.
 
-The current milestone is **M1**: import a VHDL library, browse entities, and inspect generated symbols. Block diagrams, FSM editing, VHDL generation, and GHDL simulation come later.
+M2b and the portable student build are in the working tree. The next milestone is **M2c**. Order and scope are fixed in [docs/roadmap.md](docs/roadmap.md).
+
+A portable Windows build for students is described in [docs/student-edition.md](docs/student-edition.md). Development still uses the Vite server. The packaged app serves the built page and the API on `127.0.0.1` and does not need Node.js or a separate Python install.
 
 ## Stack
 
@@ -29,19 +31,19 @@ npm install
 
 ## Run
 
-Use two terminals.
+```powershell
+cd C:\_Git\HDL-Maker\frontend
+npm run dev
+```
+
+Open http://127.0.0.1:5173 . The dev server starts the API on `127.0.0.1:8000` when that port is closed, and stops that process when the dev server stops. If you already started the API yourself, it is left running:
 
 ```powershell
 cd C:\_Git\HDL-Maker
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-```powershell
-cd C:\_Git\HDL-Maker\frontend
-npm run dev
-```
-
-Open http://127.0.0.1:5173 . The Vite dev server proxies `/api` to the backend. Bind the API to localhost only. In the library browser, **Examples** scans `examples/` and shows the counter, comparator, and controller.
+Browser calls to `/api` stay on port 5173. The proxy keeps one connection open and binds it to a reserved local port outside Windows' ephemeral range, so a full TIME_WAIT pool does not turn into HTTP 502. The Windows port range is not changed. In the library browser, **Examples** scans `examples/` and shows the counter, comparator, and controller. **Create design** starts an empty block diagram for one of the imported libraries.
 
 ## Import a library without the UI
 
@@ -66,7 +68,7 @@ cd C:\_Git\HDL-Maker
 ```
 frontend/     Vue studio
 backend/app/  FastAPI, importers, design model
-schemas/      design.schema.json (inventory schema version 1)
+schemas/      design.schema.json (inventory schema version 2)
 examples/     counter, comparator, controller, plus files the importer must not parse
 docs/         architecture, roadmap, migration, changelog
 workspace/    local project file, gitignored
@@ -78,3 +80,5 @@ workspace/    local project file, gitignored
 - [docs/roadmap.md](docs/roadmap.md)
 - [docs/migration.md](docs/migration.md)
 - [docs/changelog.md](docs/changelog.md)
+- [docs/m2b-limitations.md](docs/m2b-limitations.md)
+- [docs/student-edition.md](docs/student-edition.md)

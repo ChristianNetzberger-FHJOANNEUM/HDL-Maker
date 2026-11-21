@@ -1,0 +1,2 @@
+DEFAULT_FILE atom i2c_slave_rtl.vhd
+DEFAULT_ARCHITECTURE atom rtl

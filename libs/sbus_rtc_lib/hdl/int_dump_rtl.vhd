@@ -1,0 +1,111 @@
+--
+-- VHDL Architecture sbus_audio.int_dump.rtl
+--
+-- Created:
+--          by - Net.UNKNOWN (M00443)
+--          at - 19:39:31 31.01.2022
+--
+-- using Mentor Graphics HDL Designer(TM) 2017.1a (Build 5)
+--
+LIBRARY ieee;
+USE ieee.std_logic_1164.all;
+USE ieee.std_logic_arith.all;
+use ieee.std_logic_unsigned.all;
+
+entity int_dump is
+   generic( 
+      dwidth_g : integer := 8
+   );
+   port( 
+      clk      : in     std_logic;
+      dump     : in     std_logic_vector (7 downto 0);
+      en_i     : in     std_logic;
+      reset    : in     std_logic;
+      scale    : in     std_logic_vector (2 downto 0);
+      val_i    : in     std_logic_vector (dwidth_g-1 downto 0);
+      dump_i   : in     std_logic;
+      dump_sel : in     std_logic;
+      en_o     : out    std_logic;
+      val_dump : out    std_logic_vector (dwidth_g-1 downto 0)
+   );
+
+-- Declarations
+
+end int_dump ;
+
+--
+architecture rtl of int_dump is
+  signal accu, accu_reg,val_e: std_logic_vector(dwidth_g+7 downto 0);
+  signal dump_cnt: std_logic_vector(dump'range);
+  signal dump_tc, dump_stb, dump_i_tmp,dump_reg: std_logic;
+  signal en_q: std_logic;
+begin
+  
+  process(val_i) 
+  begin
+    val_e <= (others => val_i(val_i'left));
+    val_e(val_i'range) <= val_i;
+  end process;
+    
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      if reset = '1' then
+        accu <= (others => '0');
+      elsif en_i = '1' then
+        if dump_stb = '1' then
+          accu <= val_e;
+          accu_reg <= accu;
+        else
+          accu <= accu + val_i;
+        end if;
+      end if;
+    end if;
+  end process;
+  
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      en_q <= en_i;
+      en_o <= en_q;
+      for i in 0 to 7 loop
+        if i = scale then
+          val_dump <= accu_reg(dwidth_g+i-1 downto i);
+        end if;
+      end loop;
+    end if;
+  end process;
+  
+  process(clk)
+  begin
+     if rising_edge(clk) then
+        if reset = '1' then
+          dump_cnt <= (others => '0');
+        elsif en_i = '1' then
+          if dump_tc = '1' then
+            dump_cnt <= (others => '0');
+          else
+            dump_cnt <= dump_cnt+1;
+          end if;
+        end if;
+     end if;
+  end process;
+
+---register the asynchronous dump_i input with en_i
+  process(clk)
+  begin
+    if rising_edge(clk) then
+       if dump_i = '1' then
+         dump_i_tmp <= '1';
+       elsif  en_i = '1' then
+         dump_i_tmp <= '0';
+         dump_reg <= dump_i_tmp;
+       end if; 
+    end if;
+  end process;
+  
+  dump_tc  <= '1' when dump_cnt = dump else '0';  
+  dump_stb <= dump_reg when dump_sel = '0' else dump_tc;
+         
+end architecture rtl;
+

@@ -1,0 +1,2 @@
+DEFAULT_FILE atom i2s_slave_bhv.vhd
+DEFAULT_ARCHITECTURE atom bhv

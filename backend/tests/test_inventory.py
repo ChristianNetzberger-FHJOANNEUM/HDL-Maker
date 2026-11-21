@@ -5,7 +5,7 @@ from app.paths import examples_dir
 
 
 def test_examples_library_inventory() -> None:
-    library, units = scan_directory(str(examples_dir()), "demo")
+    library, units, _diagrams = scan_directory(str(examples_dir()), "demo")
     assert library.name == "demo"
     by_name = {(unit.kind, unit.name): unit for unit in units}
 
@@ -69,7 +69,7 @@ def test_duplicate_entity_names_are_both_kept(tmp_path) -> None:
     text = "entity alu is port (y : out std_logic); end entity alu;\n"
     (library_dir / "a" / "alu.vhd").write_text(text, encoding="utf-8")
     (library_dir / "b" / "alu.vhd").write_text(text, encoding="utf-8")
-    _library, units = scan_directory(str(library_dir), "work")
+    _library, units, _diagrams = scan_directory(str(library_dir), "work")
     entities = [unit for unit in units if unit.kind == "entity"]
     assert len(entities) == 2
     assert len({unit.id for unit in entities}) == 2
@@ -83,7 +83,7 @@ def test_missing_architecture_entity_is_not_invented(tmp_path) -> None:
         "architecture rtl of missing is begin end architecture rtl;\n",
         encoding="utf-8",
     )
-    _library, units = scan_directory(str(library_dir), "work")
+    _library, units, _diagrams = scan_directory(str(library_dir), "work")
     assert [unit.kind for unit in units] == ["architecture"]
     assert units[0].parent_name == "missing"
     assert any(item.code == "architecture_entity_missing" for item in units[0].diagnostics)
@@ -94,7 +94,7 @@ def test_oversized_and_binary_files_are_listed(tmp_path) -> None:
     library_dir.mkdir()
     (library_dir / "big.vhd").write_text("entity big is end entity big;\n", encoding="utf-8")
     (library_dir / "blob.hds").write_bytes(b"HDS\x00bin")
-    library, units = scan_directory(str(library_dir), "work", max_bytes=12)
+    library, units, _diagrams = scan_directory(str(library_dir), "work", max_bytes=12)
     assert units == []
     report = library.last_import
     assert report is not None
@@ -106,6 +106,6 @@ def test_oversized_and_binary_files_are_listed(tmp_path) -> None:
 
 
 def test_relative_path_is_resolved_from_the_repository() -> None:
-    library, units = scan_directory("examples", "demo")
+    library, units, _diagrams = scan_directory("examples", "demo")
     assert library.root_path.endswith("examples")
     assert any(unit.name == "counter" for unit in units)

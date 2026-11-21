@@ -48,6 +48,7 @@ export interface DesignUnit {
   generics: GenericPort[]
   ports: Port[]
   dependencies: string[]
+  instantiates?: string[]
   source: {
     path: string
     sha256: string
@@ -91,6 +92,77 @@ export interface ProjectFile {
   name: string
   libraries: Library[]
   design_units: DesignUnit[]
+  diagrams: DiagramDocument[]
+}
+
+export interface DiagramPort {
+  id: string
+  name: string
+  direction: Direction
+  type_text: string | null
+  range_text: string | null
+  hds_uid: string | null
+  hds_object: number | null
+  marker_m: number | null
+  x1: number | null
+  y1: number | null
+  x2: number | null
+  y2: number | null
+}
+
+export interface DiagramInstance {
+  id: string
+  name: string
+  component_name: string | null
+  component_library: string | null
+  hds_uid: string | null
+  hds_object: number | null
+  x1: number | null
+  y1: number | null
+  x2: number | null
+  y2: number | null
+  generics: { name: string; type_text: string | null; value: string | null }[]
+  ports: DiagramPort[]
+}
+
+export interface DiagramWire {
+  id: string
+  hds_uid: string | null
+  hds_object: number | null
+  start_object: number | null
+  end_object: number | null
+  net_object: number | null
+  points: { x: number; y: number }[]
+}
+
+export interface DiagramDocument {
+  id: string
+  library_id: string
+  source_path: string
+  sha256: string
+  view: 'block' | 'symbol' | 'state' | 'unknown'
+  entity_name: string | null
+  architecture_name: string | null
+  machine_name: string | null
+  state_signal_name: string | null
+  parse_status: ParseStatus
+  instances: DiagramInstance[]
+  ports: DiagramPort[]
+  nets: { id: string; name: string; hds_object: number | null }[]
+  wires: DiagramWire[]
+  embedded_blocks: {
+    id: string
+    name: string
+    number: string | null
+    text: string | null
+    x1: number | null
+    y1: number | null
+    x2: number | null
+    y2: number | null
+  }[]
+  preserved_records: { type_name: string; line: number }[]
+  diagnostics: Diagnostic[]
+  vhdl_check: Diagnostic[]
 }
 
 export interface Health {

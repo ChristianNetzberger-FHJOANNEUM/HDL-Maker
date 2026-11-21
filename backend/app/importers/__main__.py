@@ -22,11 +22,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--library", help="Logical library name. Defaults to the directory name.")
     parser.add_argument("--out", help="Write the import report JSON to this file.")
     parser.add_argument("--no-save", action="store_true", help="Do not update workspace/project.json.")
+    parser.add_argument(
+        "--include-side-data",
+        action="store_true",
+        help="List files inside hidden directories such as .hdlsidedata. They are not parsed.",
+    )
     args = parser.parse_args(argv)
     try:
-        library, units = scan_directory(args.path, args.library)
+        library, units, diagrams = scan_directory(
+            args.path,
+            args.library,
+            include_side_data=args.include_side_data,
+        )
         if not args.no_save:
-            upsert_library(library, units)
+            upsert_library(library, units, diagrams)
     except ScanError as exc:
         print(f"{exc.code}: {exc.message}", file=sys.stderr)
         return 2
@@ -45,7 +54,13 @@ def main(argv: list[str] | None = None) -> int:
         "files {files}, entities {entities}, architectures {architectures}, "
         "packages {packages}, warnings {warnings}, errors {errors}".format(**counts)
     )
+    print(
+        "diagrams {block_diagrams} block, {symbols} symbol, {state_diagrams} state, "
+        "{interface_diagrams} interface, {flowcharts} flowchart, {truth_tables} truth table, "
+        "{view_references} view reference".format(**counts)
+    )
     print(f"design units {len(units)}")
+    print(f"parsed diagrams {len(diagrams)}")
     return 0
 
 

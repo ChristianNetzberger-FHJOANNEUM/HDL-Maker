@@ -1,9 +1,8 @@
 """Recursive library inventory.
 
 The scan reads a directory the user selected. It does not copy or modify
-those files. Design-unit ids are derived from the library path, the unit
-kind, the name, and the library-relative path, so scanning the same tree
-again updates the same records.
+those files. Object ids are assigned here and kept by the project store when
+the same design unit or diagram is imported again.
 """
 
 from __future__ import annotations
@@ -14,12 +13,16 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.ids import stable_id
+from app.identity import new_id
 from app.importers.errors import ScanError
+from app.importers.hds.extract import extract_graphical
+from app.importers.hds.vhdl_check import check_against_vhdl
+from app.importers.hds.views import parse_view_reference
 from app.importers.vhdl.extract import ExtractedUnit, extract_design_units
 from app.models.design import (
     DesignUnit,
     Diagnostic,
+    DiagramDocument,
     FileEntry,
     FileRole,
     ImportReport,
@@ -28,6 +31,7 @@ from app.models.design import (
     Severity,
     SourceSpan,
     SourceText,
+    ViewReference,
 )
 from app.paths import examples_dir
 from app.storage.project_store import upsert_library
@@ -43,19 +47,36 @@ _ROLE_BY_SUFFIX: dict[str, FileRole] = {
     ".svh": "systemverilog",
     ".v": "verilog",
     ".vh": "verilog",
+    ".bd": "block_diagram",
+    ".sb": "symbol",
+    ".sm": "state_diagram",
+    ".ibd": "interface_diagram",
+    ".fc": "flowchart",
+    ".tt": "truth_table",
+    "._epf": "view_reference",
     ".hds": "metadata_candidate",
     ".hdp": "metadata_candidate",
     ".hde": "metadata_candidate",
-    ".bd": "metadata_candidate",
     ".bde": "metadata_candidate",
     ".fsm": "metadata_candidate",
     ".sde": "metadata_candidate",
 }
+_GRAPHICAL_ROLES = {"block_diagram", "symbol", "state_diagram"}
 
 
-def import_library(path: str, library_name: str | None = None, max_bytes: int = MAX_FILE_BYTES) -> ProjectFile:
-    library, units = scan_directory(path, library_name, max_bytes=max_bytes)
-    return upsert_library(library, units)
+def import_library(
+    path: str,
+    library_name: str | None = None,
+    max_bytes: int = MAX_FILE_BYTES,
+    include_side_data: bool = False,
+) -> ProjectFile:
+    library, units, diagrams = scan_directory(
+        path,
+        library_name,
+        max_bytes=max_bytes,
+        include_side_data=include_side_data,
+    )
+    return upsert_library(library, units, diagrams)
 
 
 def examples_library_path() -> str:
@@ -66,16 +87,19 @@ def scan_directory(
     path: str,
     library_name: str | None = None,
     max_bytes: int = MAX_FILE_BYTES,
-) -> tuple[Library, list[DesignUnit]]:
+    include_side_data: bool = False,
+) -> tuple[Library, list[DesignUnit], list[DiagramDocument]]:
     root = resolve_directory(path)
     name = _library_name(library_name, root)
-    library_id = stable_id("lib", os.path.normcase(str(root)))
+    library_id = new_id("lib")
     files: list[FileEntry] = []
     units: list[DesignUnit] = []
+    diagrams: list[DiagramDocument] = []
+    view_references: list[ViewReference] = []
     report_diagnostics: list[Diagnostic] = []
     now = datetime.now(timezone.utc)
 
-    for file_path in _iter_files(root):
+    for file_path in _iter_files(root, include_side_data):
         relative = file_path.relative_to(root).as_posix()
         suffix = file_path.suffix.lower()
         role = _ROLE_BY_SUFFIX.get(suffix, "unrecognized")
@@ -88,6 +112,19 @@ def scan_directory(
             classification=_classification(suffix, role),
             binary=False,
         )
+        side_data = _in_hidden_directory(relative)
+        if side_data:
+            entry.binary = _looks_binary(file_path)
+            files.append(entry)
+            report_diagnostics.append(
+                _file_diagnostic(
+                    "info",
+                    "side_data_listed",
+                    f"{relative} is inside a hidden directory. It was listed and not parsed.",
+                    relative,
+                )
+            )
+            continue
         if size > max_bytes:
             entry.binary = _looks_binary(file_path)
             files.append(entry)
@@ -107,6 +144,78 @@ def scan_directory(
             report_diagnostics.extend(diagnostics)
             units.extend(parsed)
             continue
+        if role in _GRAPHICAL_ROLES or role in {"interface_diagram", "flowchart", "truth_table"}:
+            entry.binary = _looks_binary(file_path)
+            files.append(entry)
+            if entry.binary:
+                report_diagnostics.append(
+                    _file_diagnostic(
+                        "warning",
+                        "graphical_binary_not_parsed",
+                        f"{relative} looks binary and was not parsed as a diagram.",
+                        relative,
+                    )
+                )
+                continue
+            if role not in _GRAPHICAL_ROLES:
+                report_diagnostics.append(
+                    _file_diagnostic(
+                        "info",
+                        "graphical_role_not_parsed",
+                        f"{relative} is a {role.replace('_', ' ')}. No sample of this view was available, so it was not parsed.",
+                        relative,
+                    )
+                )
+                continue
+            diagram, notes = _graphical_diagram(file_path, relative, library_id, root)
+            report_diagnostics.extend(notes)
+            if diagram is not None:
+                diagrams.append(diagram)
+                report_diagnostics.extend(diagram.diagnostics)
+                report_diagnostics.extend(_checks_as_diagnostics(diagram))
+            continue
+        if role == "view_reference":
+            entry.binary = _looks_binary(file_path)
+            files.append(entry)
+            if entry.binary:
+                report_diagnostics.append(
+                    _file_diagnostic(
+                        "warning",
+                        "view_reference_binary",
+                        f"{relative} looks binary and was not read as a view reference.",
+                        relative,
+                    )
+                )
+                continue
+            text, latin1 = _decode(file_path)
+            if latin1:
+                report_diagnostics.append(
+                    _file_diagnostic(
+                        "info",
+                        "decoded_as_latin1",
+                        f"{relative} is not valid UTF-8 and was read as Latin-1.",
+                        relative,
+                    )
+                )
+            reference = parse_view_reference(relative, text)
+            view_references.append(
+                ViewReference(
+                    path=reference.path,
+                    default_file=reference.default_file,
+                    default_architecture=reference.default_architecture,
+                    unrecognized_lines=reference.unrecognized_lines or [],
+                )
+            )
+            for line in reference.unrecognized_lines or []:
+                report_diagnostics.append(
+                    _file_diagnostic(
+                        "warning",
+                        "view_reference_unrecognized",
+                        f"{relative} has an unrecognized line: {line}",
+                        relative,
+                    )
+                )
+            continue
         entry.binary = _looks_binary(file_path)
         files.append(entry)
         report_diagnostics.append(_deferred_diagnostic(entry))
@@ -114,6 +223,7 @@ def scan_directory(
     _annotate_relationships(units)
     files.sort(key=lambda item: item.path)
     units.sort(key=lambda item: (item.source.path, item.source.start_line, item.kind, item.name.lower()))
+    diagrams.sort(key=lambda item: item.source_path)
     counts = _counts(files, units, report_diagnostics)
     library = Library(
         id=library_id,
@@ -130,9 +240,10 @@ def scan_directory(
             unit_ids=[unit.id for unit in units],
             counts=counts,
             diagnostics=report_diagnostics,
+            view_references=sorted(view_references, key=lambda item: item.path),
         ),
     )
-    return library, units
+    return library, units, diagrams
 
 
 def read_unit_source(unit: DesignUnit, library: Library) -> SourceText:
@@ -163,9 +274,9 @@ def resolve_directory(path: str) -> Path:
         raise ScanError("path_required", "A directory path is required.")
     candidate = Path(path.strip()).expanduser()
     if not candidate.is_absolute():
-        from app.paths import repo_root
+        from app.paths import relative_base
 
-        candidate = repo_root() / candidate
+        candidate = relative_base() / candidate
     try:
         resolved = candidate.resolve(strict=True)
     except FileNotFoundError as exc:
@@ -185,13 +296,64 @@ def _library_name(requested: str | None, root: Path) -> str:
     return name
 
 
-def _iter_files(root: Path) -> list[Path]:
+def _iter_files(root: Path, include_side_data: bool) -> list[Path]:
     found: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = [name for name in dirnames if name not in _SKIP_DIRS and not name.startswith(".")]
+        kept: list[str] = []
+        for name in dirnames:
+            if name in _SKIP_DIRS:
+                continue
+            if name.startswith(".") and not include_side_data:
+                continue
+            kept.append(name)
+        dirnames[:] = kept
         for filename in filenames:
             found.append(Path(dirpath) / filename)
     return found
+
+
+def _in_hidden_directory(relative: str) -> bool:
+    return any(part.startswith(".") for part in Path(relative).parts[:-1])
+
+
+def _graphical_diagram(
+    file_path: Path,
+    relative: str,
+    library_id: str,
+    root: Path,
+) -> tuple[DiagramDocument | None, list[Diagnostic]]:
+    text, latin1 = _decode(file_path)
+    notes: list[Diagnostic] = []
+    if latin1:
+        notes.append(
+            _file_diagnostic(
+                "info",
+                "decoded_as_latin1",
+                f"{relative} is not valid UTF-8 and was read as Latin-1.",
+                relative,
+            )
+        )
+    file_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
+    diagram = extract_graphical(text, relative=relative, file_hash=file_hash, library_id=library_id)
+    if diagram.view == "block":
+        diagram.vhdl_check = check_against_vhdl(diagram, root)
+    return diagram, notes
+
+
+def _checks_as_diagnostics(diagram: DiagramDocument) -> list[Diagnostic]:
+    copied: list[Diagnostic] = []
+    for item in diagram.vhdl_check:
+        if item.severity == "info":
+            continue
+        copied.append(
+            Diagnostic(
+                severity=item.severity,
+                code=item.code,
+                message=item.message,
+                path=diagram.source_path,
+            )
+        )
+    return copied
 
 
 def _vhdl_units(
@@ -230,16 +392,16 @@ def _vhdl_units(
 
 
 def _to_design_unit(extracted: ExtractedUnit, library_id: str, relative: str, file_hash: str) -> DesignUnit:
-    unit_id = stable_id("du", library_id, extracted.kind, extracted.name.lower(), relative)
+    unit_id = new_id("du")
     ports = []
     for port in extracted.ports:
         copied = port.model_copy(deep=True)
-        copied.id = stable_id("port", unit_id, port.name.lower())
+        copied.id = new_id("port")
         ports.append(copied)
     generics = []
     for generic in extracted.generics:
         copied = generic.model_copy(deep=True)
-        copied.id = stable_id("gen", unit_id, generic.name.lower())
+        copied.id = new_id("gen")
         generics.append(copied)
     return DesignUnit(
         id=unit_id,
@@ -251,6 +413,7 @@ def _to_design_unit(extracted: ExtractedUnit, library_id: str, relative: str, fi
         generics=generics,
         ports=ports,
         dependencies=extracted.dependencies,
+        instantiates=extracted.instantiates,
         source=SourceSpan(
             path=relative,
             sha256=file_hash,
@@ -312,6 +475,13 @@ def _counts(files: list[FileEntry], units: list[DesignUnit], diagnostics: list[D
         "packages": sum(1 for unit in units if unit.kind == "package"),
         "package_bodies": sum(1 for unit in units if unit.kind == "package_body"),
         "metadata_candidates": sum(1 for item in files if item.role == "metadata_candidate"),
+        "block_diagrams": sum(1 for item in files if item.role == "block_diagram"),
+        "symbols": sum(1 for item in files if item.role == "symbol"),
+        "state_diagrams": sum(1 for item in files if item.role == "state_diagram"),
+        "interface_diagrams": sum(1 for item in files if item.role == "interface_diagram"),
+        "flowcharts": sum(1 for item in files if item.role == "flowchart"),
+        "truth_tables": sum(1 for item in files if item.role == "truth_table"),
+        "view_references": sum(1 for item in files if item.role == "view_reference"),
         "systemverilog": sum(1 for item in files if item.role == "systemverilog"),
         "verilog": sum(1 for item in files if item.role == "verilog"),
         "unrecognized": sum(1 for item in files if item.role == "unrecognized"),
@@ -374,7 +544,9 @@ def _classification(suffix: str, role: FileRole) -> str:
         return "verilog_source"
     if role == "metadata_candidate":
         return f"uninterpreted_{suffix.lstrip('.') or 'file'}"
-    return "unknown_extension"
+    if role == "unrecognized":
+        return "unknown_extension"
+    return role
 
 
 def _looks_binary(path: Path) -> bool:

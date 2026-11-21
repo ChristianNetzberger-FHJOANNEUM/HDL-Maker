@@ -1,0 +1,179 @@
+DESIGN audio_gain
+VIEW symbol.sb
+NO_GRAPHIC 0
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 50,0 8 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 828,0 17 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 833,0 18 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 730,0 19 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 1080,0 20 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 1075,0 21 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 899,0 22 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 904,0 23 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 934,0 24 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 990,0 25 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 995,0 26 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 843,0 27 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 838,0 28 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 818,0 29 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 823,0 30 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 1,0 33 0 
+DESIGN audio_gain
+VIEW symbol.sb
+GRAPHIC 1,0 34 0 
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 37
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 217,0 46 0 
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 52
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 0,0 55 2 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1355,0 60 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1365,0 61 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1219,0 62 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1221,0 63 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 425,0 64 0 
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 65
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 66
+LIBRARY sbus_rtc_lib
+DESIGN comp_barrelshifter
+VIEW rtl
+GRAPHIC 994,0 68 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1001,0 69 1 
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 80
+LIBRARY sbus_rtc_lib
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 82
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 994,0 85 0 
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 88
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 587,0 91 0 
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 93
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1341,0 94 0 
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 109
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 377,0 110 0 
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 116
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 117
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 994,0 119 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1001,0 120 1 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 43,0 124 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 405,0 125 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 427,0 126 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 387,0 127 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 395,0 128 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1349,0 129 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1075,0 132 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1082,0 133 1 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 57,0 137 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 839,0 138 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 437,0 139 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 285,0 140 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 293,0 141 0 
+DESIGN audio_gain
+VIEW struct.bd
+GRAPHIC 1357,0 142 0 
+DESIGN audio_gain
+VIEW struct.bd
+NO_GRAPHIC 146

@@ -1,0 +1,16 @@
+#-----------------------------------------------------------
+# Vivado v2019.1 (64-bit)
+# SW Build 2552052 on Fri May 24 14:49:42 MDT 2019
+# IP Build 2548770 on Fri May 24 18:01:18 MDT 2019
+# Start of session at: Tue Feb  8 10:26:44 2022
+# Process ID: 38260
+# Current directory: D:/HDL/ip_repo/sbus_rtc_lib/vivado/top_audio_app1
+# Command line: vivado.exe -mode gui -journal ./top_audio_app1_Flow.jou -log ./top_audio_app1_Flow.log -source ./HDS_Scripts/top_audio_app1_Flow.tcl
+# Log file: D:/HDL/ip_repo/sbus_rtc_lib/vivado/top_audio_app1/./top_audio_app1_Flow.log
+# Journal file: D:/HDL/ip_repo/sbus_rtc_lib/vivado/top_audio_app1\./top_audio_app1_Flow.jou
+#-----------------------------------------------------------
+start_gui
+source ./HDS_Scripts/top_audio_app1_Flow.tcl
+update_compile_order -fileset sources_1
+set_property  ip_repo_paths  D:/HDL/ip_repo [current_project]
+update_ip_catalog

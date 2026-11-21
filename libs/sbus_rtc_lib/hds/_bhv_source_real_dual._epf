@@ -1,0 +1,2 @@
+DEFAULT_FILE atom bhv_source_real_dual.vhd
+DEFAULT_ARCHITECTURE atom bhv

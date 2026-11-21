@@ -1,0 +1,683 @@
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+NO_GRAPHIC 0
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 50,0 8 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 51,0 17 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 56,0 18 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 671,0 19 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 841,0 20 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 1744,0 21 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 540,0 22 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 1035,0 23 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 76,0 24 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 594,0 25 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 101,0 26 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 126,0 27 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 131,0 28 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 106,0 29 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 1356,0 30 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 1361,0 31 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 1371,0 32 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 1366,0 33 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 1,0 36 0 
+DESIGN i2c_ctrl_c
+VIEW symbol.sb
+GRAPHIC 1,0 37 0 
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 33,0 49 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 55
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 6,0 59 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 83
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2,0 119 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 120
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2,0 122 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 123
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 62,0 124 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 72,0 125 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 127
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 32,0 137 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 141
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2,0 143 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 45,0 144 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 60,0 145 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 224,0 147 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 239,0 148 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 318,0 149 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 333,0 150 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 389,0 155 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 681,0 156 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 682,0 157 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 427,0 158 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 428,0 159 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 160
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2884,0 161 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 162
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 643,0 163 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 658,0 164 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1165,0 169 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1180,0 170 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1274,0 175 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1289,0 176 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1291,0 180 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1306,0 181 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1422,0 188 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1437,0 189 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1938,0 198 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1953,0 199 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1994,0 201 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2009,0 202 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2659,0 203 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2712,0 204 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2713,0 205 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 206
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2686,0 207 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2701,0 208 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2764,0 211 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2779,0 212 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 213
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2,0 215 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 216
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2,0 218 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 219
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2,0 221 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 222
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2,0 235 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 45,0 236 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2033,0 237 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1994,0 238 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 239
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 45,0 240 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 241
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 224,0 242 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 318,0 243 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 335,0 245 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1150,0 247 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1111,0 248 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 249
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 335,0 250 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 251
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 389,0 252 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 681,0 253 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 318,0 254 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 427,0 255 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 773,0 256 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 257
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 643,0 258 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 259
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 643,0 260 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 665,0 261 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1422,0 262 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 263
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 643,0 264 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 265
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 773,0 266 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1232,0 267 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 45,0 268 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1397,0 269 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1938,0 270 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1204,0 271 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1165,0 272 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 273
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 773,0 274 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 275
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1111,0 276 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 411,0 277 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 389,0 278 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 279
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1111,0 280 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 281
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1165,0 282 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1182,0 283 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1269,0 285 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1274,0 286 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 287
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1182,0 288 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 289
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1274,0 290 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1291,0 291 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 811,0 293 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 45,0 294 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1413,0 295 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 643,0 296 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 297
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1182,0 298 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 299
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1422,0 300 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2659,0 301 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1938,0 302 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1960,0 303 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 643,0 304 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 305
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1938,0 306 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 307
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1994,0 308 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 643,0 309 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2659,0 310 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2712,0 311 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2686,0 312 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2786,0 313 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2764,0 314 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1444,0 315 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 224,0 316 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 638,0 317 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 1165,0 318 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 319
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2659,0 320 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 321
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2686,0 322 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2728,0 323 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 643,0 324 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 325
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2686,0 326 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 327
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2764,0 328 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 643,0 329 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 95,0 330 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 332
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 2,0 333 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 334
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 32,0 336 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+GRAPHIC 24,0 342 0
+LIBRARY sbus_rtc_lib
+DESIGN i2c_ctrl_c
+VIEW fsm.sm
+NO_GRAPHIC 369

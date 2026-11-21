@@ -1,0 +1,2 @@
+DEFAULT_FILE atom audio_dsp/struct.bd
+DEFAULT_ARCHITECTURE atom struct

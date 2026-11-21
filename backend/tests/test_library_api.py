@@ -23,6 +23,28 @@ def test_scan_examples_and_read_source(tmp_path, monkeypatch) -> None:
     assert body["start_line"] >= 1
 
 
+def test_ui_settings_are_restored_from_json(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HDS_WORKSPACE", str(tmp_path / "ws"))
+    assert client.get("/api/ui").json() == {
+        "library_path": "",
+        "library_name": "demo",
+        "include_side_data": False,
+        "board_id": "",
+        "hierarchy_root_id": "",
+    }
+    saved = client.put(
+        "/api/ui",
+        json={
+            "library_path": r"C:\_Git\HDL-Maker\libs\sbus_rtc_lib",
+            "library_name": "sbus_rtc_lib",
+            "include_side_data": False,
+        },
+    )
+    assert saved.status_code == 200
+    assert client.get("/api/ui").json()["library_path"].endswith("sbus_rtc_lib")
+    assert (tmp_path / "ws" / "ui.json").is_file()
+
+
 def test_missing_directory_is_a_structured_error(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HDS_WORKSPACE", str(tmp_path / "ws"))
     response = client.post("/api/libraries/scan", json={"path": str(tmp_path / "missing")})

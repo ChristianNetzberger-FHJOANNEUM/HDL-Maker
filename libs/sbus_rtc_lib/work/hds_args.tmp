@@ -1,0 +1,1 @@
+ -L sbus_rtc_lib -L work -L interfaces_lib -l transcript.txt -i -t ns -multisource_delay latest +typdelays sbus_rtc_lib.tb_audio1(struct)

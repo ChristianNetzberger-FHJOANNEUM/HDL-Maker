@@ -12,10 +12,11 @@ Scan the selected directory recursively and report:
 - VHDL design units found in `.vhd` and `.vhdl` files
 - which architecture belongs to which entity name
 - `library` and `use` dependencies attached to the following design unit
-- candidate metadata (extensions such as `.hds`, `.hdp`, `.hde`, `.bd`, `.bde`, `.fsm`, `.sde`)
+- candidate metadata (extensions such as `.hds`, `.hdp`, `.hde`, `.bde`, `.fsm`, `.sde`)
+- graphical views: `.bd`, `.sb`, `.sm`, `.ibd`, `.fc`, `.tt`, and `._epf`
 - every other extension as unrecognized
 
-Candidate extensions are hypotheses, not a claim that the file is HDL Designer data. The report says the format was not interpreted.
+`.bd` and `.sb` are parsed. `.sm` contributes its envelope only. The other graphical extensions are counted. Hidden directories such as `.hdlsidedata` stay skipped unless the scan is asked to list them.
 
 ## Stage 2 — HDL extraction (M1)
 
@@ -27,15 +28,9 @@ Repeated imports of the same root update units in place. Two files that declare 
 
 Structural architectures will be read for instances, port maps, internal signals, and parent/child relationships, then drawn as a block diagram. M1 does not recover component instantiations. A component declaration inside an architecture is not treated as a library entity.
 
-## Stage 4 — HDS investigation (later, needs a real library)
+## Stage 4 — HDS investigation (M1.5)
 
-Do this only after a real HDL Designer library is available. Record, for each metadata file:
-
-- whether it is text or binary
-- which diagram facts can be rebuilt without guessing
-- which facts cannot
-
-Until that sample exists, the importer must not invent a parser for proprietary diagram files.
+`libs/sbus_rtc_lib` was read locally and not modified. The findings are in `docs/hds-format-investigation.md`. The importer reads the observed text grammar and does not write HDL Designer files. What it does not recover is listed in `docs/hds-migration-limitations.md`.
 
 ## Rules that stay in force
 

@@ -1,0 +1,2 @@
+DEFAULT_FILE atom display_max7219_ctrl/fsm.sm
+DEFAULT_ARCHITECTURE atom fsm

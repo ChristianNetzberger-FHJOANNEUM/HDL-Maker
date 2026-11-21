@@ -9,6 +9,9 @@ __pycache__/
 # Runtime project data. Imported libraries stay in their original folders.
 workspace/
 
+# Portable student build. Rebuild with packaging/build_release.ps1.
+release/
+
 *.log
 Thumbs.db
 Desktop.ini

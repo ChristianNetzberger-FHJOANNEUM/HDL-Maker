@@ -1,0 +1,336 @@
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+NO_GRAPHIC 0
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 50,0 8 0 
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 13,0 16 1 
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 51,0 20 0 
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 431,0 21 0 
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 301,0 22 0 
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 56,0 23 0 
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 61,0 24 0 
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 354,0 25 0 
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 66,0 26 0 
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 1,0 29 0 
+DESIGN ledstrip_ctrl
+VIEW symbol.sb
+GRAPHIC 1,0 30 0 
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 33,0 42 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 48
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 6,0 52 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 65
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 2,0 80 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 81
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 2,0 83 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 84
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 62,0 85 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 72,0 86 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 88
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 32,0 91 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 92
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 2,0 94 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 45,0 95 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 474,0 96 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 475,0 97 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 99
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 260,0 100 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 275,0 101 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 330,0 102 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 331,0 103 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 374,0 104 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 375,0 105 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 106
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 291,0 107 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 410,0 108 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 411,0 109 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 392,0 112 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 393,0 113 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 352,0 117 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 353,0 118 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 120
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 452,0 121 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 283,0 122 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 128
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 2,0 130 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 131
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 2,0 133 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 134
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 2,0 136 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 137
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 2,0 149 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 45,0 150 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 474,0 151 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 452,0 152 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 153
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 45,0 154 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 155
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 260,0 156 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 330,0 157 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 291,0 158 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 374,0 159 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 291,0 160 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 161
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 260,0 162 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 163
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 291,0 164 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 410,0 165 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 45,0 166 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 392,0 167 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 452,0 168 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 352,0 169 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 260,0 170 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 171
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 291,0 172 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 173
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 452,0 174 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 260,0 175 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 95,0 176 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 178
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 2,0 179 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 180
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+GRAPHIC 24,0 182 0
+LIBRARY sbus_rtc_lib
+DESIGN ledstrip_ctrl
+VIEW fsm.sm
+NO_GRAPHIC 207
