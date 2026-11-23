@@ -122,6 +122,13 @@ def test_save_reopen_and_second_copy_keep_ids(tmp_path, monkeypatch) -> None:
     assert loaded.instances[0].name == "U_moved"
     assert loaded.instances[0].id == body["instances"][0]["id"]
     assert loaded.embedded_blocks[0].text == "sig_i <= audio_in_left_i;"
+    kept = client.post(f"/api/editable-diagrams/from-import/{source_id}")
+    assert kept.status_code == 200
+    assert kept.json()["id"] == body["id"]
+    assert kept.json()["instances"][0]["name"] == "U_moved"
+    assert kept.json()["instances"][0]["id"] == body["instances"][0]["id"]
+    missing = client.post("/api/editable-diagrams/from-import/dg_missing")
+    assert missing.status_code == 404
     assert source.read_bytes() == before
 
 

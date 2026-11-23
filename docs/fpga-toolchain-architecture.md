@@ -133,7 +133,7 @@ O2a wraps that command sequence. The backend entry points are under `/api/fpga/o
 
 O2b is Tested on hardware. The open-source bitstream was loaded into SRAM through a Windows D2XX build. The DONE LED was green and LED0 blinked about once per second. The OSS CAD Suite `openFPGALoader.exe` still uses libusb and cannot open `FTDIBUS`. That build is not part of the Python backend. The record is [o2b-open-source-hardware.md](o2b-open-source-hardware.md).
 
-O3a is that studio backend. Diagram JSON and VHDL generation stay unchanged. The record is [o3a-fpga-build.md](o3a-fpga-build.md).
+O3a is that studio backend. O3b keeps each build directory and separates a passed build from JTAG detection, SRAM programming, and an observed board function. Diagram JSON and VHDL generation stay unchanged. The records are [o3a-fpga-build.md](o3a-fpga-build.md) and [o3b-build-records.md](o3b-build-records.md). Learning Mode is a later local course layer in [learning-mode.md](learning-mode.md) and is not implemented.
 
 O4 asks whether a Windows ZIP should contain HDL-Maker plus the free tools, or whether HDL-Maker should stay small and the toolchain should be a separate download. The Windows OSS CAD Suite does not contain the GHDL Yosys plugin, so a student package still needs the separate GHDL step. A single large ZIP is not assumed to be better. O5 is the later question of an international education pack and the export-control reading. It is specified in [international-open-source-distribution.md](international-open-source-distribution.md) and does not block O2, O3, or O4.
 

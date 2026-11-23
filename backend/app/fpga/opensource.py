@@ -258,7 +258,9 @@ def _prepare(project: ProjectFile, config: FpgaBuildConfig) -> tuple[dict, dict]
     assert top is not None and period is not None and family is not None and part_key is not None and part_yaml is not None
     directory = Path(run["directory"])
     _require_workspace(directory)
-    directory.mkdir(parents=True, exist_ok=True)
+    from app.fpga.artifacts import reserve_build_directory
+
+    reserve_build_directory(directory)
     warnings = [item for item in diagnostics if item.severity == "warning"]
     run["diagnostics"] = [item.model_dump(mode="json") for item in warnings]
     run["top"] = top.name
@@ -771,7 +773,10 @@ def _store(run: dict) -> None:
 
 
 def _finish(run: dict) -> dict:
+    from app.fpga.artifacts import attach_bitstream
+
     run["finished_at"] = _now()
+    attach_bitstream(run)
     if run["stage_seconds"]:
         run["elapsed_seconds"] = round(sum(run["stage_seconds"].values()), 3)
     _store(run)

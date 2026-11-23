@@ -427,6 +427,19 @@
         "end_object": { "type": ["integer", "null"] },
         "net_object": { "type": ["integer", "null"] },
         "slice_text": { "type": ["string", "null"] },
+        "label": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["text", "x1", "y1", "x2", "y2"],
+          "properties": {
+            "text": { "type": "string" },
+            "x1": { "type": "integer" },
+            "y1": { "type": "integer" },
+            "x2": { "type": "integer" },
+            "y2": { "type": "integer" },
+            "hidden": { "type": "boolean" }
+          }
+        },
         "points": { "type": "array", "items": { "$ref": "#/$defs/point" } }
       }
     },

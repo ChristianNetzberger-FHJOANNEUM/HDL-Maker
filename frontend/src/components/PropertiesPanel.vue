@@ -23,8 +23,13 @@ const selectedWire = computed(() => {
   return studio.editable?.wires.find((item) => item.id === studio.selection?.id) ?? null
 })
 
+const selectedSignal = computed(() => {
+  if (studio.selection?.kind !== 'signal') return null
+  return studio.editable?.wires.find((item) => item.id === studio.selection?.id) ?? null
+})
+
 const selectedNet = computed(() => {
-  const netId = selectedWire.value?.net_id
+  const netId = selectedWire.value?.net_id ?? selectedSignal.value?.net_id
   if (!netId) return null
   return studio.editable?.nets.find((item) => item.id === netId) ?? null
 })

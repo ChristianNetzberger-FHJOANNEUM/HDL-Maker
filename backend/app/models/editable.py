@@ -7,7 +7,8 @@ The original import stays unchanged.
 Schema version stays 1. M2b adds optional fields (a created design has no
 source file, a diagram can declare generics, an instance can point at another
 editable design, a top-level port can carry a default). M2c adds an optional
-kind plus state and transition lists. M2d adds optional text-box geometry.
+kind plus state and transition lists. M2d adds optional text-box geometry. A wire may carry the signal-name rectangle
+from the import; moving that rectangle does not move the polyline.
 M3b adds the optional FSM interface: clock, reset, signal table, and anchor kinds.
 A block diagram leaves those lists empty. Old files still load. Do not raise the version without a migration
 that rewrites existing documents.
@@ -132,6 +133,11 @@ class EditableWire(APIModel):
     end: WireEnd | None = None
     slice_text: str | None = None
     hds_object: int | None = None
+    label_x: int | None = None
+    label_y: int | None = None
+    label_width: int | None = None
+    label_height: int | None = None
+    label_hidden: bool = False
 
 
 class NetEndpoint(APIModel):

@@ -9,7 +9,6 @@ devices and still leaves the download untested.
 from __future__ import annotations
 
 import json
-import shutil
 import time
 from pathlib import Path
 
@@ -186,9 +185,9 @@ def test_installed_vivado_scan_does_not_program(workspace: Path) -> None:
         assert finished["devices"] == []
         assert "HDL-MAKER-NO-HARDWARE" in text or "Labtoolstcl 44-199" in text
         destination = Path(r"C:\_Git\HDL-Maker\workspace\hardware\m5b-no-board")
-        if destination.exists():
-            shutil.rmtree(destination)
-        shutil.copytree(finished["directory"], destination)
+        from app.fpga.artifacts import archive_build
+
+        archive_build(Path(finished["directory"]), destination)
     else:
         assert finished["devices"]
         assert Path(r"C:\_Git\HDL-Maker\workspace\hardware\m5b-no-board").is_dir()

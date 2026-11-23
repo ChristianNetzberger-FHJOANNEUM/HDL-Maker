@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter, HTTPException
 from pydantic import Field
 
@@ -15,6 +17,7 @@ from app.storage.diagram_store import DiagramStoreError, find_by_source, list_ed
 from app.storage.project_store import load_project
 
 router = APIRouter(tags=["diagrams"])
+_import_guard = threading.Lock()
 
 
 class NewDesignRequest(APIModel):
@@ -77,23 +80,30 @@ def post_editable_diagram(body: NewDesignRequest) -> EditableDiagram:
 
 @router.post("/editable-diagrams/from-import/{source_id}", response_model=EditableDiagram)
 def post_editable_from_import(source_id: str) -> EditableDiagram:
-    existing = find_by_source(source_id)
-    if existing is not None:
-        return existing
-    project = load_project()
-    source = next((item for item in project.diagrams if item.id == source_id), None)
-    if source is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "diagram_not_found", "message": "Imported diagram not found."},
-        )
-    if source.view not in {"block", "state"}:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "diagram_not_block", "message": "Only a block diagram or a state diagram can be edited."},
-        )
-    created = editable_from_import(source, project.design_units)
-    try:
-        return save_editable(created)
-    except DiagramStoreError as exc:
-        raise _store_error(exc) from exc
+    with _import_guard:
+        existing = find_by_source(source_id)
+        if existing is not None:
+            return existing
+        project = load_project()
+        source = next((item for item in project.diagrams if item.id == source_id), None)
+        if source is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "diagram_not_found", "message": "Imported diagram not found."},
+            )
+        if source.view not in {"block", "state"}:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "diagram_not_block", "message": "Only a block diagram or a state diagram can be edited."},
+            )
+        try:
+            created = editable_from_import(source, project.design_units)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "diagram_not_block", "message": str(exc)},
+            ) from exc
+        try:
+            return save_editable(created)
+        except DiagramStoreError as exc:
+            raise _store_error(exc) from exc

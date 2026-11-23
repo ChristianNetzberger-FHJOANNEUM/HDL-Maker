@@ -2,6 +2,7 @@
 defineProps<{
   data: {
     points: { x: number; y: number }[]
+    width?: number
     onBend: (index: number, event: PointerEvent) => void
   }
 }>()
@@ -9,7 +10,10 @@ defineProps<{
 
 <template>
   <g class="ortho-edge">
-    <polyline :points="data.points.map((point) => `${point.x},${point.y}`).join(' ')" />
+    <polyline
+      :points="data.points.map((point) => `${point.x},${point.y}`).join(' ')"
+      :stroke-width="data.width ?? 0.6"
+    />
     <circle
       v-for="(point, index) in data.points.slice(1, -1)"
       :key="index"
@@ -26,7 +30,6 @@ defineProps<{
 .ortho-edge polyline {
   fill: none;
   stroke: #3d4754;
-  stroke-width: 1.5;
 }
 
 .bend {

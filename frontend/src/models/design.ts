@@ -151,6 +151,15 @@ export interface DiagramInstance {
   ports: DiagramPort[]
 }
 
+export interface WireLabel {
+  text: string
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  hidden: boolean
+}
+
 export interface DiagramWire {
   id: string
   hds_uid: string | null
@@ -158,6 +167,7 @@ export interface DiagramWire {
   start_object: number | null
   end_object: number | null
   net_object: number | null
+  label?: WireLabel | null
   points: { x: number; y: number }[]
 }
 
@@ -215,7 +225,7 @@ export interface DiagramDocument {
   states: DiagramState[]
   transitions: DiagramTransition[]
   ports: DiagramPort[]
-  nets: { id: string; name: string; hds_object: number | null }[]
+  nets: { id: string; name: string; type_text: string | null; range_text: string | null; hds_object: number | null }[]
   wires: DiagramWire[]
   embedded_blocks: {
     id: string

@@ -189,10 +189,60 @@ export interface OpenSourceTools {
   openfpga_loader_path: string
 }
 
+export interface ValidationState {
+  build_passed: boolean | null
+  jtag_detected: boolean | null
+  programming_completed: boolean | null
+  hardware_function_verified: boolean | null
+}
+
+export interface BuildSummary {
+  build_id: string
+  toolchain: 'vivado' | 'opensource'
+  part: string
+  vhdl_standard: string
+  status: string
+  elapsed_seconds: number | null
+  bitstream_path: string | null
+  bitstream_sha256: string | null
+  bitstream_bytes: number | null
+  resources: Record<string, number | null>
+  timing: Record<string, number | string | null>
+  warnings: string[]
+  validation: ValidationState
+}
+
+export interface HardwareValidation {
+  validation_id: string
+  build_id: string | null
+  toolchain: string
+  part: string
+  bitstream_sha256: string | null
+  bitstream_path: string | null
+  file_present: boolean
+  build_passed: boolean | null
+  jtag_detected: boolean | null
+  programming_completed: boolean | null
+  hardware_function_verified: boolean | null
+  evidence: string
+}
+
+export interface FpgaComparison {
+  timing_note: string
+  resource_note: string
+  vivado: BuildSummary | null
+  opensource: BuildSummary | null
+  validations: HardwareValidation[]
+}
+
 export interface OpenCheck {
   ok: boolean
   tools: Record<string, { path: string | null; version: string | null; ok: boolean; code: string | null }>
   database: { zynq7: string | null }
+}
+
+export function getFpgaComparison(): Promise<FpgaComparison> {
+  return request<FpgaComparison>('/api/fpga/comparison')
 }
 
 export function getOpenSourceTools(): Promise<OpenSourceTools> {
@@ -345,6 +395,7 @@ export interface UiSettings {
   board_id: string
   hierarchy_root_id: string
   state_text_px: number
+  port_label_style: 'short' | 'long'
 }
 
 export interface BoardProfile {

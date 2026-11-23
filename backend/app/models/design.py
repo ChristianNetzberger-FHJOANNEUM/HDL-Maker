@@ -160,6 +160,17 @@ class DiagramNet(APIModel):
     hds_object: int | None = None
 
 
+class WireLabel(APIModel):
+    """The signal-name rectangle stored on a wire, separate from the polyline."""
+
+    text: str
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    hidden: bool = False
+
+
 class DiagramWire(APIModel):
     id: str
     hds_uid: str | None = None
@@ -168,6 +179,7 @@ class DiagramWire(APIModel):
     end_object: int | None = None
     net_object: int | None = None
     slice_text: str | None = None
+    label: WireLabel | None = None
     points: list[Point] = Field(default_factory=list)
 
 

@@ -12,6 +12,11 @@ function setSize(event: Event): void {
   studio.setStateTextPx(Number((event.target as HTMLInputElement).value))
 }
 
+function setPortLabels(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value
+  if (value === 'short' || value === 'long') studio.setPortLabelStyle(value)
+}
+
 function setStandard(event: Event): void {
   const value = (event.target as HTMLSelectElement).value
   if (value === '93' || value === '2008') void studio.setVhdlStandard(value)
@@ -38,6 +43,20 @@ function editVivado(event: Event): void {
 <template>
   <div class="preferences">
     <h2>Preferences</h2>
+    <section>
+      <h3>Block diagrams</h3>
+      <label for="port-label-style">Port labels</label>
+      <p class="hint">
+        Short form is the HDL Designer abbreviation. A recorded range becomes <span class="mono">name(15:0)</span>. A scalar stays the name.
+        Long form writes the recorded type. The choice is saved in the workspace UI file and does not change a design.
+      </p>
+      <select id="port-label-style" :value="studio.portLabelStyle" aria-label="Port label form" @change="setPortLabels">
+        <option value="short">Short</option>
+        <option value="long">Long</option>
+      </select>
+      <p class="sample">{{ studio.portLabelStyle === 'long' ? 'clk: std_logic' : 'clk' }}</p>
+      <p class="sample">{{ studio.portLabelStyle === 'long' ? 'guard_time: std_logic_vector(15 downto 0)' : 'guard_time(15:0)' }}</p>
+    </section>
     <section>
       <h3>State diagrams</h3>
       <p class="hint">Text size is a studio setting. It is saved in the workspace UI file and does not change a design.</p>

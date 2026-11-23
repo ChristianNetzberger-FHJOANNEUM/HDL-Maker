@@ -136,7 +136,12 @@
         "start": { "type": ["object", "null"] },
         "end": { "type": ["object", "null"] },
         "slice_text": { "type": ["string", "null"] },
-        "hds_object": { "type": ["integer", "null"] }
+        "hds_object": { "type": ["integer", "null"] },
+        "label_x": { "type": ["integer", "null"] },
+        "label_y": { "type": ["integer", "null"] },
+        "label_width": { "type": ["integer", "null"] },
+        "label_height": { "type": ["integer", "null"] },
+        "label_hidden": { "type": "boolean" }
       }
     },
     "block": {

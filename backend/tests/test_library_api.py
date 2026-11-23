@@ -32,6 +32,7 @@ def test_ui_settings_are_restored_from_json(tmp_path, monkeypatch) -> None:
         "board_id": "",
         "hierarchy_root_id": "",
         "state_text_px": 13,
+        "port_label_style": "short",
     }
     saved = client.put(
         "/api/ui",
@@ -89,6 +90,11 @@ def test_state_text_px_defaults_and_clamps(tmp_path, monkeypatch) -> None:
     kept = client.put("/api/ui", json={"library_name": "demo", "state_text_px": 11, "board_id": "zybo-z7-10/A.0/board.xml"})
     assert kept.json()["state_text_px"] == 11
     assert kept.json()["board_id"] == "zybo-z7-10/A.0/board.xml"
+    assert loaded.json()["port_label_style"] == "short"
+    long_form = client.put("/api/ui", json={"library_name": "demo", "port_label_style": "long", "board_id": "zybo-z7-10/A.0/board.xml"})
+    assert long_form.json()["port_label_style"] == "long"
+    unknown = client.put("/api/ui", json={"library_name": "demo", "port_label_style": "other", "board_id": "zybo-z7-10/A.0/board.xml"})
+    assert unknown.json()["port_label_style"] == "short"
 
 
 def test_cli_reports_without_saving(tmp_path, monkeypatch, capsys) -> None:

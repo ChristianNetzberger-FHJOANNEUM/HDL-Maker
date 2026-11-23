@@ -345,7 +345,9 @@ def _prepare(project: ProjectFile, config: FpgaBuildConfig) -> dict:
     assert executable is not None
     build_dir = Path(run["directory"])
     _require_workspace(build_dir)
-    build_dir.mkdir(parents=True, exist_ok=True)
+    from app.fpga.artifacts import reserve_build_directory
+
+    reserve_build_directory(build_dir)
     script = render_tcl(files, config.xdc_paths, top.name, config.part, project.vhdl_standard, project.library_profile, config.target)
     (build_dir / "build.tcl").write_text(script, encoding="utf-8")
     run["top"] = top.name
@@ -541,6 +543,7 @@ def _blank(config: FpgaBuildConfig, standard: str, profile: str) -> dict:
     build_dir = builds_dir() / build_id
     return {
         "build_id": build_id,
+        "toolchain": "vivado",
         "status": "running",
         "target": config.target,
         "top": "",
@@ -585,8 +588,12 @@ def _store(run: dict) -> None:
 
 
 def _finish(run: dict) -> dict:
+    from app.fpga.artifacts import attach_bitstream, write_manifest
+
     run["finished_at"] = _now()
+    attach_bitstream(run)
     _store(run)
+    write_manifest(Path(run["directory"]), run)
     return run
 
 

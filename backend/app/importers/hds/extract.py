@@ -30,6 +30,7 @@ from app.models.design import (
     DiagramNet,
     DiagramPort,
     DiagramWire,
+    WireLabel,
     Diagnostic,
     EmbeddedBlock,
     Point,
@@ -440,6 +441,7 @@ def _wire(record: Record) -> DiagramWire:
         end_object=_ref(record.first("end")),
         net_object=_ref(record.first("on")),
         slice_text=_slice_text(record),
+        label=_wire_label(record),
         points=points,
     )
 
@@ -474,6 +476,26 @@ def _junction(record: Record) -> DiagramJunction | None:
         x=(x1 + x2) // 2,
         y=(y1 + y2) // 2,
     )
+
+
+def _wire_label(record: Record) -> WireLabel | None:
+    text = next(
+        (
+            item
+            for item in _descendants(record)
+            if item.type_name == "Text" and _atom(item.first("tm")) == "WireNameMgr"
+        ),
+        None,
+    )
+    if text is None:
+        return None
+    shown = _atom(text.first("st"))
+    box = _quad(_atom(text.first("xt")))
+    if not shown or box is None:
+        return None
+    visual = _record(text.first("va"))
+    hidden = _atom(visual.first("isHidden")) == "1" if visual else False
+    return WireLabel(text=shown, x1=box[0], y1=box[1], x2=box[2], y2=box[3], hidden=hidden)
 
 
 def _slice_text(record: Record) -> str | None:

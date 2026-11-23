@@ -251,15 +251,14 @@ def test_installed_vivado_synthesizes_and_builds_a_bitstream(workspace: Path) ->
     assert implemented["stages"]["bitstream"] == "passed"
     assert Path(implemented["bitstream_path"]).is_file()
     assert Path(implemented["bitstream_path"]).stat().st_size > 0
-    _keep(synthesized, "m5a-zybo-counter-synthesis")
-    _keep(implemented, "m5a-zybo-counter-bitstream")
+    _keep(synthesized)
+    _keep(implemented)
 
 
-def _keep(run: dict, name: str) -> None:
-    destination = Path(r"C:\_Git\HDL-Maker\workspace\builds") / name
-    if destination.exists():
-        shutil.rmtree(destination)
-    shutil.copytree(run["directory"], destination)
+def _keep(run: dict) -> None:
+    from app.fpga.artifacts import archive_build
+
+    archive_build(Path(run["directory"]), Path(r"C:\_Git\HDL-Maker\workspace\builds") / run["build_id"])
 
 
 def _wait(build_id: str, timeout: int = 10) -> dict:

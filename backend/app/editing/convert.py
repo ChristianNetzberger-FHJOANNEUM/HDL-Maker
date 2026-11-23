@@ -57,6 +57,7 @@ def editable_from_import(diagram: DiagramDocument, units: list[DesignUnit]) -> E
         start = ends.get(source.start_object) if source.start_object is not None else None
         end = ends.get(source.end_object) if source.end_object is not None else None
         net = net_by_object.get(source.net_object) if source.net_object is not None else None
+        label_box = _label_box(source.label)
         wires.append(
             EditableWire(
                 id=new_id("wire"),
@@ -66,6 +67,11 @@ def editable_from_import(diagram: DiagramDocument, units: list[DesignUnit]) -> E
                 end=end,
                 slice_text=source.slice_text,
                 hds_object=source.hds_object,
+                label_x=label_box[0],
+                label_y=label_box[1],
+                label_width=label_box[2],
+                label_height=label_box[3],
+                label_hidden=bool(source.label and source.label.hidden),
             )
         )
         if net is None:
@@ -382,6 +388,13 @@ def _unit_port(unit: DesignUnit | None, name: str):
     return next((port for port in unit.ports if port.name.lower() == folded), None)
 
 
+def _label_box(label) -> tuple[int | None, int | None, int | None, int | None]:
+    if label is None:
+        return None, None, None, None
+    left, top, width, height = _box(label.x1, label.y1, label.x2, label.y2)
+    return left, top, width, height
+
+
 def _box(
     x1: int | None,
     y1: int | None,
@@ -415,6 +428,9 @@ def _frame(instances, diagram_ports, blocks, junctions, wires) -> LayoutFrame:
         for point in wire.points:
             xs.append(point.x)
             ys.append(point.y)
+        if wire.label_x is not None and wire.label_y is not None and wire.label_width and wire.label_height:
+            xs.extend((wire.label_x, wire.label_x + wire.label_width))
+            ys.extend((wire.label_y, wire.label_y - wire.label_height))
     if not xs:
         return LayoutFrame(origin_x=0, origin_y=0, scale=1)
     origin_x = min(xs)

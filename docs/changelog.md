@@ -125,6 +125,27 @@
 - The open-source chain is a backend build for VHDL-93: GHDL Verilog, Yosys, nextpnr-xilinx, fasm2frames, and xc7frames2bit. Tool paths are `workspace/opensource-tools.json`. The process `PATH` is unchanged, and Vivado is not called.
 - Build `osb_574eb1ad8c3b4ac8a36b359745d3534d` repeats the Z7-20 counter. The nextpnr counts match the O1 log, and the bitstream is 4,045,674 bytes. It was not programmed. Details: `docs/o2a-open-source-build.md`.
 
+### D0
+
+- Design authoring stays on `EditableDiagram`. A second design document is not introduced. E0 and E1 are implemented and tested in software. Label binding is specified for D3 and does not rewrite existing files on open. Details: `docs/design-authoring-architecture.md`.
+
+### E0
+
+- Opening a block or state diagram edits one workspace model. An existing model is reused. The `.bd` and `.sm` files are not written. There is no separate read-only diagram step.
+
+### E1 labels
+
+- Block-diagram port labels can use the short HDL Designer form or the recorded long type. The choice is in Preferences and is stored in the workspace UI file.
+- Signal names use the text box stored on each wire. A recorded range is drawn as a thicker bus, and a scalar net is thinner. In an editable copy the box can be moved, and editing the text renames the net. Wire points stay unchanged.
+
+### E1
+
+- Block-diagram instances show the recorded port name beside each connection, plus direction, type, and range when those fields exist. Dense ports can be grouped and hidden without moving the wires. Details: `docs/e1-block-diagrams.md`.
+
+### O3b
+
+- Build directories are created once and are not replaced. The manifest records the build id, toolchain, part, VHDL standard, and bitstream SHA-256. A passed build is not marked as a hardware test. Learning Mode is documented and not implemented. Details: `docs/o3b-build-records.md`, `docs/learning-mode.md`.
+
 ### O3a
 
 - The FPGA Build tab can store Vivado or Open Source on the project and run the existing O2a builder. SRAM programming goes through a local openFPGALoader path, requires interface A and a confirmation, and was tested with a mock. The board was not programmed again. Details: `docs/o3a-fpga-build.md`.

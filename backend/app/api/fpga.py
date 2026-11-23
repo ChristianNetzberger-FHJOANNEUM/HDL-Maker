@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from app.fpga.artifacts import comparison, list_validations
 from app.fpga.program import (
     latest_bitstream,
     latest_program,
@@ -67,6 +68,16 @@ def get_opensource_tools() -> OpenSourceSettings:
 @router.put("/fpga/opensource/tools", response_model=OpenSourceSettings)
 def put_opensource_tools(body: OpenSourceSettings) -> OpenSourceSettings:
     return save_opensource_tools(body)
+
+
+@router.get("/fpga/comparison")
+def get_comparison() -> dict:
+    return comparison()
+
+
+@router.get("/fpga/validations")
+def get_validations() -> list[dict]:
+    return list_validations()
 
 
 @router.post("/fpga/opensource/check")

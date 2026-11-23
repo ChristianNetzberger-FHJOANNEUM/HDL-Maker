@@ -4,13 +4,14 @@ import { Controls } from '@vue-flow/controls'
 import { ConnectionMode, Handle, Position, VueFlow, useVueFlow, type Connection } from '@vue-flow/core'
 import { computed, ref } from 'vue'
 import type { DesignUnit } from '../../models/design'
-import type { EditableDiagram, EditableInstance, EditablePort, EditableWire } from '../../models/editable'
+import type { EditableDiagram, EditableInstance, EditableNet, EditablePort, EditableWire } from '../../models/editable'
 import { newDiagramId } from '../../models/editable'
 import { getEditableDiagram } from '../../services/api'
 import { useStudioStore } from '../../stores/studio'
 import { mapX, mapY, sourceDelta, translateOwner } from './geometry'
 import { addEndpoint, addWire, ensureNet, mergeNets, netContaining, type PortEnd } from './nets'
 import OrthogonalEdge from './OrthogonalEdge.vue'
+import { layoutPortLabels, portAnchor, portCaption, signalStroke } from './portLabels'
 import { connectionChecks, type Check } from './validate'
 
 const studio = useStudioStore()
@@ -18,6 +19,7 @@ const { viewport } = useVueFlow()
 const entityId = ref('')
 const childId = ref('')
 const dragStart = ref<{ id: string; x: number; y: number } | null>(null)
+const editingSignalId = ref<string | null>(null)
 const pending = ref<{ from: PortEnd; to: PortEnd; leftId: string; rightId: string; leftName: string; rightName: string } | null>(null)
 
 const diagram = computed(() => studio.editable)
@@ -36,21 +38,23 @@ const entities = computed(() => {
 
 const graph = computed(() => {
   const doc = diagram.value
+  const labelStyle = studio.portLabelStyle
   if (!doc) return { nodes: [], edges: [] }
   const frame = doc.frame
   const nodes = [
     ...looseRoutes(doc),
-    ...doc.instances.map((instance) => nodeForInstance(instance, frame)),
+    ...doc.instances.map((instance) => nodeForInstance(instance, frame, labelStyle)),
     ...doc.diagram_ports.map((port) => ({
       id: port.id,
       type: 'port',
       position: { x: mapX(frame.origin_x, frame.scale, port.x), y: mapY(frame.origin_y, frame.scale, port.y) },
-      data: {
-        title: port.name,
-        subtitle: [port.direction, port.type_text].filter(Boolean).join(' '),
-        handleId: port.id,
-        side: port.direction === 'out' ? Position.Left : Position.Right,
-      },
+        data: {
+          title: portCaption(port, labelStyle),
+          caption: '',
+          tip: portCaption(port, 'long'),
+          handleId: port.id,
+          side: port.direction === 'out' ? Position.Left : Position.Right,
+        },
       style: { width: `${Math.max(port.box_width * frame.scale, 8)}px`, height: `${Math.max(port.box_height * frame.scale, 8)}px` },
     })),
     ...doc.embedded_blocks.map((block) => ({
@@ -77,6 +81,7 @@ const graph = computed(() => {
       data: { label },
       style: { width: '120px', height: '28px' },
     })),
+    ...signalNodes(doc, frame, labelStyle),
   ]
   const edges = doc.wires.flatMap((wire) => {
     if (!wire.start || !wire.end) return []
@@ -93,6 +98,7 @@ const graph = computed(() => {
             x: mapX(frame.origin_x, frame.scale, point.x),
             y: mapY(frame.origin_y, frame.scale, point.y),
           })),
+          width: signalStroke(doc.nets.find((net) => net.id === wire.net_id)?.range_text),
           onBend: (index: number, event: PointerEvent) => bend(wire.id, index, event),
         },
       },
@@ -101,46 +107,69 @@ const graph = computed(() => {
   return { nodes, edges }
 })
 
-function nodeForInstance(instance: EditableInstance, frame: { origin_x: number; origin_y: number; scale: number }) {
+function nodeForInstance(
+  instance: EditableInstance,
+  frame: { origin_x: number; origin_y: number; scale: number },
+  labelStyle: 'short' | 'long',
+) {
+  const width = Math.max(instance.width * frame.scale, 36)
+  const height = Math.max(instance.height * frame.scale, 24)
   return {
     id: instance.id,
     type: 'instance',
+    zIndex: 3,
     position: { x: mapX(frame.origin_x, frame.scale, instance.x), y: mapY(frame.origin_y, frame.scale, instance.y) },
     data: {
       instance,
-      handles: instance.ports.map((port) => ({
-        id: port.id,
-        name: port.name,
-        type: port.direction === 'in' ? 'target' : 'source',
-        position: handleSide(instance, port),
-        style: handleStyle(instance, port),
-      })),
+      labels: layoutPortLabels(instance, width, height, labelStyle),
+      handles: instance.ports.map((port) => {
+        const anchor = portAnchor(instance, port, height, width)
+        return {
+          id: port.id,
+          name: port.name,
+          type: port.direction === 'in' ? 'target' : 'source',
+          position: anchor.side === 'right' ? Position.Right : Position.Left,
+          style: { left: anchor.left, top: anchor.top },
+        }
+      }),
     },
-    style: {
-      width: `${Math.max(instance.width * frame.scale, 36)}px`,
-      height: `${Math.max(instance.height * frame.scale, 24)}px`,
-    },
+    style: { width: `${width}px`, height: `${height}px` },
   }
 }
 
-function handleSide(instance: EditableInstance, port: EditablePort) {
-  if (port.x1 === null || port.x2 === null) {
-    return port.direction === 'out' || port.direction === 'buffer' ? Position.Right : Position.Left
-  }
-  return (port.x1 + port.x2) / 2 < instance.x + instance.width / 2 ? Position.Left : Position.Right
-}
-
-function handleStyle(instance: EditableInstance, port: EditablePort): Record<string, string> {
-  if (port.x1 === null || port.y1 === null || port.x2 === null || port.y2 === null) {
-    const outgoing = port.direction === 'out' || port.direction === 'buffer'
-    const group = instance.ports.filter((item) => (item.direction === 'out' || item.direction === 'buffer') === outgoing)
-    const index = Math.max(group.indexOf(port), 0)
-    return { left: outgoing ? '100%' : '0%', top: `${((index + 1) / (group.length + 1)) * 100}%` }
-  }
-  return {
-    left: `${((port.x1 + port.x2) / 2 - instance.x) / instance.width * 100}%`,
-    top: `${(instance.y - (port.y1 + port.y2) / 2) / instance.height * 100}%`,
-  }
+function signalNodes(
+  doc: NonNullable<typeof diagram.value>,
+  frame: { origin_x: number; origin_y: number; scale: number },
+  labelStyle: 'short' | 'long',
+) {
+  return doc.wires.flatMap((wire) => {
+    if (wire.label_hidden || wire.label_x == null || wire.label_y == null || !wire.label_width || !wire.label_height) return []
+    const net = doc.nets.find((item) => item.id === wire.net_id)
+    if (!net) return []
+    const width = Math.max(wire.label_width * frame.scale, 1)
+    const height = Math.max(wire.label_height * frame.scale, 1)
+    return [
+      {
+        id: `signal:${wire.id}`,
+        type: 'signal',
+        position: {
+          x: mapX(frame.origin_x, frame.scale, wire.label_x),
+          y: mapY(frame.origin_y, frame.scale, wire.label_y) - height,
+        },
+        draggable: true,
+        connectable: false,
+        zIndex: 2,
+        data: {
+          wireId: wire.id,
+          net,
+          text: portCaption(net, labelStyle),
+          title: portCaption(net, 'long'),
+          fontSize: Math.max(1, Math.min(11, height * 0.8)),
+        },
+        style: { width: `${width}px`, height: `${height}px` },
+      },
+    ]
+  })
 }
 
 function looseRoutes(doc: NonNullable<typeof diagram.value>) {
@@ -159,11 +188,12 @@ function looseRoutes(doc: NonNullable<typeof diagram.value>) {
       selectable: false,
       zIndex: 0,
       data: {
-        routes: loose.map((wire) =>
-          wire.points
+        routes: loose.map((wire) => ({
+          points: wire.points
             .map((point) => `${mapX(frame.origin_x, frame.scale, point.x)},${mapY(frame.origin_y, frame.scale, point.y)}`)
             .join(' '),
-        ),
+          width: signalStroke(doc.nets.find((net) => net.id === wire.net_id)?.range_text),
+        })),
         width,
         height,
       },
@@ -176,13 +206,21 @@ function onDragStart(event: { node: { id: string; position: { x: number; y: numb
   dragStart.value = { id: event.node.id, x: event.node.position.x, y: event.node.position.y }
 }
 
-function onDragStop(event: { node: { id: string; position: { x: number; y: number } } }): void {
+function onDragStop(event: { node: { id: string; type?: string; position: { x: number; y: number } } }): void {
   const doc = studio.editable
   const start = dragStart.value
   if (!doc || !start || start.id !== event.node.id) return
   const delta = sourceDelta(doc.frame.scale, event.node.position.x - start.x, event.node.position.y - start.y)
   dragStart.value = null
   if (delta.dx === 0 && delta.dy === 0) return
+  if (event.node.type === 'signal') {
+    const wire = doc.wires.find((item) => `signal:${item.id}` === event.node.id)
+    if (!wire || wire.label_x == null || wire.label_y == null) return
+    studio.commit()
+    wire.label_x += delta.dx
+    wire.label_y += delta.dy
+    return
+  }
   studio.commit()
   translateOwner(doc, event.node.id, delta.dx, delta.dy)
 }
@@ -421,7 +459,7 @@ function addLabel(): void {
 function removeSelection(): void {
   const doc = studio.editable
   const selected = studio.selection
-  if (!doc || !selected) return
+  if (!doc || !selected || selected.kind === 'signal') return
   if (selected.kind === 'wire') {
     disconnect(selected.id)
     return
@@ -469,8 +507,24 @@ function wireUses(wires: EditableWire[], netId: string, endpoint: { kind: string
   )
 }
 
-function onNodeClick(event: { node: { id: string; type?: string } }): void {
+function onNodeClick(event: { node: { id: string; type?: string; data?: { wireId?: string } } }): void {
+  if (event.node.type === 'signal' && event.node.data?.wireId) {
+    studio.selection = { kind: 'signal', id: event.node.data.wireId }
+    return
+  }
+  editingSignalId.value = null
   studio.selection = { kind: event.node.type ?? 'node', id: event.node.id }
+}
+
+function renameNet(net: EditableNet, event: Event): void {
+  const input = event.target
+  if (!(input instanceof HTMLInputElement)) return
+  const value = input.value.trim()
+  if (!value) {
+    input.value = net.name
+    return
+  }
+  net.name = value
 }
 
 function onEdgeClick(event: { edge: { id: string } }): void {
@@ -484,7 +538,6 @@ function onEdgeClick(event: { edge: { id: string } }): void {
       <button type="button" @click="studio.saveEditable()">Save</button>
       <button type="button" :disabled="!studio.canUndo" @click="studio.undo()">Undo</button>
       <button type="button" :disabled="!studio.canRedo" @click="studio.redo()">Redo</button>
-      <button v-if="diagram.provenance.origin !== 'created'" type="button" @click="studio.showOriginal()">Original</button>
       <button v-if="studio.hierarchy.length" type="button" @click="studio.backToParent()">Up</button>
       <button v-if="selectedInstance?.child_diagram_id" type="button" @click="studio.openChildDiagram(selectedInstance.child_diagram_id)">
         Open inside
@@ -542,12 +595,14 @@ function onEdgeClick(event: { edge: { id: string } }): void {
       @connect="onConnect"
       @node-click="onNodeClick"
       @edge-click="onEdgeClick"
-      @pane-click="studio.selection = null"
+      @pane-click="studio.selection = null; editingSignalId = null"
     >
       <template #node-instance="{ data }">
-        <div class="box instance">
-          <strong>{{ data.instance.name }}</strong>
-          <span>{{ data.instance.component_name }}</span>
+        <div class="box instance" :title="[data.instance.name, data.instance.component_name].filter(Boolean).join(' ')">
+          <div class="instance-title">
+            <strong>{{ data.instance.name }}</strong>
+            <span>{{ data.instance.component_name }}</span>
+          </div>
           <Handle
             v-for="handle in data.handles"
             :key="handle.id"
@@ -557,17 +612,27 @@ function onEdgeClick(event: { edge: { id: string } }): void {
             :style="handle.style"
             :title="handle.name"
           />
+          <span
+            v-for="label in data.labels"
+            :key="label.id"
+            class="port-name"
+            :class="label.side"
+            :style="{ top: `${label.top}px`, fontSize: `${label.fontSize}px` }"
+            :title="label.title"
+          >{{ label.text }}</span>
         </div>
       </template>
       <template #node-port="{ data }">
-        <div class="box port">
+        <div class="box port" :title="data.tip || data.title">
           <strong>{{ data.title }}</strong>
+          <small v-if="data.caption">{{ data.caption }}</small>
           <Handle :id="data.handleId" type="source" :position="data.side" />
         </div>
       </template>
       <template #node-embedded="{ data }">
         <div class="box embedded">
           <strong>{{ data.block.name }} <span v-if="data.block.number">#{{ data.block.number }}</span></strong>
+          <em>embedded HDL</em>
           <textarea v-model="data.block.text" spellcheck="false" @pointerdown.stop @focus="studio.beginChange()" @blur="studio.endChange()" />
           <Handle id="body" type="source" :position="Position.Left" />
         </div>
@@ -578,9 +643,34 @@ function onEdgeClick(event: { edge: { id: string } }): void {
       <template #node-label="{ data }">
         <input v-model="data.label.text" class="label" @pointerdown.stop @focus="studio.beginChange()" @blur="studio.endChange()" />
       </template>
+      <template #node-signal="{ data }">
+        <div
+          class="signal-label"
+          :class="{ selected: studio.selection?.kind === 'signal' && studio.selection.id === data.wireId }"
+          :style="{ fontSize: `${data.fontSize}px` }"
+          :title="data.title"
+          @dblclick.stop="editingSignalId = data.wireId"
+        >
+          <input
+            v-if="studio.selection?.kind === 'signal' && studio.selection.id === data.wireId && editingSignalId === data.wireId"
+            class="nodrag nopan"
+            :value="data.net.name"
+            @change="renameNet(data.net, $event)"
+            @pointerdown.stop
+            @focus="studio.beginChange()"
+            @blur="studio.endChange()"
+          />
+          <span v-else>{{ data.text }}</span>
+        </div>
+      </template>
       <template #node-routes="{ data }">
         <svg class="routes" :width="data.width" :height="data.height">
-          <polyline v-for="(points, index) in data.routes" :key="index" :points="points" />
+          <polyline
+            v-for="(route, index) in data.routes"
+            :key="index"
+            :points="route.points"
+            :stroke-width="route.width"
+          />
         </svg>
       </template>
       <template #edge-ortho="edgeProps">
@@ -691,12 +781,81 @@ textarea {
   color: #3d3112;
 }
 
+.box.instance,
+.box.port,
+.box.embedded {
+  position: relative;
+}
+
+.box.instance {
+  overflow: hidden;
+  padding: 0;
+}
+
+.box.port,
+.box.embedded {
+  overflow: visible;
+}
+
 .box strong,
-.box span {
+.box span,
+.box small {
   display: block;
   white-space: nowrap;
+}
+
+.box.port strong,
+.box.port small {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.instance-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  max-width: 46%;
+  transform: translate(-50%, -50%);
+  background: inherit;
+  text-align: center;
+  pointer-events: none;
+}
+
+.instance-title strong,
+.instance-title span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.box.embedded em {
+  display: block;
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.port-name {
+  position: absolute;
+  z-index: 2;
+  max-width: calc(50% - 3px);
+  overflow: hidden;
+  color: #163524;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.port-name.left {
+  left: 2px;
+  text-align: left;
+}
+
+.port-name.right {
+  right: 2px;
+  text-align: right;
 }
 
 textarea {
@@ -728,10 +887,38 @@ textarea {
   pointer-events: none;
 }
 
+.signal-label {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  color: #16324f;
+  line-height: 1;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.signal-label.selected {
+  outline: 1px solid #0b5cab;
+  background: rgba(255, 255, 255, 0.92);
+  cursor: move;
+}
+
+.signal-label input {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+}
+
 .routes polyline {
   fill: none;
   stroke: #3d4754;
-  stroke-width: 1.5;
 }
 
 .error {

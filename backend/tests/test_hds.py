@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from app.editing.convert import editable_from_import
 from app.identity import new_id, rebind
 from app.importers.hds.extract import extract_graphical
 from app.importers.hds.grammar import parse_document
@@ -43,9 +44,69 @@ def test_block_diagram_extracts_instance_port_and_wire() -> None:
     assert wire.net_object == 77
     assert [(point.x, point.y) for point in wire.points] == [(-54000, 47000), (-41750, 47000)]
     assert wire.slice_text == "(7 downto 0)"
+    assert wire.label is None
     assert diagram.nets[0].name == "audio_in_left_i"
     assert diagram.embedded_blocks[0].name == "mux"
     assert diagram.embedded_blocks[0].text == "sig_i <= audio_in_left_i;"
+
+
+def test_wire_label_keeps_its_rectangle_and_points() -> None:
+    text = MIN_BD.replace(
+        'on &77\nsl "(7 downto 0)"\n)',
+        'tg (WTG\n'
+        'f (Text\n'
+        'va (VaSet\n'
+        'font "arial,8,0"\n'
+        ')\n'
+        'xt "-52000,46000,-48000,47000"\n'
+        'st "audio_in_left_i"\n'
+        'blo "-52000,46800"\n'
+        'tm "WireNameMgr"\n'
+        ')\n'
+        ')\n'
+        'on &77\n'
+        'sl "(7 downto 0)"\n'
+        ')',
+    )
+    wire = _diagram(text).wires[0]
+    assert [(point.x, point.y) for point in wire.points] == [(-54000, 47000), (-41750, 47000)]
+    assert wire.label is not None
+    assert wire.label.hidden is False
+    assert wire.label.text == "audio_in_left_i"
+    assert (wire.label.x1, wire.label.y1, wire.label.x2, wire.label.y2) == (-52000, 46000, -48000, 47000)
+    copied = editable_from_import(_diagram(text), [])
+    copied_wire = copied.wires[0]
+    assert [(point.x, point.y) for point in copied_wire.points] == [(-54000, 47000), (-41750, 47000)]
+    assert (copied_wire.label_x, copied_wire.label_y, copied_wire.label_width, copied_wire.label_height) == (
+        -52000,
+        47000,
+        4000,
+        1000,
+    )
+    assert copied_wire.label_hidden is False
+
+
+def test_hidden_wire_label_stays_hidden() -> None:
+    text = MIN_BD.replace(
+        'on &77\nsl "(7 downto 0)"\n)',
+        'tg (WTG\n'
+        'f (Text\n'
+        'va (VaSet\n'
+        'isHidden 1\n'
+        'font "arial,8,0"\n'
+        ')\n'
+        'xt "-52000,46000,-48000,47000"\n'
+        'st "audio_in_left_i"\n'
+        'tm "WireNameMgr"\n'
+        ')\n'
+        ')\n'
+        'on &77\n'
+        'sl "(7 downto 0)"\n'
+        ')',
+    )
+    wire = _diagram(text).wires[0]
+    assert wire.label is not None and wire.label.hidden is True
+    assert [(point.x, point.y) for point in wire.points] == [(-54000, 47000), (-41750, 47000)]
 
 
 def test_symbol_and_state_views() -> None:

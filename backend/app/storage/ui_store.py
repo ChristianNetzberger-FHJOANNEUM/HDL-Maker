@@ -1,12 +1,14 @@
 """Remember the library form between browser sessions.
 
 ``workspace/ui.json`` stores the path and name the user typed, the selected
-board, the hierarchy root, and the studio text size. The VHDL language
-standard is project configuration in ``project.json``, not a studio preference.
+board, the hierarchy root, the studio text size, and the port-label form.
+The VHDL language standard is project configuration in ``project.json``, not a studio preference.
 This file does not copy a library or a diagram.
 """
 
 from __future__ import annotations
+
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -22,6 +24,7 @@ class UiSettings(BaseModel):
     board_id: str = ""
     hierarchy_root_id: str = ""
     state_text_px: int = 13
+    port_label_style: Literal["short", "long"] = "short"
 
     @field_validator("state_text_px", mode="before")
     @classmethod
@@ -38,6 +41,11 @@ class UiSettings(BaseModel):
         else:
             return 13
         return min(16, max(8, number))
+
+    @field_validator("port_label_style", mode="before")
+    @classmethod
+    def normalize_port_label_style(cls, value: object) -> str:
+        return "long" if value == "long" else "short"
 
 
 def load_ui() -> UiSettings:

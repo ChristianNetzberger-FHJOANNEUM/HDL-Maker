@@ -8,7 +8,6 @@ import FpgaBuildView from './components/FpgaBuildView.vue'
 import SimulationView from './components/SimulationView.vue'
 import SourceView from './components/SourceView.vue'
 import DiagramEditor from './editors/diagram/DiagramEditor.vue'
-import DiagramView from './editors/diagram/DiagramView.vue'
 import StateEditor from './editors/diagram/StateEditor.vue'
 import SymbolView from './editors/symbol/SymbolView.vue'
 import { useStudioStore } from './stores/studio'
@@ -94,7 +93,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', keepUnsaved))
           />
           <StateEditor v-else-if="studio.tab === 'diagram' && studio.editing && studio.editable?.kind === 'state'" />
           <DiagramEditor v-else-if="studio.tab === 'diagram' && studio.editing" />
-          <DiagramView v-else-if="studio.tab === 'diagram'" :diagram="studio.selectedDiagram" @edit="studio.openEditable()" />
+          <p v-else-if="studio.tab === 'diagram'" class="diagram-note">{{ studio.diagramStatus }}</p>
           <SourceView v-else-if="studio.tab === 'source'" />
           <SimulationView v-else-if="studio.tab === 'simulation'" />
           <FpgaBuildView v-else-if="studio.tab === 'fpga'" />
@@ -107,3 +106,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', keepUnsaved))
     <DiagnosticsPanel />
   </div>
 </template>
+
+<style scoped>
+.diagram-note {
+  margin: 16px;
+  color: #3d4754;
+}
+</style>

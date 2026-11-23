@@ -327,19 +327,15 @@ def test_installed_tools_match_the_o1_counter(workspace: Path) -> None:
         assert run["bitstream_bytes"] == comparison["o1_bitstream_bytes"]
     yosys_log = (Path(run["directory"]) / "yosys.log").read_text(encoding="utf-8", errors="replace")
     assert "27" in yosys_log and "FDRE" in yosys_log
-    destination = REPO / "workspace" / "builds" / "o2a-zybo-counter"
-    if destination.exists():
-        import shutil
+    destination = REPO / "workspace" / "builds" / run["build_id"]
+    from app.fpga.artifacts import archive_build
 
-        shutil.rmtree(destination)
-    import shutil
-
-    shutil.copytree(run["directory"], destination)
-    for name in ("report.json", "manifest.json"):
-        path = destination / name
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        path.write_text(json.dumps(_retarget(payload, run["directory"], str(destination)), indent=2) + "\n", encoding="utf-8")
-    (destination / "o1-comparison.json").write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
+    if archive_build(Path(run["directory"]), destination):
+        for name in ("report.json", "manifest.json"):
+            path = destination / name
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            path.write_text(json.dumps(_retarget(payload, run["directory"], str(destination)), indent=2) + "\n", encoding="utf-8")
+        (destination / "o1-comparison.json").write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
     assert "vivado" not in json.dumps(run["commands"]).lower()
 
 

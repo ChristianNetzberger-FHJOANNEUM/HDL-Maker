@@ -230,21 +230,21 @@ async function onExamples(): Promise<void> {
 
       <h3>Workspace designs</h3>
       <ul>
-        <li v-for="design in studio.designsFor(library.id)" :key="design.id">
+        <li v-for="design in studio.designsFor(library.id).filter((item) => item.origin === 'created')" :key="design.id">
           <button type="button" :class="{ selected: studio.editable?.id === design.id }" @click="studio.openDesign(design.id)">
             {{ design.name }}
-            <span class="role">{{ design.origin === 'created' ? 'new' : 'copy' }}</span>
+            <span class="role">new</span>
           </button>
         </li>
       </ul>
-      <p v-if="studio.designsFor(library.id).length === 0" class="empty">No workspace designs for this library yet.</p>
+      <p v-if="studio.designsFor(library.id).every((item) => item.origin !== 'created')" class="empty">No new designs for this library yet.</p>
 
       <h3>Diagrams</h3>
       <ul>
         <li v-for="diagram in diagramsOf(library)" :key="diagram.id">
           <button
             type="button"
-            :class="{ selected: studio.selectedDiagramId === diagram.id }"
+            :class="{ selected: studio.selectedDiagramId === diagram.id || studio.editable?.provenance.source_diagram_id === diagram.id }"
             @click="studio.selectDiagram(diagram.id)"
           >
             {{ diagram.entity_name || diagram.source_path }}

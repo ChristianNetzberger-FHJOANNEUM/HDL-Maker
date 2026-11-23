@@ -6,6 +6,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { DiagramDocument } from '../../models/design'
 import { useStudioStore } from '../../stores/studio'
 import { fitZoomFor, readableTextBox, usePaneWidth } from './textLayout'
+import { layoutAnchoredPorts, layoutSignalLabels, portCaption, signalStroke, type PortLabel } from './portLabels'
 
 const props = defineProps<{
   diagram: DiagramDocument | null
@@ -43,16 +44,19 @@ interface Box {
   kind: string
   title: string
   subtitle: string
+  tip: string
   x: number
   y: number
   width: number
   height: number
   fontSize: number
   lineHeight: number
+  labels: PortLabel[]
 }
 
 const placed = computed(() => {
   const diagram = props.diagram
+  const labelStyle = studio.portLabelStyle
   if (!diagram) return null
   const xs: number[] = []
   const ys: number[] = []
@@ -61,6 +65,7 @@ const placed = computed(() => {
     kind: string
     title: string
     subtitle: string
+    tip: string
     x1: number
     y1: number
     x2: number
@@ -75,11 +80,12 @@ const placed = computed(() => {
     y1: number | null,
     x2: number | null,
     y2: number | null,
+    tip = '',
   ) {
     if (x1 === null || y1 === null || x2 === null || y2 === null) return
     xs.push(x1, x2)
     ys.push(y1, y2)
-    raw.push({ id, kind, title, subtitle, x1, y1, x2, y2 })
+    raw.push({ id, kind, title, subtitle, tip, x1, y1, x2, y2 })
   }
   for (const instance of diagram.instances) {
     add(
@@ -94,7 +100,7 @@ const placed = computed(() => {
     )
   }
   for (const port of diagram.ports) {
-    add(port.id, 'port', port.name, port.direction ?? '', port.x1, port.y1, port.x2, port.y2)
+    add(port.id, 'port', portCaption(port, labelStyle), '', port.x1, port.y1, port.x2, port.y2, portCaption(port, 'long'))
   }
   for (const block of diagram.embedded_blocks) {
     add(
@@ -142,6 +148,28 @@ const placed = computed(() => {
   const mapX = (value: number) => (value - minX) * scale
   // The source files place titles at a higher Y than the component rectangle.
   const mapY = (value: number) => (maxY - value) * scale
+  const labelsById = new Map<string, PortLabel[]>()
+  for (const instance of diagram.instances) {
+    if (instance.x1 === null || instance.y1 === null || instance.x2 === null || instance.y2 === null) continue
+    const width = Math.max(Math.abs(instance.x2 - instance.x1) * scale, 2)
+    const left = mapX(Math.min(instance.x1, instance.x2))
+    const top = mapY(Math.max(instance.y1, instance.y2))
+    const anchored = instance.ports.flatMap((port) => {
+      if (port.x1 === null || port.y1 === null || port.x2 === null || port.y2 === null) return []
+      return [
+        {
+          id: port.id,
+          name: port.name,
+          direction: port.direction,
+          type_text: port.type_text,
+          range_text: port.range_text,
+          leftPx: mapX((port.x1 + port.x2) / 2) - left,
+          topPx: mapY((port.y1 + port.y2) / 2) - top,
+        },
+      ]
+    })
+    labelsById.set(instance.id, layoutAnchoredPorts(anchored, width, labelStyle))
+  }
   const width = Math.max((maxX - minX) * scale, 1)
   const height = Math.max((maxY - minY) * scale, 1)
   const fitZoom = fitZoomFor(pane.width.value, width)
@@ -159,19 +187,29 @@ const placed = computed(() => {
       kind: box.kind,
       title: box.title,
       subtitle: box.subtitle,
+      tip: box.tip,
       x: left,
       y: top,
       width: readable ? readable.width : importedWidth,
       height: readable ? readable.height : importedHeight,
       fontSize: readable?.fontSize ?? 0,
       lineHeight: readable?.lineHeight ?? 0,
+      labels: labelsById.get(box.id) ?? [],
     }
   })
+  const netByObject = new Map(diagram.nets.filter((net) => net.hds_object !== null).map((net) => [net.hds_object, net]))
   const routes = [
-    ...wires.map((wire) => wire.points.map((point) => `${mapX(point.x)},${mapY(point.y)}`).join(' ')),
-    ...transitions.map((transition) => transition.points.map((point) => `${mapX(point.x)},${mapY(point.y)}`).join(' ')),
+    ...wires.map((wire) => ({
+      points: wire.points.map((point) => `${mapX(point.x)},${mapY(point.y)}`).join(' '),
+      width: signalStroke(wire.net_object === null ? null : netByObject.get(wire.net_object)?.range_text),
+    })),
+    ...transitions.map((transition) => ({
+      points: transition.points.map((point) => `${mapX(point.x)},${mapY(point.y)}`).join(' '),
+      width: 1.5,
+    })),
   ]
-  return { empty: false as const, boxes, routes, width, height }
+  const signalLabels = layoutSignalLabels(wires, diagram.nets, mapX, mapY, labelStyle)
+  return { empty: false as const, boxes, routes, signalLabels, width, height }
 })
 
 watch(
@@ -196,7 +234,7 @@ const nodes = computed(() => {
       connectable: false,
       selectable: false,
       zIndex: 0,
-      data: { routes: layout.routes, width: layout.width, height: layout.height },
+      data: { routes: layout.routes, signalLabels: layout.signalLabels, width: layout.width, height: layout.height },
       style: { width: `${layout.width}px`, height: `${layout.height}px` },
     },
     ...layout.boxes.map((box) => ({
@@ -251,14 +289,48 @@ const note = computed(() => {
         :max-zoom="4"
       >
         <template #node-box="{ data }">
-          <div class="box" :class="data.kind">
-            <strong :style="data.fontSize ? { fontSize: `${data.fontSize}px`, lineHeight: `${data.lineHeight}px` } : undefined">{{ data.title }}</strong>
-            <span v-if="data.subtitle">{{ data.subtitle }}</span>
+          <div
+            class="box"
+            :class="data.kind"
+            :title="data.tip || [data.title, data.subtitle].filter(Boolean).join(' ')"
+          >
+            <div v-if="data.kind === 'instance'" class="instance-title">
+              <strong>{{ data.title }}</strong>
+              <span v-if="data.subtitle">{{ data.subtitle }}</span>
+            </div>
+            <template v-else>
+              <strong :style="data.fontSize ? { fontSize: `${data.fontSize}px`, lineHeight: `${data.lineHeight}px` } : undefined">{{ data.title }}</strong>
+              <span v-if="data.subtitle">{{ data.subtitle }}</span>
+            </template>
+            <em v-if="data.kind === 'embedded'">embedded HDL</em>
+            <span
+              v-for="label in data.labels"
+              :key="label.id"
+              class="port-name"
+              :class="label.side"
+              :style="{ top: `${label.top}px`, fontSize: `${label.fontSize}px` }"
+              :title="label.title"
+            >{{ label.text }}</span>
           </div>
         </template>
         <template #node-routes="{ data }">
           <svg class="routes" :width="data.width" :height="data.height">
-            <polyline v-for="(points, index) in data.routes" :key="index" :points="points" />
+            <polyline
+              v-for="(route, index) in data.routes"
+              :key="index"
+              :points="route.points"
+              :stroke-width="route.width"
+            />
+            <text
+              v-for="label in data.signalLabels"
+              :key="label.id"
+              :x="label.x"
+              :y="label.y"
+              :font-size="label.fontSize"
+              :title="label.title"
+              text-anchor="middle"
+              dominant-baseline="alphabetic"
+            >{{ label.text }}</text>
           </svg>
         </template>
         <Background />
@@ -293,6 +365,7 @@ const note = computed(() => {
   padding: 0;
   border: none;
   background: transparent;
+  overflow: visible;
 }
 
 .note {
@@ -358,12 +431,83 @@ const note = computed(() => {
   overflow-wrap: break-word;
 }
 
-.box strong,
-.box span {
+.box > strong,
+.box > span:not(.port-name) {
   display: block;
   white-space: nowrap;
+}
+
+.box:not(.instance):not(.port) > strong,
+.box:not(.instance):not(.port) > span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.box.instance,
+.box.port {
+  position: relative;
+  overflow: hidden;
+}
+
+.box.instance {
+  padding: 0;
+}
+.box.instance > strong,
+.box.instance > span:not(.port-name) {
+  width: max-content;
+  max-width: 280px;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.box.embedded em {
+  display: block;
+  font-style: normal;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.instance-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  max-width: 46%;
+  transform: translate(-50%, -50%);
+  background: inherit;
+  text-align: center;
+  pointer-events: none;
+}
+
+.instance-title strong,
+.instance-title span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.port-name {
+  position: absolute;
+  z-index: 2;
+  max-width: calc(50% - 3px);
+  overflow: hidden;
+  color: #163524;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.port-name.left {
+  left: 2px;
+  text-align: left;
+}
+
+.port-name.right {
+  right: 2px;
+  text-align: right;
 }
 
 .routes {
@@ -374,11 +518,10 @@ const note = computed(() => {
 .routes polyline {
   fill: none;
   stroke: #3d4754;
-  stroke-width: 1.5;
 }
 
 .routes text {
   fill: #16324f;
-  font-size: 11px;
+  pointer-events: none;
 }
 </style>

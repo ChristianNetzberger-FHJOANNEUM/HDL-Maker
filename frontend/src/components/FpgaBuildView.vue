@@ -25,6 +25,13 @@ const canProgram = computed(() => {
     programmed.value?.status !== 'running'
 })
 void studio.refreshHardware()
+void studio.loadComparison()
+
+function flag(value: boolean | null | undefined): string {
+  if (value === true) return 'yes'
+  if (value === false) return 'no'
+  return 'not run'
+}
 const entities = computed(() =>
   (studio.project?.design_units ?? [])
     .filter((unit) => unit.kind === 'entity' && unit.language === 'vhdl')
@@ -183,7 +190,7 @@ const nextpnr = computed(() => studio.openBuild?.reports?.nextpnr ?? null)
     <section v-if="openSource">
       <h3>Program FPGA</h3>
       <p class="hint">
-        SRAM programming uses the local D2XX build of openFPGALoader. The serial must be interface A. The first FTDI device is not opened, and flash is not written. ftd2xx.dll stays in the Windows installation.
+        This page loads SRAM only. It does not program flash. The serial must be interface A. The first FTDI device is not opened. ftd2xx.dll stays in the Windows installation.
       </p>
       <label for="open-loader">openFPGALoader executable</label>
       <input id="open-loader" :value="studio.openLoaderPath" spellcheck="false" placeholder="Path to the local D2XX openFPGALoader.exe" @input="editLoader" @change="studio.saveOpenLoaderPath()" />
@@ -208,7 +215,7 @@ const nextpnr = computed(() => studio.openBuild?.reports?.nextpnr ?? null)
       <div class="actions">
         <button type="button" :disabled="!canProgram" @click="studio.programOpenDevice()">Program SRAM</button>
       </div>
-      <p v-if="studio.openProgram?.mock">Mock test. The FPGA was not programmed.</p>
+      <p v-if="studio.openProgram?.mock">Mock test. The FPGA was not programmed. A passed build is not a hardware test.</p>
       <p v-else-if="studio.openProgram?.programmed">SRAM programmed {{ studio.openProgram.device_name }}.</p>
       <p v-else-if="studio.openProgram">{{ studio.openProgram.message }}</p>
     </section>
@@ -241,6 +248,59 @@ const nextpnr = computed(() => studio.openBuild?.reports?.nextpnr ?? null)
       <p v-if="studio.hardwareProgram?.mock">Mock test. The FPGA was not programmed.</p>
       <p v-else-if="studio.hardwareProgram?.programmed">Programmed {{ studio.hardwareProgram.device_name }} on {{ studio.hardwareProgram.target }}.</p>
       <p v-else-if="studio.hardwareProgram">{{ studio.hardwareProgram.message }}</p>
+    </section>
+    <section v-if="studio.fpgaComparison">
+      <h3>Toolchain comparison</h3>
+      <p class="hint">{{ studio.fpgaComparison.timing_note }} {{ studio.fpgaComparison.resource_note }} The rows below are the latest passed bitstream of each toolchain. A hardware result names the build and the hash that were programmed.</p>
+      <article v-if="studio.fpgaComparison.vivado">
+        <h4>Vivado {{ studio.fpgaComparison.vivado.build_id }}</h4>
+        <p>Part {{ studio.fpgaComparison.vivado.part }}. VHDL-{{ studio.fpgaComparison.vivado.vhdl_standard }}. Duration {{ studio.fpgaComparison.vivado.elapsed_seconds ?? 'not reported' }} s.</p>
+        <p>
+          Resources: Slice LUTs {{ studio.fpgaComparison.vivado.resources.slice_luts ?? 'not reported' }},
+          registers {{ studio.fpgaComparison.vivado.resources.slice_registers ?? 'not reported' }},
+          CARRY4 {{ studio.fpgaComparison.vivado.resources.carry4 ?? 'not reported' }}.
+          Timing: WNS {{ studio.fpgaComparison.vivado.timing.wns_ns ?? 'not reported' }} ns,
+          WHS {{ studio.fpgaComparison.vivado.timing.whs_ns ?? 'not reported' }} ns ({{ studio.fpgaComparison.vivado.timing.method }}).
+        </p>
+        <p>Warnings: {{ studio.fpgaComparison.vivado.warnings.length }}.</p>
+        <p class="mono">{{ studio.fpgaComparison.vivado.bitstream_sha256 || 'no bitstream hash' }}</p>
+        <p>
+          Build passed {{ flag(studio.fpgaComparison.vivado.validation.build_passed) }}.
+          JTAG detected {{ flag(studio.fpgaComparison.vivado.validation.jtag_detected) }}.
+          Programming completed {{ flag(studio.fpgaComparison.vivado.validation.programming_completed) }}.
+          Hardware function verified {{ flag(studio.fpgaComparison.vivado.validation.hardware_function_verified) }}.
+        </p>
+      </article>
+      <article v-if="studio.fpgaComparison.opensource">
+        <h4>Open Source {{ studio.fpgaComparison.opensource.build_id }}</h4>
+        <p>Part {{ studio.fpgaComparison.opensource.part }}. VHDL-{{ studio.fpgaComparison.opensource.vhdl_standard }}. Duration {{ studio.fpgaComparison.opensource.elapsed_seconds ?? 'not reported' }} s.</p>
+        <p>
+          Resources: SLICE_LUTX {{ studio.fpgaComparison.opensource.resources.slice_lutx ?? 'not reported' }},
+          SLICE_FFX {{ studio.fpgaComparison.opensource.resources.slice_ffx ?? 'not reported' }},
+          CARRY4 {{ studio.fpgaComparison.opensource.resources.carry4 ?? 'not reported' }}.
+          Timing: critical path {{ studio.fpgaComparison.opensource.timing.critical_path_ns ?? 'not reported' }} ns
+          ({{ studio.fpgaComparison.opensource.timing.method }}).
+        </p>
+        <p>Warnings: {{ studio.fpgaComparison.opensource.warnings.length }}.</p>
+        <p class="mono">{{ studio.fpgaComparison.opensource.bitstream_sha256 || 'no bitstream hash' }}</p>
+        <p>
+          Build passed {{ flag(studio.fpgaComparison.opensource.validation.build_passed) }}.
+          JTAG detected {{ flag(studio.fpgaComparison.opensource.validation.jtag_detected) }}.
+          Programming completed {{ flag(studio.fpgaComparison.opensource.validation.programming_completed) }}.
+          Hardware function verified {{ flag(studio.fpgaComparison.opensource.validation.hardware_function_verified) }}.
+        </p>
+      </article>
+      <h4>Recorded hardware results</h4>
+      <ul>
+        <li v-for="item in studio.fpgaComparison.validations" :key="item.validation_id">
+          {{ item.toolchain }} {{ item.build_id || 'no build' }}
+          {{ item.bitstream_sha256 || 'no bitstream hash' }}.
+          Build {{ flag(item.build_passed) }}, JTAG {{ flag(item.jtag_detected) }},
+          programming {{ flag(item.programming_completed) }}, function {{ flag(item.hardware_function_verified) }}.
+          {{ item.bitstream_sha256 ? (item.file_present ? 'Bitstream file present.' : 'Bitstream file is not in the workspace.') : 'No bitstream was loaded.' }}
+          {{ item.evidence }}
+        </li>
+      </ul>
     </section>
   </div>
 </template>

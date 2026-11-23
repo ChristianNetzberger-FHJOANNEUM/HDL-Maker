@@ -92,6 +92,11 @@ export interface EditableWire {
   end: WireEnd | null
   slice_text: string | null
   hds_object: number | null
+  label_x?: number | null
+  label_y?: number | null
+  label_width?: number | null
+  label_height?: number | null
+  label_hidden?: boolean
 }
 
 export interface NetEndpoint {

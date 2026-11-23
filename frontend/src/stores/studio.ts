@@ -2,8 +2,8 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import type { DesignUnit, DiagramDocument, FpgaBuildConfig, Health, Library, ProjectFile, SimulationConfig, SourceText } from '../models/design'
 import type { EditableDiagram, EditableSummary } from '../models/editable'
-import { createDesign, createEditableDiagram, generateStructural, getBoards, getEditableDiagram, getExamplesPath, getHealth, cancelFpgaBuild, cancelSimulation, checkOpenSource, checkVivado, getFpgaBuild, getFpgaReport, getHardwareScan, getLatestBitstream, getLatestFpgaBuild, getLatestOpenBuild, getLatestSimulation, getOpenBuild, getOpenProgram, getOpenScan, getOpenSourceTools, getProgram, getProject, getSimulationRun, getSource, getTools, getUiSettings, listEditableDiagrams, openWaveform, saveEditableDiagram, saveFpga, saveLibraryProfile, saveOpenSourceTools, saveSimulation, saveTools, saveUiSettings, saveVhdlStandard, scanLibrary, startFpgaBuild, startHardwareScan, startOpenBuild, startOpenProgram, startOpenScan, startProgram, startSimulation } from '../services/api'
-import type { BoardProfile, FpgaBuild, GenerateResult, HwProgram, HwScan, OpenCheck, OpenProgram, OpenScan, OpenSourceBuild, OpenSourceTools, SimulationRun } from '../services/api'
+import { createDesign, createEditableDiagram, generateStructural, getBoards, getEditableDiagram, getExamplesPath, getHealth, cancelFpgaBuild, cancelSimulation, checkOpenSource, checkVivado, getFpgaBuild, getFpgaReport, getHardwareScan, getLatestBitstream, getLatestFpgaBuild, getLatestOpenBuild, getLatestSimulation, getOpenBuild, getOpenProgram, getOpenScan, getFpgaComparison, getOpenSourceTools, getProgram, getProject, getSimulationRun, getSource, getTools, getUiSettings, listEditableDiagrams, openWaveform, saveEditableDiagram, saveFpga, saveLibraryProfile, saveOpenSourceTools, saveSimulation, saveTools, saveUiSettings, saveVhdlStandard, scanLibrary, startFpgaBuild, startHardwareScan, startOpenBuild, startOpenProgram, startOpenScan, startProgram, startSimulation } from '../services/api'
+import type { BoardProfile, FpgaBuild, FpgaComparison, GenerateResult, HwProgram, HwScan, OpenCheck, OpenProgram, OpenScan, OpenSourceBuild, OpenSourceTools, SimulationRun } from '../services/api'
 
 function clampTextPx(value: number): number {
   if (!Number.isFinite(value)) return 13
@@ -28,6 +28,7 @@ export const useStudioStore = defineStore('studio', () => {
   const boardsLoaded = ref(false)
   const hierarchyRootId = ref('')
   const stateTextPx = ref(13)
+  const portLabelStyle = ref<'short' | 'long'>('short')
   const vhdlStandard = ref<'93' | '2008'>('93')
   const libraryProfile = ref<'ieee' | 'synopsys'>('ieee')
   const simulation = ref<SimulationConfig>({
@@ -56,6 +57,7 @@ export const useStudioStore = defineStore('studio', () => {
   const hardwareProgram = ref<HwProgram | null>(null)
   const openScan = ref<OpenScan | null>(null)
   const openProgram = ref<OpenProgram | null>(null)
+  const fpgaComparison = ref<FpgaComparison | null>(null)
   const selectedDeviceId = ref('')
   const programConfirm = ref(false)
   const fpgaNote = ref('')
@@ -72,6 +74,8 @@ export const useStudioStore = defineStore('studio', () => {
   const uiReady = ref(false)
   const editable = ref<EditableDiagram | null>(null)
   const editing = ref(false)
+  const diagramBusy = ref(false)
+  const openingDiagrams = new Map<string, Promise<void>>()
   const dirty = ref(false)
   const selection = ref<{ kind: string; id: string } | null>(null)
   const past = ref<string[]>([])
@@ -286,6 +290,14 @@ export const useStudioStore = defineStore('studio', () => {
     }
   }
 
+  async function loadComparison(): Promise<void> {
+    try {
+      fpgaComparison.value = await getFpgaComparison()
+    } catch {
+      fpgaComparison.value = null
+    }
+  }
+
   async function refreshHardware(): Promise<void> {
     if (fpga.value.toolchain === 'opensource') {
       fpgaBitstream.value = openBuild.value?.status === 'passed' && openBuild.value.bitstream_path ? openBuild.value : null
@@ -482,6 +494,7 @@ export const useStudioStore = defineStore('studio', () => {
       boardId.value = settings.board_id || ''
       hierarchyRootId.value = settings.hierarchy_root_id || ''
       stateTextPx.value = clampTextPx(settings.state_text_px)
+      portLabelStyle.value = settings.port_label_style === 'long' ? 'long' : 'short'
       const catalog = await getBoards()
       boards.value = catalog.boards
       boardsLoaded.value = true
@@ -509,6 +522,7 @@ export const useStudioStore = defineStore('studio', () => {
         board_id: boardId.value,
         hierarchy_root_id: hierarchyRootId.value,
         state_text_px: stateTextPx.value,
+        port_label_style: portLabelStyle.value,
       }).catch((reason: unknown) => {
         error.value = reason instanceof Error ? reason.message : 'The library path could not be saved.'
       })
@@ -525,6 +539,10 @@ export const useStudioStore = defineStore('studio', () => {
 
   function setStateTextPx(value: number): void {
     stateTextPx.value = clampTextPx(value)
+  }
+
+  function setPortLabelStyle(value: 'short' | 'long'): void {
+    portLabelStyle.value = value
   }
 
   async function setVhdlStandard(value: '93' | '2008'): Promise<void> {
@@ -632,7 +650,7 @@ export const useStudioStore = defineStore('studio', () => {
     }
   }
 
-  watch([libraryPath, libraryName, includeSideData, boardId, hierarchyRootId, stateTextPx], rememberLibraryForm)
+  watch([libraryPath, libraryName, includeSideData, boardId, hierarchyRootId, stateTextPx, portLabelStyle], rememberLibraryForm)
 
   async function scan(path: string, libraryName: string, includeSideData = false): Promise<void> {
     busy.value = true
@@ -644,7 +662,7 @@ export const useStudioStore = defineStore('studio', () => {
       const block =
         diagrams.value.find((diagram) => diagram.source_path.endsWith('audio_gain/struct.bd')) ??
         diagrams.value.find((diagram) => diagram.view === 'block')
-      if (block) selectDiagram(block.id)
+      if (block) await selectDiagram(block.id)
     } catch (reason) {
       error.value = reason instanceof Error ? reason.message : 'The library scan failed.'
     } finally {
@@ -670,10 +688,72 @@ export const useStudioStore = defineStore('studio', () => {
     }
   }
 
-  function selectDiagram(diagramId: string): void {
+  const diagramStatus = computed(() => {
+    if (diagramBusy.value) return 'Opening the diagram…'
+    const diagram = selectedDiagram.value
+    if (!diagram) return 'Select a diagram in the library tree.'
+    if (diagram.view !== 'block' && diagram.view !== 'state') return 'This file is not a block or state diagram.'
+    if (!editing.value) return error.value || 'The diagram could not be opened.'
+    return ''
+  })
+
+  function selectDiagram(diagramId: string): Promise<void> {
+    const pending = openingDiagrams.get(diagramId)
+    if (pending) {
+      selectedDiagramId.value = diagramId
+      tab.value = 'diagram'
+      return pending
+    }
+    const task = openImportedDiagram(diagramId)
+    openingDiagrams.set(diagramId, task)
+    void task.finally(() => {
+      if (openingDiagrams.get(diagramId) === task) openingDiagrams.delete(diagramId)
+    })
+    return task
+  }
+
+  async function openImportedDiagram(diagramId: string): Promise<void> {
+    const diagram = diagrams.value.find((item) => item.id === diagramId) ?? null
+    if (editable.value?.provenance.source_diagram_id === diagramId && editing.value) {
+      selectedDiagramId.value = diagramId
+      tab.value = 'diagram'
+      return
+    }
+    if (!confirmDirty('The open diagram has unsaved changes. Open this diagram anyway?')) return
+    const previousSelection = selectedDiagramId.value
+    const previousHierarchy = hierarchy.value
+    const wasEditing = editing.value
     selectedDiagramId.value = diagramId
-    editing.value = false
     tab.value = 'diagram'
+    hierarchy.value = []
+    if (!diagram || (diagram.view !== 'block' && diagram.view !== 'state')) {
+      editing.value = false
+      return
+    }
+    error.value = ''
+    diagramBusy.value = true
+    editing.value = false
+    try {
+      const doc = await createEditableDiagram(diagramId)
+      if (selectedDiagramId.value !== diagramId) return
+      editable.value = doc
+      past.value = []
+      future.value = []
+      savedJson = JSON.stringify(doc)
+      dirty.value = false
+      selection.value = null
+      editing.value = true
+      await refreshDesigns()
+    } catch (reason) {
+      if (selectedDiagramId.value === diagramId) {
+        selectedDiagramId.value = previousSelection
+        hierarchy.value = previousHierarchy
+        editing.value = wasEditing
+        error.value = reason instanceof Error ? reason.message : 'The diagram could not be opened.'
+      }
+    } finally {
+      diagramBusy.value = false
+    }
   }
 
   function commit(): void {
@@ -715,26 +795,7 @@ export const useStudioStore = defineStore('studio', () => {
   async function openEditable(sourceId?: string): Promise<void> {
     const id = sourceId ?? selectedDiagramId.value
     if (!id) return
-    if (editable.value?.provenance.source_diagram_id === id) {
-      editing.value = true
-      tab.value = 'diagram'
-      return
-    }
-    if (!confirmDirty('The open diagram has unsaved changes. Open another copy anyway?')) return
-    hierarchy.value = []
-    error.value = ''
-    try {
-      editable.value = await createEditableDiagram(id)
-      past.value = []
-      future.value = []
-      savedJson = JSON.stringify(editable.value)
-      dirty.value = false
-      selection.value = null
-      editing.value = true
-      tab.value = 'diagram'
-    } catch (reason) {
-      error.value = reason instanceof Error ? reason.message : 'The editable diagram could not be opened.'
-    }
+    await selectDiagram(id)
   }
 
   async function saveEditable(): Promise<void> {
@@ -753,10 +814,6 @@ export const useStudioStore = defineStore('studio', () => {
     } catch (reason) {
       error.value = reason instanceof Error ? reason.message : 'The diagram could not be saved.'
     }
-  }
-
-  function showOriginal(): void {
-    editing.value = false
   }
 
   function confirmDirty(message: string): boolean {
@@ -912,6 +969,8 @@ export const useStudioStore = defineStore('studio', () => {
     hierarchyRootId,
     stateTextPx,
     setStateTextPx,
+    portLabelStyle,
+    setPortLabelStyle,
     vhdlStandard,
     libraryProfile,
     simulation,
@@ -931,6 +990,8 @@ export const useStudioStore = defineStore('studio', () => {
     hardwareProgram,
     openScan,
     openProgram,
+    fpgaComparison,
+    loadComparison,
     selectedDeviceId,
     programConfirm,
     fpgaNote,
@@ -967,6 +1028,7 @@ export const useStudioStore = defineStore('studio', () => {
     loadUi,
     editable,
     editing,
+    diagramStatus,
     dirty,
     selection,
     canUndo: computed(() => past.value.length > 0),
@@ -978,7 +1040,6 @@ export const useStudioStore = defineStore('studio', () => {
     redo,
     openEditable,
     saveEditable,
-    showOriginal,
     designs,
     hierarchy,
     designsFor,

@@ -301,8 +301,17 @@ def _execute_scan(scan: dict, runner) -> dict:
         if scan["mock"]:
             scan["message"] = f"Mock scan. {scan['message']} The FPGA was not programmed."
     scan["programmed"] = False
-    scan["jtag_download"] = "not_run_mock" if scan["mock"] else "not_tested_no_hardware"
-    return _finish_scan(scan)
+    if scan["mock"]:
+        scan["jtag_download"] = "not_run_mock"
+    elif scan["status"] == "devices":
+        scan["jtag_download"] = "detected"
+    else:
+        scan["jtag_download"] = "not_tested_no_hardware"
+    finished = _finish_scan(scan)
+    from app.fpga.artifacts import note_jtag_detect
+
+    note_jtag_detect(finished)
+    return finished
 
 
 def _execute_program(program: dict, runner) -> dict:
@@ -333,7 +342,11 @@ def _execute_program(program: dict, runner) -> dict:
         program["programmed"] = False
         program["jtag_download"] = "failed"
         program["message"] = "SRAM programming failed. It was not repeated."
-    return _finish_program(program)
+    finished = _finish_program(program)
+    from app.fpga.artifacts import note_sram_programmed
+
+    note_sram_programmed(finished)
+    return finished
 
 
 def _scan_worker(scan: dict, runner) -> None:
