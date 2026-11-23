@@ -260,6 +260,8 @@ def latest_bitstream() -> dict | None:
             payload = json.loads(report.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        if payload.get("toolchain") == "opensource":
+            continue
         if payload.get("target") == "bitstream" and payload.get("status") == "passed" and payload.get("bitstream_path"):
             runs.append(payload)
     if not runs:
@@ -282,6 +284,14 @@ def _prepare_program(request: FpgaProgramRequest) -> dict:
         diagnostics.append(_error("scan_failed", "The hardware scan failed. Nothing was programmed.", request.scan_id))
     if build is None:
         diagnostics.append(_error("bitstream_not_ready", "Choose a bitstream build that finished.", request.build_id))
+    elif build.get("toolchain") == "opensource":
+        diagnostics.append(
+            _error(
+                "opensource_not_programmed",
+                "This bitstream comes from the open-source flow. That flow does not program the FPGA.",
+                request.build_id,
+            )
+        )
     elif build.get("target") != "bitstream" or build.get("status") != "passed":
         diagnostics.append(_error("bitstream_not_ready", "Programming needs a finished bitstream build. Synthesis is not enough.", request.build_id))
     elif not build.get("part"):

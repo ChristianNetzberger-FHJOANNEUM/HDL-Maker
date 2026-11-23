@@ -105,6 +105,7 @@ export interface FpgaBuildConfig {
   part: string
   xdc_paths: string[]
   target: 'synthesis' | 'bitstream'
+  toolchain: 'vivado' | 'opensource'
 }
 
 export interface ProjectFile {

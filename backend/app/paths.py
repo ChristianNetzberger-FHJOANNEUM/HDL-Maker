@@ -115,6 +115,11 @@ def tools_file() -> Path:
     return workspace_dir() / "tools.json"
 
 
+def opensource_tools_file() -> Path:
+    """Local open-source FPGA tool paths. Not the Vivado path and not a diagram."""
+    return workspace_dir() / "opensource-tools.json"
+
+
 def examples_dir() -> Path:
     return repo_root() / "examples"
 

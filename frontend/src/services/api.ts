@@ -153,6 +153,128 @@ export function getFpgaReport(buildId: string, name: string): Promise<{ name: st
   return request(`/api/fpga/builds/${buildId}/reports/${name}`)
 }
 
+export interface OpenSourceBuild {
+  build_id: string
+  toolchain: string
+  status: 'running' | 'passed' | 'failed'
+  target: string
+  top: string
+  part: string
+  directory: string
+  vhdl_standard: '93' | '2008'
+  stages: Record<string, 'not_run' | 'running' | 'passed' | 'failed'>
+  diagnostics: Diagnostic[]
+  bitstream_path: string | null
+  bitstream_bytes: number | null
+  reports: {
+    nextpnr?: {
+      slice_lutx: number | null
+      slice_ffx: number | null
+      carry4: number | null
+      critical_path_ns: number | null
+      logic_ns: number | null
+      routing_ns: number | null
+      max_frequency_mhz: number | null
+    }
+  }
+}
+
+export interface OpenSourceTools {
+  ghdl_path: string
+  yosys_path: string
+  nextpnr_xilinx_path: string
+  fasm2frames_path: string
+  xc7frames2bit_path: string
+  prjxray_db_path: string
+  openfpga_loader_path: string
+}
+
+export interface OpenCheck {
+  ok: boolean
+  tools: Record<string, { path: string | null; version: string | null; ok: boolean; code: string | null }>
+  database: { zynq7: string | null }
+}
+
+export function getOpenSourceTools(): Promise<OpenSourceTools> {
+  return request<OpenSourceTools>('/api/fpga/opensource/tools')
+}
+
+export function saveOpenSourceTools(settings: OpenSourceTools): Promise<OpenSourceTools> {
+  return request<OpenSourceTools>('/api/fpga/opensource/tools', {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  })
+}
+
+export function checkOpenSource(): Promise<OpenCheck> {
+  return request<OpenCheck>('/api/fpga/opensource/check', { method: 'POST' })
+}
+
+export function startOpenBuild(): Promise<OpenSourceBuild> {
+  return request<OpenSourceBuild>('/api/fpga/opensource/builds', { method: 'POST' })
+}
+
+export function getOpenBuild(buildId: string): Promise<OpenSourceBuild> {
+  return request<OpenSourceBuild>(`/api/fpga/opensource/builds/${buildId}`)
+}
+
+export function getLatestOpenBuild(): Promise<OpenSourceBuild | null> {
+  return request<OpenSourceBuild | null>('/api/fpga/opensource/builds/latest')
+}
+
+export interface OpenDevice {
+  device_id: string
+  name: string
+  kind: string
+  part: string
+  idcode: string
+  raw_idcode: string | null
+  matches_part: boolean
+}
+
+export interface OpenScan {
+  scan_id: string
+  status: 'running' | 'devices' | 'failed'
+  mock: boolean
+  programmed: boolean
+  serial: string
+  part: string
+  devices: OpenDevice[]
+  message: string
+}
+
+export interface OpenProgram {
+  program_id: string
+  status: 'running' | 'failed' | 'mock_passed' | 'passed'
+  mock: boolean
+  programmed: boolean
+  mode: string
+  message: string
+  device_name: string
+}
+
+export function startOpenScan(serial: string): Promise<OpenScan> {
+  return request<OpenScan>('/api/fpga/opensource/hardware/scans', {
+    method: 'POST',
+    body: JSON.stringify({ serial }),
+  })
+}
+
+export function getOpenScan(scanId: string): Promise<OpenScan> {
+  return request<OpenScan>(`/api/fpga/opensource/hardware/scans/${scanId}`)
+}
+
+export function startOpenProgram(body: { scan_id: string; device_id: string; build_id: string; confirm: boolean }): Promise<OpenProgram> {
+  return request<OpenProgram>('/api/fpga/opensource/hardware/programs', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getOpenProgram(programId: string): Promise<OpenProgram> {
+  return request<OpenProgram>(`/api/fpga/opensource/hardware/programs/${programId}`)
+}
+
 export interface HwDevice {
   device_id: string
   target: string

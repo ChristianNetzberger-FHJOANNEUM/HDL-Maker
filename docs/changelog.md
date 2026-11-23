@@ -111,5 +111,40 @@
 - A JTAG part such as `xc7z010` matches the bitstream part `xc7z010clg400-1`. A different part, including an ARM DAP, is rejected.
 - A mock program is stored as `mock_passed` with `programmed` false. It is not reported as a programmed FPGA.
 - With no board connected, Vivado 2019.1 reports `Labtoolstcl 44-199`. That earlier result stays `not_tested_no_hardware`.
-- On a Zybo Z7-20, device `xc7z020_1` was programmed from the `xc7z020clg400-1` bitstream. JTAG programming, the DONE pin, and the LED0 counter are recorded separately. All three are tested on hardware. `Labtoolstcl 44-560` did not block the download and is left for a later Tcl cleanup.
+- M5b is **Tested on hardware**. Vivado v2019.1, part `xc7z020clg400-1`, build `bld_34d0198b02b84f73b25a8aa305579d5a`, program `prg_c96275d4116948768d5c9c8079532cc8`. DONE was HIGH and LED0 blinked at about 1.07 s. `ZPS7-1` and `Labtoolstcl 44-560` are warnings, not failures. The Zybo Z7-20 is the board for the toolchain comparison. The Z7-10 example is unchanged.
 - DRC ZPS7-1 remains a warning on the PL-only counter. The reference design was not given a PS7 cell. Details: `docs/m5b-jtag.md`.
+
+### O1
+
+- The Windows openXC7 tag `2026-11-19` and OSS CAD Suite tag `2026-11-04` were extracted under `workspace/toolchains/o1/`. Vivado and the installed GHDL were not changed.
+- `zybo_counter` VHDL-93 was synthesized with GHDL `--out=verilog` and Yosys `synth_xilinx`, then placed with nextpnr-xilinx for `xc7z020clg400-1`. The bitstream is 4,045,674 bytes. It was not programmed, and the flow is not in the interface.
+- The Windows Yosys bundle has no GHDL plugin. Details and the Vivado comparison: `docs/o1-open-source-toolchain.md`.
+
+### O2a
+
+- The open-source chain is a backend build for VHDL-93: GHDL Verilog, Yosys, nextpnr-xilinx, fasm2frames, and xc7frames2bit. Tool paths are `workspace/opensource-tools.json`. The process `PATH` is unchanged, and Vivado is not called.
+- Build `osb_574eb1ad8c3b4ac8a36b359745d3534d` repeats the Z7-20 counter. The nextpnr counts match the O1 log, and the bitstream is 4,045,674 bytes. It was not programmed. Details: `docs/o2a-open-source-build.md`.
+
+### O3a
+
+- The FPGA Build tab can store Vivado or Open Source on the project and run the existing O2a builder. SRAM programming goes through a local openFPGALoader path, requires interface A and a confirmation, and was tested with a mock. The board was not programmed again. Details: `docs/o3a-fpga-build.md`.
+
+### O2b.3
+
+- The checked open-source bitstream was loaded into the Zybo Z7-20 SRAM through the D2XX transport. Exit code 0. JTAG DONE bit 1. No flash. The DONE LED was green and LED0 blinked about once per second. O2b is Tested on hardware. Details: `docs/o2b-open-source-hardware.md`.
+
+### O2b.2
+
+- Experimental Windows D2XX transport under openFPGALoader's MPSSE layer. Detect at 1 MHz printed raw IDCODEs `0x23727093` and `0x4BA00477`. Vivado 2019.1 still sees that chain, and COM20 is still interface B. The FPGA was not programmed. Details: `docs/o2b2-d2xx-transport.md`.
+
+### O2b.1
+
+- Study only. The recommended next build is a D2XX transport under openFPGALoader, leaving the Xilinx programmer unchanged. UrJTAG was not installed. No driver change and no FPGA load. Details: `docs/o2b1-d2xx-programming.md`.
+
+### O2b
+
+- The O2a bitstream was later loaded into SRAM. See O2b.3. The OSS CAD Suite `openFPGALoader.exe` still fails to open the Digilent cable while `FTDIBUS` is installed. A read-only D2XX scan saw IDCODEs `0x23727093` and `0x4BA00477`. No driver was changed. Details: `docs/o2b-open-source-hardware.md`.
+
+### O5
+
+- Roadmap and architecture only. O5 is a long-term international distribution study and does not block O2, O3, or O4. The MIT licence is unchanged. No export clearance is claimed. Details: `docs/international-open-source-distribution.md`.

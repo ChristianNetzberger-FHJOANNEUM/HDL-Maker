@@ -247,7 +247,21 @@ def latest_build() -> dict | None:
     with _LOCK:
         if _RUNS:
             return max(_RUNS.values(), key=lambda item: item["started_at"])
-    runs = [path for path in builds_dir().iterdir() if (path / "report.json").is_file()]
+    runs = []
+    root = builds_dir()
+    if not root.is_dir():
+        return None
+    for path in root.iterdir():
+        report = path / "report.json"
+        if not report.is_file():
+            continue
+        try:
+            payload = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if payload.get("toolchain") == "opensource":
+            continue
+        runs.append(path)
     if not runs:
         return None
     newest = max(runs, key=lambda path: path.stat().st_mtime)

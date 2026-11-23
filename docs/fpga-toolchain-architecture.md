@@ -47,7 +47,7 @@ The tiers below are installation choices. They are not license editions.
 | --- | --- | --- | --- |
 | HDL-Maker Core | HDL-Maker, GHDL, optional GTKWave | HDL design and simulation, including students without an FPGA toolchain | Implemented through M4a.1. The existing student ZIP predates M2c. |
 | HDL-Maker + Vivado | A Vivado install the user is allowed to run | FPGA builds with the vendor flow, including larger Zynq designs | Branch V. M5a implemented. M5b tested on hardware: JTAG download, DONE pin, and LED0 counter. |
-| HDL-Maker + Open Source | GHDL, Yosys, nextpnr, and the bitstream tools that flow requires | FPGA builds without Vivado, for devices a study has actually built | Branch O. Planned. Experimental. Not installed and not run. |
+| HDL-Maker + Open Source | GHDL, Yosys, nextpnr, and the bitstream tools that flow requires | FPGA builds without Vivado, for devices a study has actually built | Branch O. O1 investigated locally. Not a product backend. |
 | HDL-Maker Remote Build | Local HDL-Maker, toolchain on an authorized server | Teaching labs that keep one toolchain install | Branch R. Planned. Not implemented. License unresolved. |
 
 Vivado is the vendor-supported flow for designs that need it, including Zynq work that is outside the current PL-only counter. That is not a claim that every design finishes faster under Vivado. The open-source tier lists only boards and devices for which a backend has recorded a real build. There is no promise that every FPGA works with every toolchain.
@@ -99,50 +99,47 @@ V1 reads the existing Vivado 2019.1 installation and separates four questions:
 3. Which local use the installed entitlement allows.
 4. Which of those files, if any, may be redistributed.
 
-The size of the installed tree is the reason for the study. It was not remeasured for this document. The study does not copy Vivado into an HDL-Maker package.
+The installed tree at `C:\Xilinx\Vivado\2019.1` measures 19,808,638,819 bytes. The study does not copy Vivado into an HDL-Maker package.
 
 AMD publishes more than one Vivado entitlement. This document does not record which entitlement is installed here, and it does not treat a right to launch `vivado.bat` as a right to ship the binaries.
 
 ## Branch O — open-source FPGA tools
 
-Audience: students and developers who do not have Vivado. The branch is experimental until a reference build passes.
+Audience: students and developers who do not have Vivado. The branch is experimental. O1 wrote a bitstream for one counter and did not program it.
 
-Components to inspect, and not yet to install:
+The Windows tools inspected for O1, and extracted under the gitignored `workspace/toolchains/o1/`:
 
-- GHDL and Yosys for VHDL synthesis.
-- Yosys for logic synthesis.
-- nextpnr-xilinx / openXC7 for Xilinx 7-series place and route.
-- Project X-Ray and FASM for bitstream generation.
-- openFPGALoader for programming.
-- OSS CAD Suite and Apio as possible ways to obtain those tools.
+- GHDL 6.0.0, already installed, emits Verilog. The Windows Yosys bundle has no GHDL plugin.
+- Yosys from OSS CAD Suite tag `2026-11-04` for `synth_xilinx`.
+- nextpnr-xilinx from openXC7 tag `2026-11-19` for place and route.
+- Project X-Ray, FASM, and the `xc7z020clg400-1` database for the bitstream.
+- openFPGALoader v1.2.0, present and not run.
+- Apio, described by the openXC7 installer and not installed.
 
-Published Windows x64 packages have been described for nextpnr-xilinx, bitstream tools, and device data that mention the Zybo Z7-10. This repository has not downloaded those packages, has not read their licenses, and has not run them. nextpnr's Xilinx 7-series support is described by that project as experimental. VHDL synthesis through GHDL/Yosys, timing, and board behavior remain untested here. A device database is not a completed implementation flow.
+The measurements, licenses, and the command sequence are in [o1-open-source-toolchain.md](o1-open-source-toolchain.md).
 
 | Item | Status |
 | --- | --- |
-| O1 feasibility on Windows 11 | Planned. License unresolved. |
-| O2 reference build of `zybo_counter` | Planned. Hardware test stays open while no Zybo is attached. |
-| O3 backend behind this boundary | Planned. Starts only after O1 and O2. |
-| O4 portable student edition | Planned. License unresolved. |
+| O1 feasibility on Windows 11 | Investigated. Bitstream written. Not programmed. |
+| O2a repeatable build of `zybo_counter` | In the backend. Not programmed. |
+| O2b program that bitstream | Tested on hardware. Green DONE LED. LED0 about 1 s. |
+| O3 backend behind this boundary | O3a in the FPGA Build tab. Not programmed again. |
+| O4 portable student edition | Planned. The Windows bundle does not include the GHDL plugin. |
+| O5 international distribution | Planned. License unresolved. Does not block O2, O3, or O4. |
 
-O1 records, from the packages it actually inspects:
+O1 ran the existing `zybo_counter` VHDL-93 and the Z7-20 XDC. `xc7z020clg400-1` was implemented, not only named: nextpnr-xilinx placed it and `xc7frames2bit` wrote 4,045,674 bytes. The comparison with Vivado build `bld_34d0198b02b84f73b25a8aa305579d5a` is in the O1 report. VHDL-2008 was not run. The design stays PL-only, with no PS7 cell. openFPGALoader was not pointed at the board. `examples/fpga/zybo-z7-10-counter` stays unchanged.
 
-- Which Windows binaries exist.
-- The license of every program and every device database.
-- Install size and archive size.
-- Whether VHDL-93 and VHDL-2008 are accepted, and which constructs are refused.
-- Whether `xc7z010clg400-1` is a device the tools can implement, not only a name in a database.
-- Which constraint form the tools read.
-- What a Zynq PS/PL design can and cannot do. The current reference counter is PL-only.
-- Which JTAG programmer the tools can drive.
+O2a wraps that command sequence. The backend entry points are under `/api/fpga/opensource/`. They do not call Vivado. O3a calls them from the FPGA Build tab. They do not program the FPGA by themselves. The Z7-20 run is recorded in [o2a-open-source-build.md](o2a-open-source-build.md).
 
-O2 uses the same `examples/fpga/zybo-z7-10-counter` sources as M5a and does not call Vivado. It records build success, resources, timing, runtime, memory, warnings, and bitstream size, beside the Vivado 2019.1 numbers. Without a board, programming and the LED counter stay `not_tested_no_hardware`.
+O2b is Tested on hardware. The open-source bitstream was loaded into SRAM through a Windows D2XX build. The DONE LED was green and LED0 blinked about once per second. The OSS CAD Suite `openFPGALoader.exe` still uses libusb and cannot open `FTDIBUS`. That build is not part of the Python backend. The record is [o2b-open-source-hardware.md](o2b-open-source-hardware.md).
 
-O3 adds the backend only after that evidence exists. Diagram JSON and VHDL generation stay unchanged.
+O3a is that studio backend. Diagram JSON and VHDL generation stay unchanged. The record is [o3a-fpga-build.md](o3a-fpga-build.md).
 
-O4 asks whether a Windows ZIP should contain HDL-Maker plus the free tools, or whether HDL-Maker should stay small and the toolchain should be a separate download. Both answers require the licenses and redistribution terms of every component. A single large ZIP is not assumed to be better.
+O4 asks whether a Windows ZIP should contain HDL-Maker plus the free tools, or whether HDL-Maker should stay small and the toolchain should be a separate download. The Windows OSS CAD Suite does not contain the GHDL Yosys plugin, so a student package still needs the separate GHDL step. A single large ZIP is not assumed to be better. O5 is the later question of an international education pack and the export-control reading. It is specified in [international-open-source-distribution.md](international-open-source-distribution.md) and does not block O2, O3, or O4.
 
-A later studio view can place the Vivado report and the open-source report for this one counter side by side: resources, timing, and duration. That view waits until O2 has numbers. It is not implemented.
+The studio documents already stay one model for every backend. VHDL is generated once. A backend that cannot accept a construct reports it. It does not receive another generator. Capability profiles and an open constraint form are O5e and are not built. A right to run GHDL or Yosys on this machine is not a right to put those binaries in a public international package.
+
+The O1 report places the Vivado and open-source numbers for this one counter side by side. A studio view of those reports is not implemented.
 
 ## Branch U — further devices
 
@@ -154,4 +151,4 @@ Planned as an optional investigation for a university lab. HDL-Maker stays on th
 
 ## Decision order
 
-M5b has programmed a Zybo Z7-20. The next investigations are the V1 study, then the O1 study, then a decision on whether to implement an open-source backend. Branch U and branch R wait. None of V, O, U, or R is a required next milestone after M5b. The core remains usable with GHDL alone.
+M5b is **Tested on hardware** on a Zybo Z7-20. O2a repeats the open-source build in the backend. The next study is O2b, programming that bitstream, before any studio backend. V1 is prepared and is not the next study. O5 is a long-term distribution study and does not change this order. Branch U and branch R wait. None of V, O, U, R, or O5 is a required product edition. The core remains usable with GHDL alone. Open-source publication is not an export clearance.

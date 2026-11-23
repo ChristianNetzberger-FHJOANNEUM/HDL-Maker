@@ -2,7 +2,7 @@
 
 This is the reference for HDL-Maker milestone order and scope. Later work follows this file. A change of order or scope is recorded here in the same change that introduces it.
 
-The teaching milestones M0–M6 are one development line. An FPGA toolchain is an optional backend of that same HDL-Maker, under the same MIT license. Branch V is Vivado. Branch O is an open-source flow. Branch U is other vendors and families. Branch R is a remote build server. The branches are parallel, and any of them may stay unused. The boundary is specified in [fpga-toolchain-architecture.md](fpga-toolchain-architecture.md). Branches O, U, and R are not installed and have no implementation.
+The teaching milestones M0–M6 are one development line. An FPGA toolchain is an optional backend of that same HDL-Maker, under the same MIT license. Branch V is Vivado. Branch O is an open-source flow. Branch U is other vendors and families. Branch R is a remote build server. The branches are parallel, and any of them may stay unused. The boundary is specified in [fpga-toolchain-architecture.md](fpga-toolchain-architecture.md). Branch O has a local Windows feasibility run, recorded in [o1-open-source-toolchain.md](o1-open-source-toolchain.md). That run is not a product backend. **O5** is a long-term distribution study in [international-open-source-distribution.md](international-open-source-distribution.md). It does not block O2, O3, or O4. Branches U and R are not installed and have no implementation.
 
 Status words:
 
@@ -36,17 +36,21 @@ The committed baseline is `bd5defa` (`vivado integration step1`). It contains th
 | M4a.1 | GTKWave integration and verification | Done, committed in `bd5defa`. Local GTKWave 3.3.100 only, not in the student ZIP. |
 | M4b | Browser waveform view | Planned |
 | M5a | Vivado batch synthesis and bitstream | Implemented, committed in `bd5defa`. Bitstream written. Board not programmed. |
-| M5b | JTAG programming | Implemented, working tree. JTAG download, DONE, and the LED0 counter are each tested on hardware. |
+| M5b | JTAG programming | Tested on hardware. Working tree, not committed. |
 | M5c | Timing, resources, and ILA | Planned. Branch V. |
 | M6 | Legacy diagram migration | Planned, does not block the FPGA branches |
 | V1 | Vivado minimal-install study | Planned. License unresolved for redistribution. |
-| O1–O4 | Open-source FPGA backend | Planned. Experimental. Not installed. |
+| O1 | Open-source feasibility on Windows | Investigated. Bitstream written, not programmed, not in the UI. |
+| O2a | Open-source build pipeline | In the backend. Not in the UI. Not programmed. |
+| O2b | Open-source hardware check | Tested on hardware. SRAM load, green DONE LED, LED0 about 1 s. |
+| O3–O4 | Studio backend and student package | O3a is in the FPGA Build tab. Not programmed again. O4 planned. |
+| O5 | International open-source distribution | Planned. License unresolved. Does not block O2, O3, or O4. |
 | U | Further FPGA families | Planned. |
 | R | Remote FPGA build | Planned. Optional. Not implemented. |
 
 ## Active sequence
 
-M5b is in the working tree. On a Zybo Z7-20 the JTAG download, the DONE pin, and the LED0 counter are each tested on hardware. **V1** and **O1** stay planned and are not started. The `Labtoolstcl 44-560` Tcl warning is a later cleanup. **M5c** stays a later Vivado report view. **M4b** stays planned. **U** and **R** are later optional branches. **M6** does not block them.
+M5b is **Tested on hardware**. The record is below and in [m5b-jtag.md](m5b-jtag.md). **O1** is investigated in [o1-open-source-toolchain.md](o1-open-source-toolchain.md). **O2a** is in the backend, recorded in [o2a-open-source-build.md](o2a-open-source-build.md), and does not program the FPGA. **O2b** is **Tested on hardware**. The open-source bitstream was loaded into SRAM, the DONE LED was green, and LED0 blinked about once per second. The record is [o2b-open-source-hardware.md](o2b-open-source-hardware.md). **O5** is planned and does not move ahead of O2b. **V1** is prepared and is not started. The `Labtoolstcl 44-560` Tcl warning is a later cleanup. **M5c** stays a later Vivado report view. **M4b** stays planned. **U** and **R** are later optional branches. **M6** does not block them.
 
 P1, M2c, and M2d are finished and committed. An earlier note suggested packaging only after M5. Packaging was done first so each later milestone can be shipped with `packaging/build_release.ps1`. That decision stands. A later milestone does not start a second packaging project. The existing student ZIP was built before M2c and before the MIT `LICENSE` file.
 
@@ -54,7 +58,7 @@ M4a.1 is committed in `bd5defa`. GTKWave 3.3.100 opened the generated GHW and VC
 
 M5a is committed in `bd5defa`. Vivado 2019.1 synthesized the Zybo Z7-10 counter and wrote a bitstream.
 
-M5b is in the working tree. It scans JTAG devices and programs only a device the user names. The Zybo Z7-20 run separates three hardware results: the JTAG download, the DONE pin, and the LED0 counter. All three were tested. M5c, M4b, and the open-source backend stay unstarted.
+M5b is **Tested on hardware** and is still in the working tree. It scans JTAG devices and programs only a device the user names. M5c and M4b stay unstarted. O2a can repeat the open-source bitstream build. It is not in the window and it does not program the FPGA.
 
 ## Standing rules
 
@@ -65,6 +69,7 @@ M5b is in the working tree. It scans JTAG devices and programs only a device the
 - The API and the packaged app bind to `127.0.0.1` only.
 - External tools are started with an argument list, a fixed working directory, streamed output, cancellation, and a timeout. Project paths are not concatenated into a shell command.
 - Proprietary tools such as Vivado and Vitis are optional installs. They are not bundled in the student ZIP. A local copy that runs is not permission to redistribute those files.
+- Publishing HDL-Maker as open source is not treated as permission to export it, or its dependencies, to every recipient. That question is O5 and is not a clearance.
 - Generated build files stay outside the source project and outside `libs/`. Each FPGA build has its own directory under `workspace/builds/`. An earlier build is left in place.
 - The toolchain adapter has a vendor-neutral boundary. Vivado is the first adapter. Further adapters are specified in [fpga-toolchain-architecture.md](fpga-toolchain-architecture.md) and stay unbuilt until their studies exist.
 - A published device database or binary package is not treated as a working backend until this repository has run the build.
@@ -184,17 +189,36 @@ Vivado 2019.1 on this machine synthesized `examples/fpga/zybo-z7-10-counter` for
 
 ### M5b — JTAG programming
 
-Implemented in the working tree. The Hardware Manager flow uses the Vivado 2019.1 commands `open_hw`, `connect_hw_server`, `get_hw_targets`, `get_hw_devices`, and `program_hw_devices`. The user scans, chooses one device, and confirms that device by name. The first device is not used when several are present. A mock program is labeled as a mock and does not count as a programmed FPGA.
+**Tested on hardware.** The flow is in the working tree and is not committed. It uses the Vivado 2019.1 commands `open_hw`, `connect_hw_server`, `get_hw_targets`, `get_hw_devices`, and `program_hw_devices`. The user scans, chooses one device, and confirms that device by name. The first device is not used when several are present. A mock program is labeled as a mock and does not count as a programmed FPGA.
 
-The Zybo Z7-20 records in `docs/m5b-jtag.md` keep three results apart:
+The Zybo Z7-20 is the hardware board for later toolchain comparisons. The Z7-10 example under `examples/fpga/zybo-z7-10-counter` is unchanged and was not the programmed bitstream.
 
-| Check | Status |
+| Item | Value |
 | --- | --- |
-| JTAG programming of `xc7z020_1` | Tested on hardware |
-| FPGA configuration, DONE pin and green DONE LED | Tested on hardware |
-| LED0 counter, about 1.074 s period | Tested on hardware |
+| Board | Zybo Z7-20, jumper JP5 on JTAG |
+| Bitstream part | `xc7z020clg400-1`, from `boardfiles/zybo-z7-20/A.0/board.xml` |
+| JTAG device | `xc7z020_1`, part property `xc7z020`, IDCODE `23727093` |
+| Vivado | v2019.1 (64-bit), SW Build 2552052 |
+| Build | `bld_34d0198b02b84f73b25a8aa305579d5a` |
+| Program | `prg_c96275d4116948768d5c9c8079532cc8` |
+| Bitstream size | 4,045,672 bytes |
+| DONE | Startup HIGH. `BIT14_DONE_PIN` 1. DONE LED green. |
+| LED0 | M14 blinked with about a 1.07 s period |
 
-An earlier scan with no cable reported `Labtoolstcl 44-199` and is kept in `workspace/hardware/m5b-no-board`. ZPS7-1 remains a warning on the PL-only counter. `Labtoolstcl 44-560` is a later Tcl cleanup and did not block the download.
+| Step | Result |
+| --- | --- |
+| VHDL source `zybo_counter.vhd` | Used. The running configuration came from this file. |
+| Vivado synthesis | Passed |
+| Place, route, and timing | Passed. WNS 5.520 ns, WHS 0.040 ns |
+| Bitstream | Passed |
+| JTAG detection | Passed. One Digilent target, DAP plus `xc7z020` |
+| FPGA programming | Passed. `jtag_download` `completed`, `mock` false |
+| DONE = HIGH | Passed |
+| LED0 about 1.07 s | Passed |
+
+`WARNING: [DRC ZPS7-1]` and `WARNING: [Labtoolstcl 44-560]` are warnings. They are not test failures. ZPS7-1 says the PL-only counter has no PS7 cell. The bitstream was still written, and the LED ran. `44-560` says `-type bit` is ignored unless `HWX.FILE` is set. The file came from `PROGRAM.FILE`, and DONE went high. Cleaning the Tcl flag is later work.
+
+An earlier scan with no cable reported `Labtoolstcl 44-199` and is kept in `workspace/hardware/m5b-no-board`. Details: `docs/m5b-jtag.md`.
 
 ### M5c — Reports and ILA
 
@@ -224,25 +248,37 @@ The product stays one MIT-licensed HDL-Maker. The tiers are which external tools
 | --- | --- | --- |
 | HDL-Maker Core | HDL-Maker, GHDL, optional GTKWave | Implemented through M4a.1 |
 | HDL-Maker + Vivado | The user's own Vivado install | Branch V. M5a implemented. M5b tested on hardware: JTAG download, DONE, and LED0. |
-| HDL-Maker + Open Source | GHDL, Yosys, nextpnr, bitstream tools | Branch O. Planned. Experimental. Not run. |
+| HDL-Maker + Open Source | GHDL, Yosys, nextpnr, bitstream tools | Branch O. O1 investigated locally. Not a product backend. |
 | HDL-Maker Remote Build | Local studio, toolchain on a server | Branch R. Planned. Not implemented. |
 
 ### V — Vivado
 
 M5a and M5b are this branch. M5c is the planned timing, resource, and ILA view.
 
-**V1 — Minimal Vivado installation study.** Planned. Read the installed Vivado 2019.1 tree and separate an officially reduced install, the files a batch run loads, the local-use entitlement, and any right to redistribute. The installed tree is large; its size was not remeasured for this note. No Vivado file is added to a public HDL-Maker package as part of the study.
+**V1 — Minimal Vivado installation study.** Planned. Read the installed Vivado 2019.1 tree and separate an officially reduced install, the files a batch run loads, the local-use entitlement, and any right to redistribute. The installed tree at `C:\Xilinx\Vivado\2019.1` measures 19,808,638,819 bytes. No Vivado file is added to a public HDL-Maker package as part of the study.
 
 ### O — Open-source FPGA tools
 
-Planned and experimental. Nothing in this branch is installed. Published Windows packages for nextpnr-xilinx / openXC7 have been described, including device data that mentions the Zybo Z7-10, and the 7-series flow is described as experimental. This repository has not downloaded those packages and has not produced an open-source bitstream. A device database is not a working flow.
+Experimental. The Windows tools were downloaded into the gitignored `workspace/toolchains/o1/` and used for one counter. They are not part of HDL-Maker, and the bitstream was not programmed. The record is [o1-open-source-toolchain.md](o1-open-source-toolchain.md).
 
-- **O1 — Feasibility on Windows 11.** Binaries, licenses, archive size, VHDL-93 and VHDL-2008, `xc7z010clg400-1`, constraints, Zynq PS/PL limits, and JTAG. License unresolved until the component licenses are recorded.
-- **O2 — Reference build.** The same `zybo_counter` as M5a, with no Vivado process. Record resources, timing, runtime, memory, warnings, and bitstream size beside the Vivado 2019.1 result. Hardware programming stays open while no board is attached.
-- **O3 — Integration.** After O1 and O2, one backend behind the shared boundary. Diagram JSON and VHDL generation stay as they are.
-- **O4 — Portable student edition.** Planned. Compare one ZIP that includes the free tools with a small HDL-Maker package and a separate toolchain download. Record every redistribution term.
+- **O1 — Feasibility on Windows 11.** Investigated. The comparison board is the Zybo Z7-20, part `xc7z020clg400-1`. The Windows openXC7 package places and routes that part and writes a bitstream. It does not synthesize VHDL. VHDL-93 for this counter went through the existing GHDL 6.0.0 as Verilog, then Yosys from OSS CAD Suite. VHDL-2008 was not run. The resulting bitstream is 4,045,674 bytes and was not programmed. Licenses of the tools that ran are recorded in the O1 report. Redistribution of the whole suite remains O4.
+- **O2a — Repeatable build.** In the backend. The five O1 stages run for VHDL-93, write `workspace/builds/osb_<id>/`, and do not call Vivado. The Z7-20 counter build `osb_574eb1ad8c3b4ac8a36b359745d3534d` matches the O1 nextpnr counts and writes a 4,045,674-byte bitstream. That file was not programmed. The record is [o2a-open-source-build.md](o2a-open-source-build.md).
+- **O2b — Hardware check.** **Tested on hardware.** On 23 November 2026 the open-source bitstream was loaded into SRAM through the D2XX transport, at 1 MHz, on `210351B4009EA`. The load exited 0 and the JTAG DONE bit was 1. The raw IDCODEs remain `0x23727093` and `0x4BA00477`. The DONE LED was green and LED0 blinked about once per second, the same observation as M5b. The record is [o2b-open-source-hardware.md](o2b-open-source-hardware.md).
+- **O2b.1 — Programmer choice.** Studied. The chosen path is a D2XX transport under openFPGALoader's existing MPSSE class. UrJTAG is not the programmer, and WinUSB stays unapproved. The record is [o2b1-d2xx-programming.md](o2b1-d2xx-programming.md).
+- **O2b.2 — D2XX transport.** A separate Windows build of openFPGALoader opens interface A by the serial `210351B4009EA`. The OSS CAD Suite binary is unchanged and still cannot open `FTDIBUS`. The record is [o2b2-d2xx-transport.md](o2b2-d2xx-transport.md).
+- **O2b.3 — SRAM load.** The checked bitstream was loaded with `-m` and without `-f`. Exit code 0. JTAG `done 1`. DONE LED green. LED0 blinked about once per second. O3a is in the FPGA Build tab and did not program the board again.
+- **O3 — Integration.** O3a is in the FPGA Build tab. The project stores `vivado` or `opensource`. The open-source side reuses the O2a builder and can call the local D2XX loader for SRAM only, after a named device and a confirmation. The window was not used to program the board again. The record is [o3a-fpga-build.md](o3a-fpga-build.md).
+- **O4 — Portable student edition.** Planned. Compare one ZIP that includes the free tools with a small HDL-Maker package and a separate toolchain download. The Windows Yosys bundle does not include the GHDL plugin.
 
-A later comparison view can show resources, timing, and duration for this one counter under both backends. It waits until O2 has measurements.
+The O1 report already places the Vivado and open-source numbers for this counter side by side. A studio view of those reports is not implemented.
+
+**O5 — International open-source distribution.** Planned. License unresolved. Optional, and later than the Z7-20 work. It does not block O2, O3, or O4. The study is whether a MIT-licensed HDL-Maker plus free tools can be offered to universities and developers who cannot obtain a proprietary FPGA toolchain, without treating open source as an export clearance. Sub-items, the licence notes already read, and the sources retrieved on 23 November 2026 are in [international-open-source-distribution.md](international-open-source-distribution.md).
+
+- **O5a — Licence inventory.** Planned. License unresolved. Separate published source, redistributable binaries, self-built components, and proprietary files that are not shipped. HDL-Maker stays MIT.
+- **O5b — Export-control index.** Planned. A factual reading of Regulation (EU) 2021/821, the General Software Note, Austrian BMWET pages, and EAR publication and encryption rules. Not a classification and not a licence.
+- **O5c — Education edition.** Planned. A core studio pack and separate free FPGA packs. Windows 11 first. No npm server for the end user, no Vivado install, and offline use after installation.
+- **O5d — University cooperation.** Planned. A possible course shared by FH Joanneum and PAF-IAST in Haripur. No country is cleared or excluded by this roadmap.
+- **O5e — Technical independence.** Planned. The studio documents stay backend-independent. One VHDL generator. Further backends are capability profiles, not a second HDL emitter.
 
 ### U — Further families
 
@@ -254,12 +290,13 @@ Planned, optional, and not implemented. The student runs HDL-Maker locally. An a
 
 ## Priority
 
-1. M5b is closed on hardware: JTAG download, DONE, and the LED0 counter.
-2. V1, the Vivado install study. Not started. `Labtoolstcl 44-560` can be cleaned when that Tcl is next touched.
-3. O1, the openXC7 feasibility study for Windows and the Zybo Z7-10 part.
+1. M5b is **Tested on hardware** on the Zybo Z7-20.
+2. O4, the portable student edition. O3a is in the FPGA Build tab. The D2XX loader is a local path and is not shipped. The OSS CAD Suite binary still cannot open the FTDI driver.
+3. V1, the Vivado install study. Prepared, not started. `Labtoolstcl 44-560` can be cleaned when that Tcl is next touched.
 4. Keep the shared backend boundary specified. Implementing that interface waits for the studies.
-5. Decide on an open-source implementation only after O1 and O2.
+5. Decide on a studio backend only after O2b.
 6. U and R come after that decision.
+7. O5, the international distribution study. It may be read beside the items above and does not delay O2b, O3, or O4.
 
 ## Later, not scheduled
 
@@ -268,4 +305,4 @@ Planned, optional, and not implemented. The student runs HDL-Maker locally. An a
 
 ## First demonstration
 
-`examples/` contains an 8-bit counter, a comparator, and a small controller FSM. M1 imports them. M2 edits and connects them. M2c edits the controller state diagram. M2d makes its actions and conditions readable. M3 generates VHDL. M4 simulates it. M5a implements a separate Zybo Z7-10 counter through Vivado and does not program the board. The same counter is the planned O2 comparison source. That open-source build has not been run.
+`examples/` contains an 8-bit counter, a comparator, and a small controller FSM. M1 imports them. M2 edits and connects them. M2c edits the controller state diagram. M2d makes its actions and conditions readable. M3 generates VHDL. M4 simulates it. M5a implements a separate Zybo Z7-10 counter through Vivado and does not program that board. M5b programs the same VHDL, with Z7-20 constraints, on a Zybo Z7-20. O1 built that counter again without Vivado and did not program the open-source bitstream. `examples/fpga/zybo-z7-10-counter` is unchanged.

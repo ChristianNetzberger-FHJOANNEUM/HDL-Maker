@@ -2,8 +2,8 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import type { DesignUnit, DiagramDocument, FpgaBuildConfig, Health, Library, ProjectFile, SimulationConfig, SourceText } from '../models/design'
 import type { EditableDiagram, EditableSummary } from '../models/editable'
-import { createDesign, createEditableDiagram, generateStructural, getBoards, getEditableDiagram, getExamplesPath, getHealth, cancelFpgaBuild, cancelSimulation, checkVivado, getFpgaBuild, getFpgaReport, getHardwareScan, getLatestBitstream, getLatestFpgaBuild, getLatestSimulation, getProgram, getProject, getSimulationRun, getSource, getTools, getUiSettings, listEditableDiagrams, openWaveform, saveEditableDiagram, saveFpga, saveLibraryProfile, saveSimulation, saveTools, saveUiSettings, saveVhdlStandard, scanLibrary, startFpgaBuild, startHardwareScan, startProgram, startSimulation } from '../services/api'
-import type { BoardProfile, FpgaBuild, GenerateResult, HwProgram, HwScan, SimulationRun } from '../services/api'
+import { createDesign, createEditableDiagram, generateStructural, getBoards, getEditableDiagram, getExamplesPath, getHealth, cancelFpgaBuild, cancelSimulation, checkOpenSource, checkVivado, getFpgaBuild, getFpgaReport, getHardwareScan, getLatestBitstream, getLatestFpgaBuild, getLatestOpenBuild, getLatestSimulation, getOpenBuild, getOpenProgram, getOpenScan, getOpenSourceTools, getProgram, getProject, getSimulationRun, getSource, getTools, getUiSettings, listEditableDiagrams, openWaveform, saveEditableDiagram, saveFpga, saveLibraryProfile, saveOpenSourceTools, saveSimulation, saveTools, saveUiSettings, saveVhdlStandard, scanLibrary, startFpgaBuild, startHardwareScan, startOpenBuild, startOpenProgram, startOpenScan, startProgram, startSimulation } from '../services/api'
+import type { BoardProfile, FpgaBuild, GenerateResult, HwProgram, HwScan, OpenCheck, OpenProgram, OpenScan, OpenSourceBuild, OpenSourceTools, SimulationRun } from '../services/api'
 
 function clampTextPx(value: number): number {
   if (!Number.isFinite(value)) return 13
@@ -43,11 +43,19 @@ export const useStudioStore = defineStore('studio', () => {
     part: '',
     xdc_paths: [],
     target: 'synthesis',
+    toolchain: 'vivado',
   })
   const fpgaBuild = ref<FpgaBuild | null>(null)
-  const fpgaBitstream = ref<FpgaBuild | null>(null)
+  const openBuild = ref<OpenSourceBuild | null>(null)
+  const openCheck = ref<OpenCheck | null>(null)
+  const openTools = ref<OpenSourceTools | null>(null)
+  const openLoaderPath = ref('')
+  const jtagSerial = ref('')
+  const fpgaBitstream = ref<FpgaBuild | OpenSourceBuild | null>(null)
   const hardwareScan = ref<HwScan | null>(null)
   const hardwareProgram = ref<HwProgram | null>(null)
+  const openScan = ref<OpenScan | null>(null)
+  const openProgram = ref<OpenProgram | null>(null)
   const selectedDeviceId = ref('')
   const programConfirm = ref(false)
   const fpgaNote = ref('')
@@ -136,6 +144,7 @@ export const useStudioStore = defineStore('studio', () => {
       part: storedFpga?.part ?? '',
       xdc_paths: [...(storedFpga?.xdc_paths ?? [])],
       target: storedFpga?.target === 'bitstream' ? 'bitstream' : 'synthesis',
+      toolchain: storedFpga?.toolchain === 'opensource' ? 'opensource' : 'vivado',
     }
   }
 
@@ -147,9 +156,15 @@ export const useStudioStore = defineStore('studio', () => {
       simulationRun.value = null
     }
     try {
-      fpgaBuild.value = await getLatestFpgaBuild()
+      if (fpga.value.toolchain === 'opensource') {
+        openBuild.value = await getLatestOpenBuild()
+        fpgaBitstream.value = openBuild.value?.status === 'passed' && openBuild.value.bitstream_path ? openBuild.value : null
+      } else {
+        fpgaBuild.value = await getLatestFpgaBuild()
+      }
     } catch {
       fpgaBuild.value = null
+      openBuild.value = null
     }
     await refreshDesigns()
     if (!selectedUnitId.value) {
@@ -166,6 +181,13 @@ export const useStudioStore = defineStore('studio', () => {
     } catch {
       gtkwavePath.value = ''
       vivadoPath.value = ''
+    }
+    try {
+      openTools.value = await getOpenSourceTools()
+      openLoaderPath.value = openTools.value.openfpga_loader_path
+    } catch {
+      openTools.value = null
+      openLoaderPath.value = ''
     }
   }
 
@@ -213,6 +235,13 @@ export const useStudioStore = defineStore('studio', () => {
     try {
       applyProject(await saveFpga({ ...fpga.value, xdc_paths: fpga.value.xdc_paths.map((item) => item.trim()).filter((item) => item) }))
       fpgaNote.value = ''
+      if (fpga.value.toolchain === 'opensource') {
+        openBuild.value = await getLatestOpenBuild()
+        fpgaBitstream.value = openBuild.value?.status === 'passed' && openBuild.value.bitstream_path ? openBuild.value : null
+      } else {
+        fpgaBuild.value = await getLatestFpgaBuild()
+        await refreshHardware()
+      }
     } catch (reason) {
       fpgaNote.value = reason instanceof Error ? reason.message : 'The FPGA settings could not be saved.'
     }
@@ -258,6 +287,10 @@ export const useStudioStore = defineStore('studio', () => {
   }
 
   async function refreshHardware(): Promise<void> {
+    if (fpga.value.toolchain === 'opensource') {
+      fpgaBitstream.value = openBuild.value?.status === 'passed' && openBuild.value.bitstream_path ? openBuild.value : null
+      return
+    }
     try {
       fpgaBitstream.value = await getLatestBitstream()
     } catch {
@@ -312,6 +345,120 @@ export const useStudioStore = defineStore('studio', () => {
       else fpgaNote.value = hardwareProgram.value.message
     } catch (reason) {
       fpgaNote.value = reason instanceof Error ? reason.message : 'Programming could not be started.'
+    }
+  }
+
+  async function saveOpenLoaderPath(): Promise<void> {
+    if (!openTools.value) {
+      try {
+        openTools.value = await getOpenSourceTools()
+      } catch (reason) {
+        fpgaNote.value = reason instanceof Error ? reason.message : 'The open-source tool settings could not be read.'
+        return
+      }
+    }
+    const current = openTools.value
+    if (!current) return
+    try {
+      openTools.value = await saveOpenSourceTools({ ...current, openfpga_loader_path: openLoaderPath.value.trim() })
+      openLoaderPath.value = openTools.value.openfpga_loader_path
+      fpgaNote.value = ''
+    } catch (reason) {
+      fpgaNote.value = reason instanceof Error ? reason.message : 'The openFPGALoader path could not be saved.'
+    }
+  }
+
+  async function checkOpenToolchain(): Promise<void> {
+    fpgaNote.value = 'Checking the open-source tools.'
+    try {
+      openCheck.value = await checkOpenSource()
+      fpgaNote.value = openCheck.value.ok ? 'The five tools and the zynq7 database are available.' : 'One or more open-source tools are missing. Vivado was not called.'
+    } catch (reason) {
+      fpgaNote.value = reason instanceof Error ? reason.message : 'The open-source tools could not be checked.'
+    }
+  }
+
+  async function runOpenBuild(): Promise<void> {
+    if (vhdlStandard.value === '2008') {
+      fpgaNote.value = 'The open-source chain was validated for VHDL-93 only. VHDL-2008 was not run, and the VHDL-93 setting was not changed.'
+      return
+    }
+    fpga.value.toolchain = 'opensource'
+    fpga.value.target = 'bitstream'
+    await saveFpgaSettings()
+    fpgaNote.value = 'Starting the open-source bitstream build.'
+    try {
+      openBuild.value = await startOpenBuild()
+      if (openBuild.value.status === 'running') scheduleOpenPoll()
+      else fpgaNote.value = openBuild.value.diagnostics[0]?.message || 'The open-source build did not start.'
+      if (openBuild.value.status === 'passed' && openBuild.value.bitstream_path) fpgaBitstream.value = openBuild.value
+    } catch (reason) {
+      fpgaNote.value = reason instanceof Error ? reason.message : 'The open-source build could not be started.'
+    }
+  }
+
+  function scheduleOpenPoll(): void {
+    window.clearTimeout(fpgaPoll)
+    fpgaPoll = window.setTimeout(async () => {
+      const current = openBuild.value
+      if (!current || current.status !== 'running') return
+      try {
+        openBuild.value = await getOpenBuild(current.build_id)
+      } catch {
+        return
+      }
+      if (openBuild.value.status === 'running') scheduleOpenPoll()
+      else if (openBuild.value.status === 'passed' && openBuild.value.bitstream_path) fpgaBitstream.value = openBuild.value
+    }, 1000)
+  }
+
+  async function scanOpenHardware(): Promise<void> {
+    fpgaNote.value = 'Scanning the named JTAG serial.'
+    selectedDeviceId.value = ''
+    programConfirm.value = false
+    try {
+      openScan.value = await startOpenScan(jtagSerial.value.trim())
+      if (openScan.value.status === 'running') scheduleOpenHardwarePoll()
+      else fpgaNote.value = openScan.value.message
+    } catch (reason) {
+      fpgaNote.value = reason instanceof Error ? reason.message : 'The JTAG scan could not be started.'
+    }
+  }
+
+  function scheduleOpenHardwarePoll(): void {
+    window.clearTimeout(hardwarePoll)
+    hardwarePoll = window.setTimeout(async () => {
+      const scan = openScan.value
+      const program = openProgram.value
+      try {
+        if (scan?.status === 'running') openScan.value = await getOpenScan(scan.scan_id)
+        if (program?.status === 'running') openProgram.value = await getOpenProgram(program.program_id)
+      } catch {
+        return
+      }
+      if (openScan.value?.status === 'running' || openProgram.value?.status === 'running') scheduleOpenHardwarePoll()
+    }, 1000)
+  }
+
+  async function programOpenDevice(): Promise<void> {
+    const scan = openScan.value
+    const bitstream = openBuild.value
+    if (!scan || !bitstream || !selectedDeviceId.value || !programConfirm.value) {
+      fpgaNote.value = 'Choose the FPGA and confirm the SRAM download before programming.'
+      return
+    }
+    fpgaNote.value = 'Programming SRAM on the selected device.'
+    try {
+      openProgram.value = await startOpenProgram({
+        scan_id: scan.scan_id,
+        device_id: selectedDeviceId.value,
+        build_id: bitstream.build_id,
+        confirm: true,
+      })
+      if (openProgram.value.status === 'running') scheduleOpenHardwarePoll()
+      else fpgaNote.value = openProgram.value.message
+    } catch (reason) {
+      fpgaNote.value = reason instanceof Error ? reason.message : 'SRAM programming could not be started.'
     }
   }
 
@@ -775,9 +922,15 @@ export const useStudioStore = defineStore('studio', () => {
     vivadoNote,
     fpga,
     fpgaBuild,
+    openBuild,
+    openCheck,
+    openLoaderPath,
+    jtagSerial,
     fpgaBitstream,
     hardwareScan,
     hardwareProgram,
+    openScan,
+    openProgram,
     selectedDeviceId,
     programConfirm,
     fpgaNote,
@@ -789,6 +942,11 @@ export const useStudioStore = defineStore('studio', () => {
     saveFpgaSettings,
     runFpga,
     cancelFpga,
+    checkOpenToolchain,
+    saveOpenLoaderPath,
+    runOpenBuild,
+    scanOpenHardware,
+    programOpenDevice,
     refreshHardware,
     scanHardware,
     programDevice,

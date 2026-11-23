@@ -58,7 +58,8 @@
         "board_id": { "type": "string" },
         "part": { "type": "string" },
         "xdc_paths": { "type": "array", "items": { "type": "string" } },
-        "target": { "enum": ["synthesis", "bitstream"] }
+        "target": { "enum": ["synthesis", "bitstream"] },
+        "toolchain": { "enum": ["vivado", "opensource"] }
       }
     },
     "severity": { "enum": ["error", "warning", "info"] },

@@ -1,1 +1,1 @@
-"""External FPGA toolchains. Vivado is the first adapter."""
+"""External FPGA toolchains. Vivado and the open-source chain are separate adapters."""

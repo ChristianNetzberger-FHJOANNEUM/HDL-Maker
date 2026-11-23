@@ -81,6 +81,33 @@ Vivado v2019.1 printed `INFO: [Labtools 27-3164] End of startup status: HIGH` an
 
 The counter drives LED0 from bit 26 of a 27-bit count at 125 MHz. The full period is 2^27 / 125000000, about 1.074 s. The output changes every half period, about 0.537 s. At the board, LED0 blinked about once per second and the DONE LED was green. The cable socket, the power LED, and any SD card were not inspected from this session.
 
+### Hardware close
+
+M5b is **Tested on hardware**. The Zybo Z7-20 is the board kept for later toolchain comparisons. `examples/fpga/zybo-z7-10-counter` is unchanged.
+
+| Item | Value |
+| --- | --- |
+| Vivado | v2019.1 (64-bit), SW Build 2552052 |
+| Bitstream part | `xc7z020clg400-1` |
+| JTAG part | `xc7z020` on `xc7z020_1`, IDCODE `23727093` |
+| Build | `bld_34d0198b02b84f73b25a8aa305579d5a` |
+| Program | `prg_c96275d4116948768d5c9c8079532cc8` |
+| DONE | HIGH. `BIT14_DONE_PIN` is 1. The DONE LED was green. |
+| LED0 | Blinked with about a 1.07 s period |
+
+| Step | Result |
+| --- | --- |
+| VHDL design | The source is `examples/fpga/zybo-z7-10-counter/zybo_counter.vhd`. The running bitstream came from it. |
+| Vivado synthesis | Passed |
+| Place and route, timing | Passed. WNS 5.520 ns, WHS 0.040 ns |
+| Bitstream | Passed. 4,045,672 bytes |
+| JTAG device detection | Passed |
+| FPGA programming | Passed |
+| DONE = HIGH | Passed |
+| LED0 about 1.07 s | Passed |
+
+`WARNING: [DRC ZPS7-1]` and `WARNING: [Labtoolstcl 44-560]` are not failures. ZPS7-1 is the missing PS7 cell on a PL-only design. The bitstream was written and the LED ran. `44-560` means `-type bit` was ignored because `HWX.FILE` was unset. `PROGRAM.FILE` still supplied the Z7-20 bitstream, and DONE went high. The Tcl flag is later cleanup.
+
 ### Hardware results
 
 These three checks stay separate. A passed program command is not the same fact as the DONE pin, and neither one is the LED.

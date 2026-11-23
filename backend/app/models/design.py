@@ -412,6 +412,7 @@ class FpgaBuildConfig(APIModel):
     part: str = ""
     xdc_paths: list[str] = Field(default_factory=list)
     target: Literal["synthesis", "bitstream"] = "synthesis"
+    toolchain: Literal["vivado", "opensource"] = "vivado"
 
     @field_validator("part", "board_id", "top_unit_id")
     @classmethod
@@ -439,6 +440,17 @@ class FpgaProgramRequest(APIModel):
     @field_validator("scan_id", "device_id", "build_id")
     @classmethod
     def strip_program_fields(cls, value: str) -> str:
+        return value.strip()
+
+
+class OpenScanRequest(APIModel):
+    """A JTAG detect for one interface-A serial. The first device is not opened."""
+
+    serial: str = ""
+
+    @field_validator("serial")
+    @classmethod
+    def strip_serial(cls, value: str) -> str:
         return value.strip()
 
 

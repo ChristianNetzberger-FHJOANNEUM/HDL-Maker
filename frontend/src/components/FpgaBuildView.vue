@@ -3,19 +3,27 @@ import { computed } from 'vue'
 import { useStudioStore } from '../stores/studio'
 
 const studio = useStudioStore()
-const build = computed(() => studio.fpgaBuild)
+const openSource = computed(() => studio.fpga.toolchain === 'opensource')
+const build = computed(() => (openSource.value ? studio.openBuild : studio.fpgaBuild))
 const running = computed(() => build.value?.status === 'running')
-const scan = computed(() => studio.hardwareScan)
-const programmed = computed(() => studio.hardwareProgram)
+const scan = computed(() => (openSource.value ? studio.openScan : studio.hardwareScan))
+const programmed = computed(() => (openSource.value ? studio.openProgram : studio.hardwareProgram))
 const selectedDevice = computed(() => scan.value?.devices.find((device) => device.device_id === studio.selectedDeviceId) ?? null)
-const canProgram = computed(
-  () =>
-    Boolean(studio.fpgaBitstream) &&
+const vhdl2008Blocked = computed(() => openSource.value && studio.vhdlStandard === '2008')
+const canProgram = computed(() => {
+  if (openSource.value) {
+    return Boolean(studio.openBuild?.bitstream_path) &&
+      Boolean(selectedDevice.value?.matches_part) &&
+      studio.programConfirm &&
+      scan.value?.status === 'devices' &&
+      programmed.value?.status !== 'running'
+  }
+  return Boolean(studio.fpgaBitstream) &&
     Boolean(selectedDevice.value?.matches_part) &&
     studio.programConfirm &&
     scan.value?.status === 'devices' &&
-    programmed.value?.status !== 'running',
-)
+    programmed.value?.status !== 'running'
+})
 void studio.refreshHardware()
 const entities = computed(() =>
   (studio.project?.design_units ?? [])
@@ -24,7 +32,19 @@ const entities = computed(() =>
     .sort((left, right) => left.name.localeCompare(right.name)),
 )
 const selectedBoard = computed(() => studio.boards.find((board) => board.id === studio.fpga.board_id))
-const stageNames = ['validation', 'synthesis', 'optimization', 'placement', 'routing', 'bitstream'] as const
+const stageNames = computed(() =>
+  openSource.value
+    ? (['ghdl', 'yosys', 'nextpnr', 'fasm2frames', 'xc7frames2bit'] as const)
+    : (['validation', 'synthesis', 'optimization', 'placement', 'routing', 'bitstream'] as const),
+)
+
+function chooseToolchain(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value
+  studio.fpga.toolchain = value === 'opensource' ? 'opensource' : 'vivado'
+  studio.programConfirm = false
+  studio.selectedDeviceId = ''
+  void studio.saveFpgaSettings()
+}
 
 function chooseTop(event: Event): void {
   studio.fpga.top_unit_id = (event.target as HTMLSelectElement).value
@@ -60,19 +80,38 @@ function chooseDevice(event: Event): void {
   studio.programConfirm = false
 }
 
+function editLoader(event: Event): void {
+  studio.openLoaderPath = (event.target as HTMLInputElement).value
+}
+
+function editSerial(event: Event): void {
+  studio.jtagSerial = (event.target as HTMLInputElement).value
+}
+
 function stageLabel(name: string): string {
-  const value = build.value?.stages[name as keyof typeof build.value.stages]
+  const stages = build.value?.stages as Record<string, string> | undefined
+  const value = stages?.[name]
   if (value === 'passed') return 'passed'
   if (value === 'failed') return 'failed'
   if (value === 'running') return 'running'
   return 'not run'
 }
+
+const nextpnr = computed(() => studio.openBuild?.reports?.nextpnr ?? null)
 </script>
 
 <template>
   <div class="fpga">
     <h2>FPGA Build</h2>
-    <p class="hint">
+    <label for="fpga-toolchain">Backend</label>
+    <select id="fpga-toolchain" :value="studio.fpga.toolchain" @change="chooseToolchain">
+      <option value="vivado">Vivado (proprietary)</option>
+      <option value="opensource">Open Source (GHDL, Yosys, nextpnr/openXC7)</option>
+    </select>
+    <p v-if="openSource" class="hint">
+      The open-source backend uses the same VHDL. It does not fall back to Vivado. VHDL-2008 stays unavailable until that chain has been validated.
+    </p>
+    <p v-else class="hint">
       Vivado runs in non-project batch mode. The top-level entity is not the simulation testbench and not the hierarchy root. The part is chosen from the board file.
     </p>
     <label for="fpga-top">Top-level entity</label>
@@ -101,23 +140,39 @@ function stageLabel(name: string): string {
       <button type="button" @click="removeXdc(index)">Remove</button>
     </div>
     <button type="button" @click="addXdc">Add XDC</button>
+    <p v-if="vhdl2008Blocked" class="note">The open-source chain was validated for VHDL-93 only. VHDL-2008 was not run, and the VHDL-93 setting was not changed.</p>
     <div class="actions">
-      <button type="button" :disabled="running" @click="studio.runFpga('synthesis')">Run Synthesis</button>
-      <button type="button" :disabled="running" @click="studio.runFpga('bitstream')">Build Bitstream</button>
-      <button type="button" :disabled="!running" @click="studio.cancelFpga()">Cancel</button>
+      <template v-if="openSource">
+        <button type="button" @click="studio.checkOpenToolchain()">Check toolchain</button>
+        <button type="button" :disabled="running || vhdl2008Blocked" @click="studio.runOpenBuild()">Build Bitstream</button>
+      </template>
+      <template v-else>
+        <button type="button" :disabled="running" @click="studio.runFpga('synthesis')">Run Synthesis</button>
+        <button type="button" :disabled="running" @click="studio.runFpga('bitstream')">Build Bitstream</button>
+        <button type="button" :disabled="!running" @click="studio.cancelFpga()">Cancel</button>
+      </template>
     </div>
+    <ul v-if="openSource && studio.openCheck">
+      <li v-for="(tool, name) in studio.openCheck.tools" :key="name">
+        {{ name }}: {{ tool.ok ? tool.version : tool.code || 'missing' }}
+      </li>
+    </ul>
     <p v-if="studio.fpgaNote" class="note">{{ studio.fpgaNote }}</p>
     <section v-if="build">
       <h3>{{ build.target === 'bitstream' ? 'Bitstream build' : 'Synthesis' }}</h3>
       <p>Status: {{ build.status }}. Part: {{ build.part || 'not chosen' }}.</p>
       <p v-for="name in stageNames" :key="name">{{ name }} {{ stageLabel(name) }}.</p>
       <p v-if="build.bitstream_path" class="mono">{{ build.bitstream_path }}</p>
-      <p v-else-if="build.target === 'synthesis' && build.status === 'passed'">Synthesis finished. No bitstream was requested.</p>
-      <p>{{ build.warning_count }} warning(s), {{ build.error_count }} error(s).</p>
+      <p v-if="openSource && studio.openBuild" class="mono">{{ studio.openBuild.directory }}/manifest.json</p>
+      <p v-if="openSource && nextpnr">
+        Resources: SLICE_LUTX {{ nextpnr.slice_lutx ?? 'not reported' }}, SLICE_FFX {{ nextpnr.slice_ffx ?? 'not reported' }}, CARRY4 {{ nextpnr.carry4 ?? 'not reported' }}.
+        Timing: critical path {{ nextpnr.critical_path_ns ?? 'not reported' }} ns, max frequency {{ nextpnr.max_frequency_mhz ?? 'not reported' }} MHz.
+      </p>
+      <p v-else-if="!openSource && build.target === 'synthesis' && build.status === 'passed'">Synthesis finished. No bitstream was requested.</p>
       <ul>
-        <li v-for="item in build.diagnostics" :key="`${item.code}-${item.message}`">{{ item.code }}: {{ item.message }}</li>
+        <li v-for="item in build.diagnostics" :key="`${item.code}-${item.message}`">{{ item.severity }} {{ item.code }}: {{ item.message }}</li>
       </ul>
-      <div class="actions">
+      <div v-if="!openSource" class="actions">
         <button type="button" @click="studio.openFpgaReport('utilization_synth.rpt')">Utilization</button>
         <button type="button" @click="studio.openFpgaReport('timing_synth.rpt')">Timing</button>
         <button type="button" @click="studio.openFpgaReport('drc.rpt')">DRC</button>
@@ -125,7 +180,39 @@ function stageLabel(name: string): string {
       </div>
       <pre v-if="studio.fpgaReport" class="report">{{ studio.fpgaReport }}</pre>
     </section>
-    <section>
+    <section v-if="openSource">
+      <h3>Program FPGA</h3>
+      <p class="hint">
+        SRAM programming uses the local D2XX build of openFPGALoader. The serial must be interface A. The first FTDI device is not opened, and flash is not written. ftd2xx.dll stays in the Windows installation.
+      </p>
+      <label for="open-loader">openFPGALoader executable</label>
+      <input id="open-loader" :value="studio.openLoaderPath" spellcheck="false" placeholder="Path to the local D2XX openFPGALoader.exe" @input="editLoader" @change="studio.saveOpenLoaderPath()" />
+      <p v-if="studio.openBuild?.bitstream_path" class="mono">{{ studio.openBuild.bitstream_path }}</p>
+      <p v-else class="hint">No finished open-source bitstream is available.</p>
+      <p v-if="studio.openBuild?.part">Bitstream part: {{ studio.openBuild.part }}. Board part: {{ studio.fpga.part || 'not chosen' }}.</p>
+      <label for="jtag-serial">Interface A serial</label>
+      <input id="jtag-serial" :value="studio.jtagSerial" spellcheck="false" placeholder="Serial of interface A" @input="editSerial" />
+      <button type="button" :disabled="studio.openScan?.status === 'running'" @click="studio.scanOpenHardware()">Scan JTAG</button>
+      <p v-if="studio.openScan" class="note">{{ studio.openScan.message }}</p>
+      <label v-if="studio.openScan?.devices.length" for="fpga-device">JTAG device</label>
+      <select v-if="studio.openScan?.devices.length" id="fpga-device" :value="studio.selectedDeviceId" @change="chooseDevice">
+        <option value="">Choose a device</option>
+        <option v-for="device in studio.openScan.devices" :key="device.device_id" :value="device.device_id">
+          {{ device.name }} — {{ device.part || device.kind }} — {{ device.raw_idcode || device.idcode }}{{ device.matches_part ? '' : ' — part does not match' }}
+        </option>
+      </select>
+      <label v-if="selectedDevice" class="check">
+        <input v-model="studio.programConfirm" type="checkbox" />
+        Program SRAM only on {{ selectedDevice.name }}
+      </label>
+      <div class="actions">
+        <button type="button" :disabled="!canProgram" @click="studio.programOpenDevice()">Program SRAM</button>
+      </div>
+      <p v-if="studio.openProgram?.mock">Mock test. The FPGA was not programmed.</p>
+      <p v-else-if="studio.openProgram?.programmed">SRAM programmed {{ studio.openProgram.device_name }}.</p>
+      <p v-else-if="studio.openProgram">{{ studio.openProgram.message }}</p>
+    </section>
+    <section v-else>
       <h3>Program FPGA</h3>
       <p class="hint">
         JTAG programming uses the finished bitstream and one device you select. The first device in the chain is not used automatically. A Zynq PL-only bitstream can warn that the PS7 cell is absent. This step does not add a processing system.
@@ -133,27 +220,27 @@ function stageLabel(name: string): string {
       <p v-if="studio.fpgaBitstream" class="mono">{{ studio.fpgaBitstream.bitstream_path }}</p>
       <p v-else class="hint">No finished bitstream build is available.</p>
       <p v-if="studio.fpgaBitstream">Bitstream part: {{ studio.fpgaBitstream.part }}.</p>
-      <button type="button" :disabled="scan?.status === 'running'" @click="studio.scanHardware()">Scan JTAG</button>
-      <p v-if="scan" class="note">{{ scan.message }}</p>
-      <p v-if="scan?.mock">Mock scan. The FPGA was not programmed.</p>
-      <p v-if="scan && !scan.mock && scan.jtag_download === 'not_tested_no_hardware'">JTAG download: not tested, no hardware.</p>
-      <label v-if="scan?.devices.length" for="fpga-device">JTAG device</label>
-      <select v-if="scan?.devices.length" id="fpga-device" :value="studio.selectedDeviceId" @change="chooseDevice">
+      <button type="button" :disabled="studio.hardwareScan?.status === 'running'" @click="studio.scanHardware()">Scan JTAG</button>
+      <p v-if="studio.hardwareScan" class="note">{{ studio.hardwareScan.message }}</p>
+      <p v-if="studio.hardwareScan?.mock">Mock scan. The FPGA was not programmed.</p>
+      <p v-if="studio.hardwareScan && !studio.hardwareScan.mock && studio.hardwareScan.jtag_download === 'not_tested_no_hardware'">JTAG download: not tested, no hardware.</p>
+      <label v-if="studio.hardwareScan?.devices.length" for="fpga-device">JTAG device</label>
+      <select v-if="studio.hardwareScan?.devices.length" id="fpga-device" :value="studio.selectedDeviceId" @change="chooseDevice">
         <option value="">Choose a device</option>
-        <option v-for="device in scan.devices" :key="device.device_id" :value="device.device_id">
+        <option v-for="device in studio.hardwareScan.devices" :key="device.device_id" :value="device.device_id">
           {{ device.name }} — {{ device.part || 'no part' }} — {{ device.target }}{{ device.matches_part ? '' : ' — part does not match' }}
         </option>
       </select>
-      <label v-if="selectedDevice" class="check">
+      <label v-if="selectedDevice && !openSource" class="check">
         <input v-model="studio.programConfirm" type="checkbox" />
-        Program only {{ selectedDevice.name }} on {{ selectedDevice.target }}
+        Program only {{ selectedDevice.name }} on {{ 'target' in selectedDevice ? selectedDevice.target : selectedDevice.name }}
       </label>
       <div class="actions">
         <button type="button" :disabled="!canProgram" @click="studio.programDevice()">Program selected device</button>
       </div>
-      <p v-if="programmed?.mock">Mock test. The FPGA was not programmed.</p>
-      <p v-else-if="programmed?.programmed">Programmed {{ programmed.device_name }} on {{ programmed.target }}.</p>
-      <p v-else-if="programmed">{{ programmed.message }}</p>
+      <p v-if="studio.hardwareProgram?.mock">Mock test. The FPGA was not programmed.</p>
+      <p v-else-if="studio.hardwareProgram?.programmed">Programmed {{ studio.hardwareProgram.device_name }} on {{ studio.hardwareProgram.target }}.</p>
+      <p v-else-if="studio.hardwareProgram">{{ studio.hardwareProgram.message }}</p>
     </section>
   </div>
 </template>
