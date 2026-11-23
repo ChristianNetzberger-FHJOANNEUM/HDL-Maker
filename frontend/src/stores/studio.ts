@@ -2,8 +2,8 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import type { DesignUnit, DiagramDocument, FpgaBuildConfig, Health, Library, ProjectFile, SimulationConfig, SourceText } from '../models/design'
 import type { EditableDiagram, EditableSummary } from '../models/editable'
-import { createDesign, createEditableDiagram, generateStructural, getBoards, getEditableDiagram, getExamplesPath, getHealth, cancelFpgaBuild, cancelSimulation, checkVivado, getFpgaBuild, getFpgaReport, getLatestFpgaBuild, getLatestSimulation, getProject, getSimulationRun, getSource, getTools, getUiSettings, listEditableDiagrams, openWaveform, saveEditableDiagram, saveFpga, saveLibraryProfile, saveSimulation, saveTools, saveUiSettings, saveVhdlStandard, scanLibrary, startFpgaBuild, startSimulation } from '../services/api'
-import type { BoardProfile, FpgaBuild, GenerateResult, SimulationRun } from '../services/api'
+import { createDesign, createEditableDiagram, generateStructural, getBoards, getEditableDiagram, getExamplesPath, getHealth, cancelFpgaBuild, cancelSimulation, checkVivado, getFpgaBuild, getFpgaReport, getHardwareScan, getLatestBitstream, getLatestFpgaBuild, getLatestSimulation, getProgram, getProject, getSimulationRun, getSource, getTools, getUiSettings, listEditableDiagrams, openWaveform, saveEditableDiagram, saveFpga, saveLibraryProfile, saveSimulation, saveTools, saveUiSettings, saveVhdlStandard, scanLibrary, startFpgaBuild, startHardwareScan, startProgram, startSimulation } from '../services/api'
+import type { BoardProfile, FpgaBuild, GenerateResult, HwProgram, HwScan, SimulationRun } from '../services/api'
 
 function clampTextPx(value: number): number {
   if (!Number.isFinite(value)) return 13
@@ -45,6 +45,11 @@ export const useStudioStore = defineStore('studio', () => {
     target: 'synthesis',
   })
   const fpgaBuild = ref<FpgaBuild | null>(null)
+  const fpgaBitstream = ref<FpgaBuild | null>(null)
+  const hardwareScan = ref<HwScan | null>(null)
+  const hardwareProgram = ref<HwProgram | null>(null)
+  const selectedDeviceId = ref('')
+  const programConfirm = ref(false)
   const fpgaNote = ref('')
   const fpgaReport = ref('')
   const gtkwavePath = ref('')
@@ -55,6 +60,7 @@ export const useStudioStore = defineStore('studio', () => {
   const generation = ref<GenerateResult | null>(null)
   let simulationPoll = 0
   let fpgaPoll = 0
+  let hardwarePoll = 0
   const uiReady = ref(false)
   const editable = ref<EditableDiagram | null>(null)
   const editing = ref(false)
@@ -248,6 +254,64 @@ export const useStudioStore = defineStore('studio', () => {
       fpgaNote.value = 'Cancelling the Vivado build.'
     } catch (reason) {
       fpgaNote.value = reason instanceof Error ? reason.message : 'The build could not be cancelled.'
+    }
+  }
+
+  async function refreshHardware(): Promise<void> {
+    try {
+      fpgaBitstream.value = await getLatestBitstream()
+    } catch {
+      fpgaBitstream.value = null
+    }
+  }
+
+  function scheduleHardwarePoll(): void {
+    window.clearTimeout(hardwarePoll)
+    hardwarePoll = window.setTimeout(async () => {
+      const scan = hardwareScan.value
+      const program = hardwareProgram.value
+      try {
+        if (scan?.status === 'running') hardwareScan.value = await getHardwareScan(scan.scan_id)
+        if (program?.status === 'running') hardwareProgram.value = await getProgram(program.program_id)
+      } catch {
+        return
+      }
+      if (hardwareScan.value?.status === 'running' || hardwareProgram.value?.status === 'running') scheduleHardwarePoll()
+    }, 1000)
+  }
+
+  async function scanHardware(): Promise<void> {
+    fpgaNote.value = 'Scanning JTAG targets.'
+    selectedDeviceId.value = ''
+    programConfirm.value = false
+    try {
+      hardwareScan.value = await startHardwareScan()
+      if (hardwareScan.value.status === 'running') scheduleHardwarePoll()
+      else fpgaNote.value = hardwareScan.value.message
+    } catch (reason) {
+      fpgaNote.value = reason instanceof Error ? reason.message : 'The hardware scan could not be started.'
+    }
+  }
+
+  async function programDevice(): Promise<void> {
+    const scan = hardwareScan.value
+    const bitstream = fpgaBitstream.value
+    if (!scan || !bitstream || !selectedDeviceId.value || !programConfirm.value) {
+      fpgaNote.value = 'Choose one device and confirm it before programming.'
+      return
+    }
+    fpgaNote.value = 'Programming the selected device.'
+    try {
+      hardwareProgram.value = await startProgram({
+        scan_id: scan.scan_id,
+        device_id: selectedDeviceId.value,
+        build_id: bitstream.build_id,
+        confirm: true,
+      })
+      if (hardwareProgram.value.status === 'running') scheduleHardwarePoll()
+      else fpgaNote.value = hardwareProgram.value.message
+    } catch (reason) {
+      fpgaNote.value = reason instanceof Error ? reason.message : 'Programming could not be started.'
     }
   }
 
@@ -711,6 +775,11 @@ export const useStudioStore = defineStore('studio', () => {
     vivadoNote,
     fpga,
     fpgaBuild,
+    fpgaBitstream,
+    hardwareScan,
+    hardwareProgram,
+    selectedDeviceId,
+    programConfirm,
     fpgaNote,
     fpgaReport,
     loadTools,
@@ -720,6 +789,9 @@ export const useStudioStore = defineStore('studio', () => {
     saveFpgaSettings,
     runFpga,
     cancelFpga,
+    refreshHardware,
+    scanHardware,
+    programDevice,
     openFpgaReport,
     generation,
     setVhdlStandard,

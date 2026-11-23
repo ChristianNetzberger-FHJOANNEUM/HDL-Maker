@@ -153,6 +153,65 @@ export function getFpgaReport(buildId: string, name: string): Promise<{ name: st
   return request(`/api/fpga/builds/${buildId}/reports/${name}`)
 }
 
+export interface HwDevice {
+  device_id: string
+  target: string
+  name: string
+  part: string
+  matches_part: boolean
+}
+
+export interface HwScan {
+  scan_id: string
+  status: 'running' | 'devices' | 'no_hardware' | 'failed'
+  mock: boolean
+  programmed: boolean
+  jtag_download: string
+  part: string
+  devices: HwDevice[]
+  message: string
+  diagnostics: Diagnostic[]
+}
+
+export interface HwProgram {
+  program_id: string
+  scan_id: string
+  build_id: string
+  status: 'running' | 'mock_passed' | 'passed' | 'failed'
+  mock: boolean
+  programmed: boolean
+  jtag_download: string
+  part: string
+  device_name: string
+  target: string
+  bitstream_path: string | null
+  message: string
+  diagnostics: Diagnostic[]
+}
+
+export function getLatestBitstream(): Promise<FpgaBuild | null> {
+  return request<FpgaBuild | null>('/api/fpga/bitstreams/latest')
+}
+
+export function startHardwareScan(): Promise<HwScan> {
+  return request<HwScan>('/api/fpga/hardware/scans', { method: 'POST' })
+}
+
+export function getHardwareScan(scanId: string): Promise<HwScan> {
+  return request<HwScan>(`/api/fpga/hardware/scans/${scanId}`)
+}
+
+export function startProgram(body: { scan_id: string; device_id: string; build_id: string; confirm: boolean }): Promise<HwProgram> {
+  return request<HwProgram>('/api/fpga/hardware/programs', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getProgram(programId: string): Promise<HwProgram> {
+  return request<HwProgram>(`/api/fpga/hardware/programs/${programId}`)
+}
+
 export function getHealth(): Promise<Health> {
   return request<Health>('/api/health')
 }

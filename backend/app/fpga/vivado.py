@@ -164,13 +164,19 @@ def render_tcl(
 
 
 def launch_build(project: ProjectFile, config: FpgaBuildConfig) -> dict:
-    with _LOCK:
-        if any(item.get("status") == "running" for item in _RUNS.values()):
-            raise FpgaRequestError("build_busy", "An FPGA build is already running.")
-    prepared = _prepare(project, config)
+    from app.fpga.session import release_tool, try_acquire
+
+    if not try_acquire():
+        raise FpgaRequestError("build_busy", "Vivado is already running a build or a hardware operation.")
+    try:
+        prepared = _prepare(project, config)
+    except Exception:
+        release_tool()
+        raise
     run = prepared["run"]
     if run["status"] == "failed":
         _store(run)
+        release_tool()
         return run
     cancel = threading.Event()
     with _LOCK:
@@ -392,6 +398,9 @@ def _worker(run: dict, files: list[CompiledFile], cancel: threading.Event) -> No
         with _LOCK:
             _CANCEL.pop(run["build_id"], None)
             _PROCS.pop(run["build_id"], None)
+        from app.fpga.session import release_tool
+
+        release_tool()
 
 
 def _run_process(

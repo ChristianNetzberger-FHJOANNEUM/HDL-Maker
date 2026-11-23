@@ -83,6 +83,13 @@ def builds_dir() -> Path:
     return path
 
 
+def hardware_dir() -> Path:
+    """JTAG scans and programming attempts. Earlier attempts are left in place."""
+    path = workspace_dir() / "hardware"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def simulations_dir() -> Path:
     """One directory per simulation run. Earlier runs are left in place."""
     path = workspace_dir() / "simulations"

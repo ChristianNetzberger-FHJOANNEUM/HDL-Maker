@@ -1,13 +1,23 @@
-"""FPGA build configuration and Vivado batch runs.
+"""FPGA build configuration, Vivado batch runs, and JTAG programming.
 
-The request returns while a long build continues on a worker thread.
-Programming the device is not part of this interface.
+A build or a hardware operation returns while Vivado continues on a worker
+thread. Programming requires an explicit device and confirmation. A mock
+result never claims that the FPGA was programmed.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from app.fpga.program import (
+    latest_bitstream,
+    latest_program,
+    latest_scan,
+    launch_program,
+    launch_scan,
+    program_record,
+    scan_record,
+)
 from app.fpga.vivado import (
     FpgaRequestError,
     build_run,
@@ -17,7 +27,7 @@ from app.fpga.vivado import (
     probe_vivado,
     report_text,
 )
-from app.models.design import FpgaBuildConfig, ProjectFile
+from app.models.design import FpgaBuildConfig, FpgaProgramRequest, ProjectFile
 from app.storage.project_store import load_project, save_project
 
 router = APIRouter(tags=["fpga"])
@@ -64,6 +74,56 @@ def post_cancel(build_id: str) -> dict:
     if run is None:
         raise HTTPException(status_code=404, detail={"code": "build_not_found", "message": "That FPGA build does not exist."})
     return run
+
+
+@router.get("/fpga/bitstreams/latest")
+def get_latest_bitstream() -> dict | None:
+    return latest_bitstream()
+
+
+@router.post("/fpga/hardware/scans")
+def post_scan() -> dict:
+    project = load_project()
+    bitstream = latest_bitstream()
+    part = str(bitstream["part"]) if bitstream and bitstream.get("part") else project.fpga.part
+    try:
+        return launch_scan(part)
+    except FpgaRequestError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from exc
+
+
+@router.get("/fpga/hardware/scans/latest")
+def get_latest_scan() -> dict | None:
+    return latest_scan()
+
+
+@router.get("/fpga/hardware/scans/{scan_id}")
+def get_scan(scan_id: str) -> dict:
+    scan = scan_record(scan_id)
+    if scan is None:
+        raise HTTPException(status_code=404, detail={"code": "scan_not_found", "message": "That hardware scan does not exist."})
+    return scan
+
+
+@router.post("/fpga/hardware/programs")
+def post_program(body: FpgaProgramRequest) -> dict:
+    try:
+        return launch_program(body)
+    except FpgaRequestError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from exc
+
+
+@router.get("/fpga/hardware/programs/latest")
+def get_latest_program() -> dict | None:
+    return latest_program()
+
+
+@router.get("/fpga/hardware/programs/{program_id}")
+def get_program(program_id: str) -> dict:
+    program = program_record(program_id)
+    if program is None:
+        raise HTTPException(status_code=404, detail={"code": "program_not_found", "message": "That programming attempt does not exist."})
+    return program
 
 
 @router.get("/fpga/builds/{build_id}/reports/{name}")

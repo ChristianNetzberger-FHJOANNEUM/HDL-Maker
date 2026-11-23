@@ -5,6 +5,18 @@ import { useStudioStore } from '../stores/studio'
 const studio = useStudioStore()
 const build = computed(() => studio.fpgaBuild)
 const running = computed(() => build.value?.status === 'running')
+const scan = computed(() => studio.hardwareScan)
+const programmed = computed(() => studio.hardwareProgram)
+const selectedDevice = computed(() => scan.value?.devices.find((device) => device.device_id === studio.selectedDeviceId) ?? null)
+const canProgram = computed(
+  () =>
+    Boolean(studio.fpgaBitstream) &&
+    Boolean(selectedDevice.value?.matches_part) &&
+    studio.programConfirm &&
+    scan.value?.status === 'devices' &&
+    programmed.value?.status !== 'running',
+)
+void studio.refreshHardware()
 const entities = computed(() =>
   (studio.project?.design_units ?? [])
     .filter((unit) => unit.kind === 'entity' && unit.language === 'vhdl')
@@ -41,6 +53,11 @@ function addXdc(): void {
 function removeXdc(index: number): void {
   studio.fpga.xdc_paths.splice(index, 1)
   void studio.saveFpgaSettings()
+}
+
+function chooseDevice(event: Event): void {
+  studio.selectedDeviceId = (event.target as HTMLSelectElement).value
+  studio.programConfirm = false
 }
 
 function stageLabel(name: string): string {
@@ -108,6 +125,36 @@ function stageLabel(name: string): string {
       </div>
       <pre v-if="studio.fpgaReport" class="report">{{ studio.fpgaReport }}</pre>
     </section>
+    <section>
+      <h3>Program FPGA</h3>
+      <p class="hint">
+        JTAG programming uses the finished bitstream and one device you select. The first device in the chain is not used automatically. A Zynq PL-only bitstream can warn that the PS7 cell is absent. This step does not add a processing system.
+      </p>
+      <p v-if="studio.fpgaBitstream" class="mono">{{ studio.fpgaBitstream.bitstream_path }}</p>
+      <p v-else class="hint">No finished bitstream build is available.</p>
+      <p v-if="studio.fpgaBitstream">Bitstream part: {{ studio.fpgaBitstream.part }}.</p>
+      <button type="button" :disabled="scan?.status === 'running'" @click="studio.scanHardware()">Scan JTAG</button>
+      <p v-if="scan" class="note">{{ scan.message }}</p>
+      <p v-if="scan?.mock">Mock scan. The FPGA was not programmed.</p>
+      <p v-if="scan && !scan.mock && scan.jtag_download === 'not_tested_no_hardware'">JTAG download: not tested, no hardware.</p>
+      <label v-if="scan?.devices.length" for="fpga-device">JTAG device</label>
+      <select v-if="scan?.devices.length" id="fpga-device" :value="studio.selectedDeviceId" @change="chooseDevice">
+        <option value="">Choose a device</option>
+        <option v-for="device in scan.devices" :key="device.device_id" :value="device.device_id">
+          {{ device.name }} — {{ device.part || 'no part' }} — {{ device.target }}{{ device.matches_part ? '' : ' — part does not match' }}
+        </option>
+      </select>
+      <label v-if="selectedDevice" class="check">
+        <input v-model="studio.programConfirm" type="checkbox" />
+        Program only {{ selectedDevice.name }} on {{ selectedDevice.target }}
+      </label>
+      <div class="actions">
+        <button type="button" :disabled="!canProgram" @click="studio.programDevice()">Program selected device</button>
+      </div>
+      <p v-if="programmed?.mock">Mock test. The FPGA was not programmed.</p>
+      <p v-else-if="programmed?.programmed">Programmed {{ programmed.device_name }} on {{ programmed.target }}.</p>
+      <p v-else-if="programmed">{{ programmed.message }}</p>
+    </section>
   </div>
 </template>
 
@@ -140,6 +187,12 @@ label {
   display: block;
   margin-top: 8px;
   font-size: 13px;
+}
+
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
 }
 
 select,

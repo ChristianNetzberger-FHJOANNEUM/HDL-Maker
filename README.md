@@ -2,7 +2,7 @@
 
 HDL-Maker is open-source software for students, universities, and other developers. It is a browser-based studio for migrating existing HDL Designer libraries and editing hierarchical VHDL designs. It does not require a Siemens HDL Designer license, and it is not a clone of that product.
 
-M5a is in the working tree. The studio can synthesize a VHDL design with Vivado and, as a separate run, implement it and write a bitstream. The Vivado executable is set in Preferences; that path is local tool configuration and does not change `PATH`. JTAG programming is **M5b** and is not started. A browser waveform view remains **M4b** and is not required for the FPGA flow. Order and scope are fixed in [docs/roadmap.md](docs/roadmap.md). The batch flow is described in [docs/m5a-vivado.md](docs/m5a-vivado.md). Simulation details are in [docs/m4a-simulation.md](docs/m4a-simulation.md) and [docs/m4a1-gtkwave.md](docs/m4a1-gtkwave.md).
+M5b is in the working tree. The studio can synthesize a VHDL design with Vivado, write a bitstream, and program one confirmed JTAG device. A Zybo Z7-20 run tested three results on hardware: the JTAG download of `xc7z020_1`, the DONE pin, and LED0 blinking about once per second. The Vivado executable is set in Preferences; that path is local tool configuration and does not change `PATH`. A browser waveform view remains **M4b**. Order and scope are fixed in [docs/roadmap.md](docs/roadmap.md). The batch flow is described in [docs/m5a-vivado.md](docs/m5a-vivado.md) and the JTAG flow in [docs/m5b-jtag.md](docs/m5b-jtag.md). Simulation details are in [docs/m4a-simulation.md](docs/m4a-simulation.md) and [docs/m4a1-gtkwave.md](docs/m4a1-gtkwave.md).
 
 ## License
 
@@ -91,4 +91,5 @@ workspace/    local project file, gitignored
 - [docs/m2b-limitations.md](docs/m2b-limitations.md)
 - [docs/m3a-limitations.md](docs/m3a-limitations.md)
 - [docs/m5a-vivado.md](docs/m5a-vivado.md)
+- [docs/m5b-jtag.md](docs/m5b-jtag.md)
 - [docs/student-edition.md](docs/student-edition.md)

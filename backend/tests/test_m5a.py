@@ -36,10 +36,12 @@ def workspace(tmp_path, monkeypatch) -> Path:
     root.mkdir()
     monkeypatch.setenv("HDS_WORKSPACE", str(root))
     from app.fpga import vivado
+    from app.fpga.session import reset_tool
 
     vivado._RUNS.clear()
     vivado._CANCEL.clear()
     vivado._PROCS.clear()
+    reset_tool()
     return root
 
 

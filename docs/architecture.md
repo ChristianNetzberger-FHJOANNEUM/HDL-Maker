@@ -42,7 +42,7 @@ Generated files are `workspace/generated/vhdl-93/*.vhd` or `workspace/generated/
 
 External simulators only. M4a runs GHDL and opens the waveform in GTKWave. M4a.1 adds a local executable path and an optional `.gtkw` save file. A browser waveform view is M4b. Vivado XSim, Verilator, and mixed-language simulation stay behind the same adapter boundary and are not part of M4. There is no plan to write an HDL simulation kernel.
 
-FPGA implementation is a separate adapter. M5a runs Vivado 2019.1 in non-project mode. The part comes from the selected board file. Pin assignments stay in the user's XDC file and are not stored here. JTAG programming is M5b. See [m5a-vivado.md](m5a-vivado.md).
+FPGA implementation is a separate adapter. M5a runs Vivado 2019.1 in non-project mode. The part comes from the selected board file. Pin assignments stay in the user's XDC file and are not stored here. M5b programs one confirmed JTAG device through the Hardware Manager. A download without a connected board stays untested. See [m5a-vivado.md](m5a-vivado.md) and [m5b-jtag.md](m5b-jtag.md).
 
 ## Schema version 2
 

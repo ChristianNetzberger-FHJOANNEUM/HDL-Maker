@@ -104,3 +104,12 @@
 - The generated Tcl script is a Vivado 2019.1 non-project flow. VHDL-93 is not passed as `-vhdl2008`. VHDL-2008 uses that flag only when this Vivado version accepts it. GHDL's `-fsynopsys` and `-fexplicit` are not passed to Vivado.
 - Each build is a new directory under `workspace/builds/`. Synthesis and bitstream are separate. A passed synthesis does not report a bitstream.
 - Vivado v2019.1 synthesized `examples/fpga/zybo-z7-10-counter` for part `xc7z010clg400-1` and wrote a bitstream. The log contains warning ZPS7-1 and no error. The board was not programmed. Details: `docs/m5a-vivado.md`.
+
+### M5b
+
+- The FPGA Build tab can scan the Vivado 2019.1 Hardware Manager and program one named device from a finished bitstream. The request must name the device and confirm it. The first device is not selected automatically.
+- A JTAG part such as `xc7z010` matches the bitstream part `xc7z010clg400-1`. A different part, including an ARM DAP, is rejected.
+- A mock program is stored as `mock_passed` with `programmed` false. It is not reported as a programmed FPGA.
+- With no board connected, Vivado 2019.1 reports `Labtoolstcl 44-199`. That earlier result stays `not_tested_no_hardware`.
+- On a Zybo Z7-20, device `xc7z020_1` was programmed from the `xc7z020clg400-1` bitstream. JTAG programming, the DONE pin, and the LED0 counter are recorded separately. All three are tested on hardware. `Labtoolstcl 44-560` did not block the download and is left for a later Tcl cleanup.
+- DRC ZPS7-1 remains a warning on the PL-only counter. The reference design was not given a PS7 cell. Details: `docs/m5b-jtag.md`.

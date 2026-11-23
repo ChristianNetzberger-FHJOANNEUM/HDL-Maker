@@ -424,6 +424,24 @@ class FpgaBuildConfig(APIModel):
         return [item.strip() for item in value if isinstance(item, str)]
 
 
+class FpgaProgramRequest(APIModel):
+    """An explicit request to program one device from one scan.
+
+    ``confirm`` must be true. The server does not choose a device when this
+    field is omitted.
+    """
+
+    scan_id: str
+    device_id: str = ""
+    build_id: str
+    confirm: bool = False
+
+    @field_validator("scan_id", "device_id", "build_id")
+    @classmethod
+    def strip_program_fields(cls, value: str) -> str:
+        return value.strip()
+
+
 class Library(APIModel):
     id: str
     name: str
