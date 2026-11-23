@@ -8,7 +8,7 @@ Component instances, their library and component names, generics, pin declaratio
 
 ## Not recovered
 
-- State and transition behavior. `.sm` files contribute a machine name, a state-signal name, and record counts.
+- Palette prototypes and machine anchors. M2c places states and transitions that have a `uid`. A reset, recovery, or interrupt anchor stays an anchor. See `docs/m2c-limitations.md`.
 - Flowcharts, truth tables, and interface-based diagrams. This library has none of those extensions. A file with one of those extensions would be counted and not parsed.
 - The meaning of `FFT`, `Mux`, `CommentGraphic`, and `PageSetupInfo`. Their fields are preserved on the diagram and are not drawn.
 - Pin mode from the symbol field `m`. It is stored as `marker_m`. Direction is taken only from `PortIoIn`, `PortIoOut`, `PortIoInOut`, and `PortIoBuffer`.

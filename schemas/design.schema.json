@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://hdl-design-studio.local/schemas/design.schema.json",
   "title": "HDL Design Studio library inventory",
-  "description": "Schema version 2 stores imported libraries, design-unit interfaces, and read-only diagram documents. Version 1 files still load. Diagram coordinates are not part of the VHDL interface. Keep this file aligned with backend/app/models/design.py.",
+  "description": "Schema version 2 stores imported libraries, design-unit interfaces, and read-only diagram documents. vhdl_standard is the project build setting for generated VHDL and defaults to 93 when the field is absent. library_profile selects the GHDL library compatibility and defaults to ieee when the field is absent. simulation stores the testbench, stop time, waveform format, generic overrides, and an optional .gtkw path. It is not the hierarchy root and it is not stored in ui.json. The GTKWave executable path is workspace/tools.json, not this schema. Version 1 files still load. Diagram coordinates are not part of the VHDL interface. Keep this file aligned with backend/app/models/design.py.",
   "type": "object",
   "additionalProperties": false,
     "required": ["schema_version", "project_id", "name", "libraries", "design_units", "diagrams"],
@@ -10,6 +10,10 @@
     "schema_version": { "enum": [1, 2] },
     "project_id": { "type": "string", "minLength": 1 },
     "name": { "type": "string", "minLength": 1 },
+    "vhdl_standard": { "enum": ["93", "2008"] },
+    "library_profile": { "enum": ["ieee", "synopsys"] },
+    "simulation": { "$ref": "#/$defs/simulation" },
+    "fpga": { "$ref": "#/$defs/fpga" },
     "libraries": {
       "type": "array",
       "items": { "$ref": "#/$defs/library" }
@@ -24,6 +28,39 @@
     }
   },
   "$defs": {
+    "simulation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "testbench_unit_id": { "type": "string" },
+        "stop_time": { "type": "string", "minLength": 1 },
+        "waveform_format": { "enum": ["ghw", "vcd"] },
+        "generic_overrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "value"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "value": { "type": "string" }
+            }
+          }
+        },
+        "gtkw_path": { "type": "string" }
+      }
+    },
+    "fpga": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "top_unit_id": { "type": "string" },
+        "board_id": { "type": "string" },
+        "part": { "type": "string" },
+        "xdc_paths": { "type": "array", "items": { "type": "string" } },
+        "target": { "enum": ["synthesis", "bitstream"] }
+      }
+    },
     "severity": { "enum": ["error", "warning", "info"] },
     "diagnostic": {
       "type": "object",
@@ -236,8 +273,11 @@
         "architecture_name": { "type": ["string", "null"] },
         "machine_name": { "type": ["string", "null"] },
         "state_signal_name": { "type": ["string", "null"] },
+        "fsm": { "type": ["object", "null"] },
         "parse_status": { "enum": ["parsed", "partial", "unsupported", "skipped"] },
         "instances": { "type": "array", "items": { "$ref": "#/$defs/diagramInstance" } },
+        "states": { "type": "array", "items": { "$ref": "#/$defs/diagramState" } },
+        "transitions": { "type": "array", "items": { "$ref": "#/$defs/diagramTransition" } },
         "ports": { "type": "array", "items": { "$ref": "#/$defs/diagramPort" } },
         "nets": { "type": "array", "items": { "$ref": "#/$defs/diagramNet" } },
         "wires": { "type": "array", "items": { "$ref": "#/$defs/diagramWire" } },
@@ -247,6 +287,61 @@
         "preserved_records": { "type": "array", "items": { "$ref": "#/$defs/preservedRecord" } },
         "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } },
         "vhdl_check": { "type": "array", "items": { "$ref": "#/$defs/vhdlCheck" } }
+      }
+    },
+    "diagramState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "hds_uid": { "type": ["string", "null"] },
+        "hds_object": { "type": ["integer", "null"] },
+        "x1": { "type": ["integer", "null"] },
+        "y1": { "type": ["integer", "null"] },
+        "x2": { "type": ["integer", "null"] },
+        "y2": { "type": ["integer", "null"] },
+        "entry_actions": { "type": ["string", "null"] },
+        "during_actions": { "type": ["string", "null"] },
+        "exit_actions": { "type": ["string", "null"] },
+        "encoding": { "type": ["string", "null"] },
+        "wait_text": { "type": ["string", "null"] },
+        "text_boxes": { "type": "array", "items": { "$ref": "#/$defs/diagramTextBox" } }
+      }
+    },
+    "diagramTextBox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "x1", "y1", "x2", "y2"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["entry", "during", "exit", "condition", "actions"] },
+        "x1": { "type": "integer" },
+        "y1": { "type": "integer" },
+        "x2": { "type": "integer" },
+        "y2": { "type": "integer" }
+      }
+    },
+    "diagramTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "hds_uid": { "type": ["string", "null"] },
+        "hds_object": { "type": ["integer", "null"] },
+        "start_state_id": { "type": ["string", "null"] },
+        "end_state_id": { "type": ["string", "null"] },
+        "start_kind": { "enum": ["state", "reset", "recovery", "interrupt", "unresolved", null] },
+        "end_kind": { "enum": ["state", "reset", "recovery", "interrupt", "unresolved", null] },
+        "start_object": { "type": ["integer", "null"] },
+        "end_object": { "type": ["integer", "null"] },
+        "condition": { "type": ["string", "null"] },
+        "actions": { "type": ["string", "null"] },
+        "priority": { "type": ["string", "null"] },
+        "points": { "type": "array", "items": { "$ref": "#/$defs/point" } },
+        "text_boxes": { "type": "array", "items": { "$ref": "#/$defs/diagramTextBox" } }
       }
     },
     "diagramGeneric": {

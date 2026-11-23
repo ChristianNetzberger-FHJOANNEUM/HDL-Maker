@@ -118,12 +118,55 @@ export interface DiagramGenericDef {
   default_text: string | null
 }
 
+export interface EditableTextBox {
+  id: string
+  owner_id: string
+  role: 'entry' | 'during' | 'exit' | 'condition' | 'actions'
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface EditableState {
+  id: string
+  name: string
+  hds_uid: string | null
+  hds_object: number | null
+  x: number
+  y: number
+  width: number
+  height: number
+  entry_actions: string | null
+  during_actions: string | null
+  exit_actions: string | null
+  encoding: string | null
+  wait_text: string | null
+}
+
+export interface EditableTransition {
+  id: string
+  hds_uid: string | null
+  hds_object: number | null
+  start_state_id: string | null
+  end_state_id: string | null
+  start_kind?: 'state' | 'reset' | 'recovery' | 'interrupt' | 'unresolved' | null
+  end_kind?: 'state' | 'reset' | 'recovery' | 'interrupt' | 'unresolved' | null
+  condition: string | null
+  actions: string | null
+  priority: string | null
+  points: { x: number; y: number }[]
+}
+
 export interface EditableDiagram {
   schema_version: 1
   id: string
   name: string
+  kind?: 'block' | 'state'
   entity_name: string | null
   architecture_name: string | null
+  state_signal_name?: string | null
+  fsm?: Record<string, unknown> | null
   frame: LayoutFrame
   provenance: {
     library_id: string
@@ -134,6 +177,9 @@ export interface EditableDiagram {
   }
   generics: DiagramGenericDef[]
   instances: EditableInstance[]
+  states?: EditableState[]
+  transitions?: EditableTransition[]
+  text_boxes?: EditableTextBox[]
   diagram_ports: EditableDiagramPort[]
   junctions: EditableJunction[]
   nets: EditableNet[]

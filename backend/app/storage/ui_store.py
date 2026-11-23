@@ -1,12 +1,14 @@
 """Remember the library form between browser sessions.
 
-``workspace/ui.json`` stores only the path and name the user typed. It does
-not copy the library.
+``workspace/ui.json`` stores the path and name the user typed, the selected
+board, the hierarchy root, and the studio text size. The VHDL language
+standard is project configuration in ``project.json``, not a studio preference.
+This file does not copy a library or a diagram.
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.paths import ui_file
 
@@ -19,6 +21,23 @@ class UiSettings(BaseModel):
     include_side_data: bool = False
     board_id: str = ""
     hierarchy_root_id: str = ""
+    state_text_px: int = 13
+
+    @field_validator("state_text_px", mode="before")
+    @classmethod
+    def clamp_state_text_px(cls, value: object) -> int:
+        if isinstance(value, bool) or value is None:
+            return 13
+        if isinstance(value, (int, float)):
+            number = int(round(float(value)))
+        elif isinstance(value, str):
+            try:
+                number = int(round(float(value)))
+            except ValueError:
+                return 13
+        else:
+            return 13
+        return min(16, max(8, number))
 
 
 def load_ui() -> UiSettings:

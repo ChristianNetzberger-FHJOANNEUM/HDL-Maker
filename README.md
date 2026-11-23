@@ -1,15 +1,23 @@
 # HDL Design Studio
 
-License-independent, browser-based studio for migrating existing HDL Designer libraries and editing hierarchical VHDL designs. This is not a clone of Siemens HDL Designer.
+HDL-Maker is open-source software for students, universities, and other developers. It is a browser-based studio for migrating existing HDL Designer libraries and editing hierarchical VHDL designs. It does not require a Siemens HDL Designer license, and it is not a clone of that product.
 
-M2b and the portable student build are in the working tree. The next milestone is **M2c**. Order and scope are fixed in [docs/roadmap.md](docs/roadmap.md).
+M5a is in the working tree. The studio can synthesize a VHDL design with Vivado and, as a separate run, implement it and write a bitstream. The Vivado executable is set in Preferences; that path is local tool configuration and does not change `PATH`. JTAG programming is **M5b** and is not started. A browser waveform view remains **M4b** and is not required for the FPGA flow. Order and scope are fixed in [docs/roadmap.md](docs/roadmap.md). The batch flow is described in [docs/m5a-vivado.md](docs/m5a-vivado.md). Simulation details are in [docs/m4a-simulation.md](docs/m4a-simulation.md) and [docs/m4a1-gtkwave.md](docs/m4a1-gtkwave.md).
+
+## License
+
+HDL-Maker is released under the [MIT License](LICENSE).
+
+Copyright (c) 2026 Christian Netzberger
+
+The VHDL designs and graphical design files in `libs/sbus_rtc_lib` are the author's work and may be distributed under the same MIT License. Third-party board files and generated tool output keep their own terms. Those notices are listed in [docs/third-party-notices.md](docs/third-party-notices.md).
 
 A portable Windows build for students is described in [docs/student-edition.md](docs/student-edition.md). Development still uses the Vite server. The packaged app serves the built page and the API on `127.0.0.1` and does not need Node.js or a separate Python install.
 
 ## Stack
 
 - Frontend: Vue 3, TypeScript, Vite, Pinia, and Vue Flow
-- Backend: Python 3.10.9 (this machine's existing environment; FastAPI and Pydantic 2), GHDL when it is installed
+- Backend: Python 3.10.9 (this machine's existing environment; FastAPI and Pydantic 2). GHDL is optional for generation and required before a file can be called analyzed.
 - Project state: versioned JSON under `workspace/` (not committed)
 - Original HDL files stay where they are and are never modified
 
@@ -18,7 +26,7 @@ A portable Windows build for students is described in [docs/student-edition.md](
 - Windows 11
 - Python 3.10 at `C:\Program Files\Python310` and the repository `.venv`
 - Node.js 22 or newer
-- GHDL is required from milestone M3 onward. It is optional for M0 and M1. The health endpoint reports whether `ghdl` is on `PATH`.
+- GHDL is optional while generating VHDL and required to run a simulation. GTKWave is optional. When it is missing, the waveform file is kept. Vivado is optional and is required only for an FPGA build. The health endpoint reports `ghdl` from `PATH`, and GTKWave and Vivado from `workspace/tools.json` or, when the setting is empty, from `PATH`.
 
 ## Setup
 
@@ -81,4 +89,6 @@ workspace/    local project file, gitignored
 - [docs/migration.md](docs/migration.md)
 - [docs/changelog.md](docs/changelog.md)
 - [docs/m2b-limitations.md](docs/m2b-limitations.md)
+- [docs/m3a-limitations.md](docs/m3a-limitations.md)
+- [docs/m5a-vivado.md](docs/m5a-vivado.md)
 - [docs/student-edition.md](docs/student-edition.md)

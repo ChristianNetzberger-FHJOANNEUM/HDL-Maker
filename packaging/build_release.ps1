@@ -31,6 +31,7 @@ if (-not (Test-Path (Join-Path $App "HDL-Maker.exe"))) {
     throw "HDL-Maker.exe was not produced"
 }
 Copy-Item (Join-Path $Root "packaging\STUDENT.txt") (Join-Path $App "README.txt") -Force
+Copy-Item (Join-Path $Root "LICENSE") (Join-Path $App "LICENSE") -Force
 
 $Forbidden = Get-ChildItem $App -Recurse -File | Where-Object {
     $_.FullName -match '\\libs\\|\\workspace\\'

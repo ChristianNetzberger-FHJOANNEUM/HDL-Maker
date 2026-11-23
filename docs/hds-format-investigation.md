@@ -49,7 +49,7 @@ From `hds/audio_gain/struct.bd`:
 
 `symbol.sb` uses the same envelope. The drawn pins are `CptPort` records under `SymbolBody`, with triangle extents. The logical table is `LogPort`. For `audio_gain` both lists name the same 14 ports, and the importer keeps the drawn pins because they have coordinates.
 
-`fsm.sm` uses the same envelope with dialect 11. The header `Machine` is named `csm` and the nested machine sets `stateSignalName "current_state"`. `hds/audio_fifo_ctrl/fsm.sm` contains 7 `State` records and 9 `Transition` records. Those records are counted. Their fields are not converted into an editable state machine.
+`fsm.sm` uses the same envelope with dialect 11. The header `Machine` is named `csm` and the nested machine sets `stateSignalName "current_state"`. `hds/audio_fifo_ctrl/fsm.sm` contains 7 `State` records and 9 `Transition` records. Records with a `uid` are placed: 5 states and 8 transitions in that file, 126 states and 189 transitions across the library. A record without a `uid` stays a reported palette prototype.
 
 ## Records that are kept but not interpreted
 

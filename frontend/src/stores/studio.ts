@@ -1,9 +1,14 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import type { DesignUnit, DiagramDocument, Health, Library, ProjectFile, SourceText } from '../models/design'
+import type { DesignUnit, DiagramDocument, FpgaBuildConfig, Health, Library, ProjectFile, SimulationConfig, SourceText } from '../models/design'
 import type { EditableDiagram, EditableSummary } from '../models/editable'
-import { createDesign, createEditableDiagram, getBoards, getEditableDiagram, getExamplesPath, getHealth, getProject, getSource, getUiSettings, listEditableDiagrams, saveEditableDiagram, saveUiSettings, scanLibrary } from '../services/api'
-import type { BoardProfile } from '../services/api'
+import { createDesign, createEditableDiagram, generateStructural, getBoards, getEditableDiagram, getExamplesPath, getHealth, cancelFpgaBuild, cancelSimulation, checkVivado, getFpgaBuild, getFpgaReport, getLatestFpgaBuild, getLatestSimulation, getProject, getSimulationRun, getSource, getTools, getUiSettings, listEditableDiagrams, openWaveform, saveEditableDiagram, saveFpga, saveLibraryProfile, saveSimulation, saveTools, saveUiSettings, saveVhdlStandard, scanLibrary, startFpgaBuild, startSimulation } from '../services/api'
+import type { BoardProfile, FpgaBuild, GenerateResult, SimulationRun } from '../services/api'
+
+function clampTextPx(value: number): number {
+  if (!Number.isFinite(value)) return 13
+  return Math.min(16, Math.max(8, Math.round(value)))
+}
 
 export const useStudioStore = defineStore('studio', () => {
   const health = ref<Health | null>(null)
@@ -11,7 +16,7 @@ export const useStudioStore = defineStore('studio', () => {
   const project = ref<ProjectFile | null>(null)
   const selectedUnitId = ref<string | null>(null)
   const selectedDiagramId = ref<string | null>(null)
-  const tab = ref<'symbol' | 'source' | 'diagram'>('symbol')
+  const tab = ref<'symbol' | 'source' | 'diagram' | 'simulation' | 'fpga' | 'preferences'>('symbol')
   const source = ref<SourceText | null>(null)
   const busy = ref(false)
   const error = ref('')
@@ -22,6 +27,34 @@ export const useStudioStore = defineStore('studio', () => {
   const boardId = ref('')
   const boardsLoaded = ref(false)
   const hierarchyRootId = ref('')
+  const stateTextPx = ref(13)
+  const vhdlStandard = ref<'93' | '2008'>('93')
+  const libraryProfile = ref<'ieee' | 'synopsys'>('ieee')
+  const simulation = ref<SimulationConfig>({
+    testbench_unit_id: '',
+    stop_time: '1us',
+    waveform_format: 'ghw',
+    generic_overrides: [],
+    gtkw_path: '',
+  })
+  const fpga = ref<FpgaBuildConfig>({
+    top_unit_id: '',
+    board_id: '',
+    part: '',
+    xdc_paths: [],
+    target: 'synthesis',
+  })
+  const fpgaBuild = ref<FpgaBuild | null>(null)
+  const fpgaNote = ref('')
+  const fpgaReport = ref('')
+  const gtkwavePath = ref('')
+  const vivadoPath = ref('')
+  const vivadoNote = ref('')
+  const simulationRun = ref<SimulationRun | null>(null)
+  const simulationNote = ref('')
+  const generation = ref<GenerateResult | null>(null)
+  let simulationPoll = 0
+  let fpgaPoll = 0
   const uiReady = ref(false)
   const editable = ref<EditableDiagram | null>(null)
   const editing = ref(false)
@@ -78,12 +111,153 @@ export const useStudioStore = defineStore('studio', () => {
     }
   }
 
+  function applyProject(next: ProjectFile): void {
+    project.value = next
+    vhdlStandard.value = next.vhdl_standard === '2008' ? '2008' : '93'
+    libraryProfile.value = next.library_profile === 'synopsys' ? 'synopsys' : 'ieee'
+    const stored = next.simulation
+    simulation.value = {
+      testbench_unit_id: stored?.testbench_unit_id ?? '',
+      stop_time: stored?.stop_time || '1us',
+      waveform_format: stored?.waveform_format === 'vcd' ? 'vcd' : 'ghw',
+      generic_overrides: (stored?.generic_overrides ?? []).map((item) => ({ name: item.name, value: item.value })),
+      gtkw_path: stored?.gtkw_path ?? '',
+    }
+    const storedFpga = next.fpga
+    fpga.value = {
+      top_unit_id: storedFpga?.top_unit_id ?? '',
+      board_id: storedFpga?.board_id ?? '',
+      part: storedFpga?.part ?? '',
+      xdc_paths: [...(storedFpga?.xdc_paths ?? [])],
+      target: storedFpga?.target === 'bitstream' ? 'bitstream' : 'synthesis',
+    }
+  }
+
   async function loadProject(): Promise<void> {
-    project.value = await getProject()
+    applyProject(await getProject())
+    try {
+      simulationRun.value = await getLatestSimulation()
+    } catch {
+      simulationRun.value = null
+    }
+    try {
+      fpgaBuild.value = await getLatestFpgaBuild()
+    } catch {
+      fpgaBuild.value = null
+    }
     await refreshDesigns()
     if (!selectedUnitId.value) {
       const entity = units.value.find((unit) => unit.kind === 'entity')
       if (entity) await selectUnit(entity.id)
+    }
+  }
+
+  async function loadTools(): Promise<void> {
+    try {
+      const tools = await getTools()
+      gtkwavePath.value = tools.gtkwave_path
+      vivadoPath.value = tools.vivado_path
+    } catch {
+      gtkwavePath.value = ''
+      vivadoPath.value = ''
+    }
+  }
+
+  function toolPayload() {
+    return { gtkwave_path: gtkwavePath.value.trim(), vivado_path: vivadoPath.value.trim() }
+  }
+
+  async function saveGtkwavePath(): Promise<void> {
+    try {
+      const saved = await saveTools(toolPayload())
+      gtkwavePath.value = saved.gtkwave_path
+      vivadoPath.value = saved.vivado_path
+      await loadHealth()
+      error.value = ''
+    } catch (reason) {
+      error.value = reason instanceof Error ? reason.message : 'The GTKWave path could not be saved.'
+    }
+  }
+
+  async function saveVivadoPath(): Promise<void> {
+    try {
+      const saved = await saveTools(toolPayload())
+      gtkwavePath.value = saved.gtkwave_path
+      vivadoPath.value = saved.vivado_path
+      await loadHealth()
+      vivadoNote.value = ''
+      error.value = ''
+    } catch (reason) {
+      error.value = reason instanceof Error ? reason.message : 'The Vivado path could not be saved.'
+    }
+  }
+
+  async function checkVivadoInstall(): Promise<void> {
+    await saveVivadoPath()
+    vivadoNote.value = 'Checking Vivado…'
+    try {
+      const result = await checkVivado()
+      vivadoNote.value = result.message
+    } catch (reason) {
+      vivadoNote.value = reason instanceof Error ? reason.message : 'Vivado could not be checked.'
+    }
+  }
+
+  async function saveFpgaSettings(): Promise<void> {
+    try {
+      applyProject(await saveFpga({ ...fpga.value, xdc_paths: fpga.value.xdc_paths.map((item) => item.trim()).filter((item) => item) }))
+      fpgaNote.value = ''
+    } catch (reason) {
+      fpgaNote.value = reason instanceof Error ? reason.message : 'The FPGA settings could not be saved.'
+    }
+  }
+
+  function scheduleFpgaPoll(): void {
+    window.clearTimeout(fpgaPoll)
+    fpgaPoll = window.setTimeout(async () => {
+      const current = fpgaBuild.value
+      if (!current || current.status !== 'running') return
+      try {
+        fpgaBuild.value = await getFpgaBuild(current.build_id)
+      } catch {
+        return
+      }
+      if (fpgaBuild.value.status === 'running') scheduleFpgaPoll()
+    }, 1000)
+  }
+
+  async function runFpga(target: 'synthesis' | 'bitstream'): Promise<void> {
+    fpga.value.target = target
+    await saveFpgaSettings()
+    fpgaNote.value = target === 'bitstream' ? 'Starting the bitstream build.' : 'Starting synthesis.'
+    fpgaReport.value = ''
+    try {
+      fpgaBuild.value = await startFpgaBuild()
+      if (fpgaBuild.value.status === 'running') scheduleFpgaPoll()
+      else fpgaNote.value = fpgaBuild.value.diagnostics[0]?.message || 'The build did not start.'
+    } catch (reason) {
+      fpgaNote.value = reason instanceof Error ? reason.message : 'The FPGA build could not be started.'
+    }
+  }
+
+  async function cancelFpga(): Promise<void> {
+    const current = fpgaBuild.value
+    if (!current || current.status !== 'running') return
+    try {
+      await cancelFpgaBuild(current.build_id)
+      fpgaNote.value = 'Cancelling the Vivado build.'
+    } catch (reason) {
+      fpgaNote.value = reason instanceof Error ? reason.message : 'The build could not be cancelled.'
+    }
+  }
+
+  async function openFpgaReport(name: string): Promise<void> {
+    const current = fpgaBuild.value
+    if (!current) return
+    try {
+      fpgaReport.value = (await getFpgaReport(current.build_id, name)).text
+    } catch (reason) {
+      fpgaReport.value = reason instanceof Error ? reason.message : 'The report could not be opened.'
     }
   }
 
@@ -96,6 +270,7 @@ export const useStudioStore = defineStore('studio', () => {
       includeSideData.value = settings.include_side_data
       boardId.value = settings.board_id || ''
       hierarchyRootId.value = settings.hierarchy_root_id || ''
+      stateTextPx.value = clampTextPx(settings.state_text_px)
       const catalog = await getBoards()
       boards.value = catalog.boards
       boardsLoaded.value = true
@@ -122,6 +297,7 @@ export const useStudioStore = defineStore('studio', () => {
         include_side_data: includeSideData.value,
         board_id: boardId.value,
         hierarchy_root_id: hierarchyRootId.value,
+        state_text_px: stateTextPx.value,
       }).catch((reason: unknown) => {
         error.value = reason instanceof Error ? reason.message : 'The library path could not be saved.'
       })
@@ -136,13 +312,122 @@ export const useStudioStore = defineStore('studio', () => {
     hierarchyRootId.value = hierarchyRootId.value === unitId ? '' : unitId
   }
 
-  watch([libraryPath, libraryName, includeSideData, boardId, hierarchyRootId], rememberLibraryForm)
+  function setStateTextPx(value: number): void {
+    stateTextPx.value = clampTextPx(value)
+  }
+
+  async function setVhdlStandard(value: '93' | '2008'): Promise<void> {
+    if (value === vhdlStandard.value) return
+    try {
+      applyProject(await saveVhdlStandard(value))
+      error.value = ''
+    } catch (reason) {
+      error.value = reason instanceof Error ? reason.message : 'The VHDL standard could not be saved.'
+    }
+  }
+
+  function stopTimeValid(value: string): boolean {
+    const match = /^(\d+(?:\.\d+)?)(fs|ps|ns|us|ms|sec|min|hr)$/.exec(value)
+    return match !== null && Number(match[1]) > 0
+  }
+
+  async function saveSimulationSettings(): Promise<void> {
+    if (!stopTimeValid(simulation.value.stop_time)) {
+      simulationNote.value = 'Stop time must be a positive number and a unit, such as 1us.'
+      return
+    }
+    try {
+      applyProject(await saveSimulation({ ...simulation.value, generic_overrides: simulation.value.generic_overrides.filter((item) => item.name) }))
+      simulationNote.value = ''
+    } catch (reason) {
+      simulationNote.value = reason instanceof Error ? reason.message : 'The simulation settings could not be saved.'
+    }
+  }
+
+  async function runSimulation(): Promise<void> {
+    await saveSimulationSettings()
+    if (simulationNote.value) return
+    try {
+      simulationRun.value = await startSimulation()
+      simulationNote.value = ''
+      if (simulationRun.value.status === 'running') scheduleSimulationPoll()
+    } catch (reason) {
+      simulationNote.value = reason instanceof Error ? reason.message : 'The simulation could not be started.'
+    }
+  }
+
+  function scheduleSimulationPoll(): void {
+    window.clearTimeout(simulationPoll)
+    simulationPoll = window.setTimeout(async () => {
+      const current = simulationRun.value
+      if (!current || current.status !== 'running') return
+      try {
+        simulationRun.value = await getSimulationRun(current.run_id)
+      } catch (reason) {
+        simulationNote.value = reason instanceof Error ? reason.message : 'The simulation status could not be read.'
+        return
+      }
+      if (simulationRun.value.status === 'running') scheduleSimulationPoll()
+    }, 400)
+  }
+
+  async function cancelRunningSimulation(): Promise<void> {
+    const current = simulationRun.value
+    if (!current || current.status !== 'running') return
+    try {
+      await cancelSimulation(current.run_id)
+      simulationNote.value = 'Cancelling the simulation.'
+    } catch (reason) {
+      simulationNote.value = reason instanceof Error ? reason.message : 'The simulation could not be cancelled.'
+    }
+  }
+
+  async function showWaveform(): Promise<void> {
+    const current = simulationRun.value
+    if (!current) return
+    try {
+      const opened = await openWaveform(current.run_id)
+      simulationNote.value = opened.message
+    } catch (reason) {
+      simulationNote.value = reason instanceof Error ? reason.message : 'The waveform could not be opened.'
+    }
+  }
+
+  async function setLibraryProfile(value: 'ieee' | 'synopsys'): Promise<void> {
+    if (value === libraryProfile.value) return
+    try {
+      applyProject(await saveLibraryProfile(value))
+      error.value = ''
+    } catch (reason) {
+      error.value = reason instanceof Error ? reason.message : 'The GHDL library compatibility could not be saved.'
+    }
+  }
+
+  async function generateHdl(): Promise<void> {
+    const diagram = editable.value
+    if (!editing.value || diagram === null || diagram.kind !== 'block') {
+      error.value = 'Open a block diagram to generate structural VHDL.'
+      return
+    }
+    busy.value = true
+    error.value = ''
+    try {
+      generation.value = await generateStructural(diagram.id)
+    } catch (reason) {
+      generation.value = null
+      error.value = reason instanceof Error ? reason.message : 'VHDL generation failed.'
+    } finally {
+      busy.value = false
+    }
+  }
+
+  watch([libraryPath, libraryName, includeSideData, boardId, hierarchyRootId, stateTextPx], rememberLibraryForm)
 
   async function scan(path: string, libraryName: string, includeSideData = false): Promise<void> {
     busy.value = true
     error.value = ''
     try {
-      project.value = await scanLibrary(path, libraryName, includeSideData)
+      applyProject(await scanLibrary(path, libraryName, includeSideData))
       const entity = units.value.find((unit) => unit.kind === 'entity')
       if (entity) await selectUnit(entity.id)
       const block =
@@ -414,6 +699,36 @@ export const useStudioStore = defineStore('studio', () => {
     boardId,
     boardMissing,
     hierarchyRootId,
+    stateTextPx,
+    setStateTextPx,
+    vhdlStandard,
+    libraryProfile,
+    simulation,
+    simulationRun,
+    simulationNote,
+    gtkwavePath,
+    vivadoPath,
+    vivadoNote,
+    fpga,
+    fpgaBuild,
+    fpgaNote,
+    fpgaReport,
+    loadTools,
+    saveGtkwavePath,
+    saveVivadoPath,
+    checkVivadoInstall,
+    saveFpgaSettings,
+    runFpga,
+    cancelFpga,
+    openFpgaReport,
+    generation,
+    setVhdlStandard,
+    setLibraryProfile,
+    saveSimulationSettings,
+    runSimulation,
+    cancelRunningSimulation,
+    showWaveform,
+    generateHdl,
     toggleHierarchyRoot,
     unitsIn,
     diagramsIn,

@@ -59,7 +59,9 @@ def test_symbol_and_state_views() -> None:
     assert state.state_signal_name == "current_state"
     assert state.entity_name == "audio_fifo_ctrl"
     assert state.instances == []
-    assert any(item.code == "state_semantics_not_imported" for item in state.diagnostics)
+    assert state.states == []
+    assert state.transitions == []
+    assert any(item.code == "state_prototype_not_placed" for item in state.diagnostics)
     assert state.record_counts["State"] == 1
 
 

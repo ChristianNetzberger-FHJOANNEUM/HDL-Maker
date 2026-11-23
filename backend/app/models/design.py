@@ -7,10 +7,11 @@ VHDL interface. Keep this module aligned with ``schemas/design.schema.json``.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SCHEMA_VERSION = 2
 
@@ -204,6 +205,102 @@ class VhdlCheck(APIModel):
     message: str
 
 
+class DiagramTextBox(APIModel):
+    """A text rectangle stored by HDL Designer, separate from the state circle and the spline."""
+
+    id: str
+    role: Literal["entry", "during", "exit", "condition", "actions"]
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+
+
+class DiagramState(APIModel):
+    """A placed state. Fields stay empty when the source record does not state them."""
+
+    id: str
+    name: str
+    hds_uid: str | None = None
+    hds_object: int | None = None
+    x1: int | None = None
+    y1: int | None = None
+    x2: int | None = None
+    y2: int | None = None
+    entry_actions: str | None = None
+    during_actions: str | None = None
+    exit_actions: str | None = None
+    encoding: str | None = None
+    wait_text: str | None = None
+    text_boxes: list[DiagramTextBox] = Field(default_factory=list)
+
+
+FsmEndKind = Literal["state", "reset", "recovery", "interrupt", "unresolved"]
+FsmMode = Literal["in", "out", "local", "unknown"]
+FsmRole = Literal["clock", "reset", "enable", "data", "unknown"]
+FsmScheme = Literal["clocked", "combinational"]
+
+
+class FsmPackage(APIModel):
+    library_name: str
+    unit_name: str
+
+
+class FsmGeneric(APIModel):
+    name: str
+    type_text: str
+    default_text: str | None = None
+
+
+class FsmSignal(APIModel):
+    """One row of the state-machine interface table. Geometry is not included."""
+
+    name: str
+    type_text: str
+    range_text: str | None = None
+    mode: FsmMode
+    role: FsmRole
+    expression: str | None = None
+    scheme: FsmScheme | None = None
+    default_text: str | None = None
+    reset_text: str | None = None
+    order: int
+
+
+class FsmMachine(APIModel):
+    """Semantic controls copied from the state diagram. An empty action stays empty."""
+
+    encoding_scheme: int | None = None
+    next_state_clocking: int | None = None
+    reset_mode: int | None = None
+    enable_before_reset: int | None = None
+    controls_agree: bool = True
+    clock_suffix: str | None = None
+    state_order: list[int] = Field(default_factory=list)
+    declarations: str | None = None
+    concurrent: str | None = None
+    packages: list[FsmPackage] = Field(default_factory=list)
+    generics: list[FsmGeneric] = Field(default_factory=list)
+    signals: list[FsmSignal] = Field(default_factory=list)
+
+
+class DiagramTransition(APIModel):
+    id: str
+    hds_uid: str | None = None
+    hds_object: int | None = None
+    start_state_id: str | None = None
+    end_state_id: str | None = None
+    start_kind: FsmEndKind | None = None
+    end_kind: FsmEndKind | None = None
+    start_object: int | None = None
+    end_object: int | None = None
+    condition: str | None = None
+    actions: str | None = None
+    priority: str | None = None
+    points: list[Point] = Field(default_factory=list)
+    text_boxes: list[DiagramTextBox] = Field(default_factory=list)
+
+
 class DiagramDocument(APIModel):
     id: str
     library_id: str
@@ -216,8 +313,11 @@ class DiagramDocument(APIModel):
     architecture_name: str | None = None
     machine_name: str | None = None
     state_signal_name: str | None = None
+    fsm: FsmMachine | None = None
     parse_status: ParseStatus
     instances: list[DiagramInstance] = Field(default_factory=list)
+    states: list[DiagramState] = Field(default_factory=list)
+    transitions: list[DiagramTransition] = Field(default_factory=list)
     ports: list[DiagramPort] = Field(default_factory=list)
     nets: list[DiagramNet] = Field(default_factory=list)
     wires: list[DiagramWire] = Field(default_factory=list)
@@ -248,6 +348,82 @@ class ImportReport(APIModel):
     view_references: list[ViewReference] = Field(default_factory=list)
 
 
+class GenericOverride(APIModel):
+    name: str
+    value: str
+
+    @field_validator("name")
+    @classmethod
+    def identifier(cls, value: str) -> str:
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", value) is None:
+            raise ValueError("A generic name must be a VHDL identifier.")
+        return value
+
+    @field_validator("value")
+    @classmethod
+    def one_token(cls, value: str) -> str:
+        if re.fullmatch(r"-?[A-Za-z0-9_\".]+", value) is None:
+            raise ValueError("A generic value must be one token, without spaces.")
+        return value
+
+
+def valid_stop_time(value: str) -> bool:
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)(fs|ps|ns|us|ms|sec|min|hr)", value)
+    if match is None:
+        return False
+    return float(match.group(1)) > 0
+
+
+class SimulationConfig(APIModel):
+    """Project simulation settings. Graphical preferences stay in ui.json.
+
+    ``gtkw_path`` is an optional GTKWave save file for this configuration.
+    The GTKWave executable is local tool configuration, not this object.
+    """
+
+    testbench_unit_id: str = ""
+    stop_time: str = "1us"
+    waveform_format: Literal["ghw", "vcd"] = "ghw"
+    generic_overrides: list[GenericOverride] = Field(default_factory=list)
+    gtkw_path: str = ""
+
+    @field_validator("gtkw_path")
+    @classmethod
+    def gtkw_path_is_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("stop_time")
+    @classmethod
+    def stop_time_is_a_duration(cls, value: str) -> str:
+        if not valid_stop_time(value):
+            raise ValueError("Stop time must be a positive number and a unit, such as 1us.")
+        return value
+
+
+class FpgaBuildConfig(APIModel):
+    """FPGA build settings. The testbench and the hierarchy root are not used.
+
+    ``vhdl_standard`` and ``library_profile`` stay on the project. The board
+    part is stored only when it is named; an empty part is not filled in.
+    """
+
+    top_unit_id: str = ""
+    board_id: str = ""
+    part: str = ""
+    xdc_paths: list[str] = Field(default_factory=list)
+    target: Literal["synthesis", "bitstream"] = "synthesis"
+
+    @field_validator("part", "board_id", "top_unit_id")
+    @classmethod
+    def strip_choice(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("xdc_paths")
+    @classmethod
+    def strip_paths(cls, value: list[str]) -> list[str]:
+        return [item.strip() for item in value if isinstance(item, str)]
+
+
 class Library(APIModel):
     id: str
     name: str
@@ -261,6 +437,10 @@ class ProjectFile(APIModel):
     schema_version: Literal[1, 2] = SCHEMA_VERSION
     project_id: str
     name: str
+    vhdl_standard: Literal["93", "2008"] = "93"
+    library_profile: Literal["ieee", "synopsys"] = "ieee"
+    simulation: SimulationConfig = Field(default_factory=SimulationConfig)
+    fpga: FpgaBuildConfig = Field(default_factory=FpgaBuildConfig)
     libraries: list[Library] = Field(default_factory=list)
     design_units: list[DesignUnit] = Field(default_factory=list)
     diagrams: list[DiagramDocument] = Field(default_factory=list)
@@ -272,6 +452,8 @@ class HealthResponse(APIModel):
     version: str
     python: str
     ghdl: str | None = None
+    gtkwave: str | None = None
+    vivado: str | None = None
 
 
 class SourceText(APIModel):

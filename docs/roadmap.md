@@ -2,7 +2,7 @@
 
 This is the reference for HDL-Maker milestone order and scope. Later work follows this file. A change of order or scope is recorded here in the same change that introduces it.
 
-The committed baseline is `2a5fb34` (studio scaffold and VHDL library inventory). M1.5, M2a, M2b, and P1 are implemented in the working tree and are not committed.
+The committed baseline is `d139873` (`first draft`). It contains the studio through P1, the board list, and the hierarchy scan. M2c through M4a.1 are implemented in the working tree and are not committed.
 
 ## Status
 
@@ -14,25 +14,28 @@ The committed baseline is `2a5fb34` (studio scaffold and VHDL library inventory)
 | M2a | Edit an imported block diagram | Done, working tree |
 | M2b | New block diagrams and hierarchy | Done, working tree |
 | P1 | Portable student distribution | Done, working tree |
-| M2c | State diagrams | Next |
-| M3 | VHDL generation | Planned |
-| M4 | Simulation | Planned |
-| M5 | FPGA implementation and deployment | Planned, specified below |
+| M2c | State diagrams | Done, working tree |
+| M2d | Readable state and transition text | Done, working tree |
+| M3a | Structural VHDL-93 / VHDL-2008 | Done, working tree |
+| M3b | FSM VHDL | Done, working tree |
+| M3c | Legacy FSM validation | Done, working tree |
+| M4a | GHDL simulation and GTKWave | Done, working tree |
+| M4a.1 | GTKWave integration and verification | Done, working tree. Local GTKWave 3.3.100 only, not in the student ZIP. |
+| M4b | Browser waveform view | Planned |
+| M5a | Vivado batch synthesis and bitstream | Done, working tree |
+| M5b | JTAG programming | Planned, not started |
+| M5c | Timing, resources, and ILA | Planned, not started |
 | M6 | Legacy diagram migration | Planned, does not block M5 |
 
 ## Active sequence
 
-The next milestones run in this order:
+M5a is in the working tree. The next FPGA step is **M5b**, JTAG programming through the Vivado Hardware Manager. It is not started. **M5c** is the later timing, resource, and ILA view. **M4b**, a waveform view inside the browser, stays planned and is not required before M5b. **M6** does not block the FPGA steps.
 
-1. **M2c** — import and edit state diagrams.
-2. **M3** — generate VHDL-2008 from the editable documents.
-3. **M4** — simulate with GHDL.
-4. **M5** — implement and program a supported FPGA board through an external toolchain.
-5. **M6** — migrate further legacy diagram constructs, after the teaching chain above.
+P1, M2c, and M2d are already finished in the working tree. An earlier note suggested packaging only after M5. Packaging was done first so each later milestone can be shipped with `packaging/build_release.ps1`. That decision stands. A later milestone does not start a second packaging project. The existing student ZIP was built before M2c and before the MIT `LICENSE` file.
 
-P1 is already finished. An earlier note suggested packaging only after M5. Packaging was done first so each later milestone can be shipped with `packaging/build_release.ps1`. That decision stands. A later milestone does not start a second packaging project.
+M4a.1 is in the working tree. GTKWave 3.3.100 opened the generated GHW and VCD files on this machine. That binary stays a local test tool.
 
-Do not start M2c, M3, M4, or M5 inside another milestone. Stop at the milestone boundary and report what was verified.
+M5a is in the working tree. Vivado 2019.1 synthesized the Zybo Z7-10 counter and wrote a bitstream. The board was not programmed. Do not start M5b, M5c, or M4b as part of that work.
 
 ## Standing rules
 
@@ -43,17 +46,13 @@ Do not start M2c, M3, M4, or M5 inside another milestone. Stop at the milestone 
 - The API and the packaged app bind to `127.0.0.1` only.
 - External tools are started with an argument list, a fixed working directory, streamed output, cancellation, and a timeout. Project paths are not concatenated into a shell command.
 - Proprietary tools such as Vivado and Vitis are optional installs. They are not bundled in the student ZIP.
-- Generated build files stay outside the source project and outside `libs/`. An existing build artifact is overwritten only after confirmation.
+- Generated build files stay outside the source project and outside `libs/`. Each FPGA build has its own directory under `workspace/builds/`. An earlier build is left in place.
 - The toolchain adapter has a vendor-neutral boundary. Vivado is the first adapter, not the only one the boundary can hold.
 - Do not commit or push without an explicit request.
 
-## Open decisions
+## License
 
-These are unresolved. Implementation does not pick an answer silently.
-
-| Decision | What it blocks |
-| --- | --- |
-| MIT or GPLv3 | A `LICENSE` file. None is added until this is chosen. |
+The project owner selected the MIT License. The text is `LICENSE`, copyright Christian Netzberger, 2026. Third-party files keep their own notices. See `docs/third-party-notices.md`.
 
 ## M0 — Repository and architecture
 
@@ -83,86 +82,102 @@ Create a block diagram that did not come from an import. Give it top-level ports
 
 A Windows ZIP starts HDL-Maker without Node.js, npm, or a separate Python install. Development still uses the Vite server on port 5173 and the API on port 8000. The packaged app serves the built page and the API on one localhost origin. Projects are stored under the user's Documents folder. Details and the test report: `docs/student-edition.md`, `docs/p1-test-report.md`.
 
-This package does not include the state-diagram editor, VHDL generation, simulation, or FPGA implementation.
+The existing ZIP does not include the state-diagram editor, VHDL generation, simulation, or FPGA implementation. M2c is in the working tree and is not in that ZIP.
 
 ## M2c — State diagrams
 
-Import the 14 `.sm` files into an editable machine: 126 states and 189 transitions, including their positions. Do this before the VHDL generator. An edited machine later becomes an entity the block editor can instantiate.
+Import the 14 `.sm` files into an editable machine: 126 placed states and 189 placed transitions, including their positions. Palette records without a `uid` are reported and are not placed. A link is bound to the one state whose name it repeats. Reset, recovery, and interrupt anchors stay anchors. The working copy is saved under `workspace/diagrams/`. The original `.sm` file is not written. Known limits are in `docs/m2c-limitations.md`.
 
-## M3 — VHDL generation
+An edited machine later becomes an entity the block editor can instantiate. That step is M3b. Before that, M2d makes the same texts readable on the canvas.
 
-Emit deterministic VHDL-2008 from the editable block diagram and, after M2c, from the editable state machine. Read the studio documents, not the canvas and not the HDL Designer file. A design of at least three connected components must pass GHDL analysis and elaboration. This milestone requires GHDL on `PATH`. SystemVerilog generation stays behind the same model and is not part of M3.
+## M2d — Readable state and transition text
 
-## M4 — Simulation
+This step is essential for the user and comes before VHDL generation. M2c already keeps every placed state's entry, during, and exit text and every placed transition's condition, actions, and priority. On the canvas a condition is one line on the first spline segment, and a state shows only the first action line inside the circle. Long texts cover the wires and the neighbouring states. `morse_transmitter` is the reference picture for that problem.
 
-Run GHDL from the studio: dependency order, elaboration, testbench, diagnostics, timeout, cancellation, and a VCD file. View waveforms in GTKWave. No embedded waveform viewer in this milestone.
+HDL Designer stores those texts in their own rectangles: the state action block, and the transition block with its condition text and its action text. Each rectangle has the coordinates the file already states. M2d reads those rectangles, draws the full text inside them with wrapping, and lets the user move each box on the workspace copy. A text the file states and whose rectangle is missing is reported and is not given a guessed position. The strings M2c already stored stay the source for later VHDL. The original `.sm` file is not written.
 
-Vivado XSim, Verilator, and mixed-language simulation can later use the same simulator-adapter boundary. They are not part of M4. M5 does not replace M4: synthesis is not a simulation.
+Deliverable, done in the working tree: the imported `morse_transmitter` machine shows its state actions and its transition conditions and actions in those boxes, and a box can be moved so it no longer covers a neighbour. A hidden rectangle is reported and is not drawn. Limits are in `docs/m2d-limitations.md`.
+
+## M3a — Structural VHDL-93 / VHDL-2008
+
+Emit deterministic structural VHDL from an editable block diagram. The project stores `vhdl_standard` as `"93"` or `"2008"`. New projects start at VHDL-93. The Preferences tab edits that project setting and shows it in Generate HDL. Font size and the selected board stay in `ui.json`. Diagram coordinates stay on the diagram.
+
+One analyzer builds a language-neutral netlist. The VHDL-93 and VHDL-2008 backends are output rules for that netlist. VHDL-93 omits constructs that need a VHDL-2008 parser and stops with a diagnostic instead of rewriting them. VHDL-2008 emits only constructs this milestone implements. Selecting VHDL-2008 does not mean a Vivado install accepts the file. A later M5 toolchain profile can add its own restrictions.
+
+Output is `workspace/generated/vhdl-93/` or `workspace/generated/vhdl-2008/`, plus `manifest.json`. The manifest records the selected standard. Sources under `libs/` are not written. Limits and the three compatibility layers (language standard, GHDL, Vivado) are in `docs/m3a-limitations.md`.
+
+GHDL 6.0.0 mcode analyzed and elaborated the reference hierarchy for VHDL-93 and VHDL-2008 in separate work directories. Vivado 2019.1 was not run, so this milestone does not claim that those generated files synthesize there.
+
+## M3b — FSM VHDL
+
+Generate VHDL-93 and VHDL-2008 from an editable state diagram. The generator reads the stored interface, states, and transitions. It does not read text-box positions or spline points. A block diagram can instantiate the resulting entity through the M3a hierarchy.
+
+`morse_transmitter` is the reference machine. `audio_fifo_ctrl` and `speed_trap` cover a clock enable, an interrupt, and the split between clocked and combinational actions. GHDL 6.0.0 elaborates a self-contained machine in both standards. The three imported machines keep their Synopsys package clauses. The default GHDL command does not add `-fsynopsys`. The optional legacy profile and the `morse_transmitter` comparison are M3c. Limits: `docs/m3b-limitations.md`.
+
+## M3c — Legacy FSM validation
+
+Keep the generated VHDL text unchanged and add an optional GHDL library profile beside `vhdl_standard`. `ieee` is the default and passes only `--std=93` or `--std=08`. `synopsys` also passes `-fsynopsys` and `-fexplicit` on analysis, elaboration, and simulation. Package clauses are not rewritten, and `numeric_std` is not substituted.
+
+`utilities` is analyzed before `morse_transmitter`, `audio_fifo_ctrl`, and `speed_trap`. A missing file is a diagnostic and GHDL is not started. With the legacy profile, GHDL 6.0.0 analyzes and elaborates the original and the generated file of each machine for both language standards. Elaboration is recorded separately from a functional comparison.
+
+The first comparison is `morse_transmitter` only. The original and the generated architecture run in separate work directories on the same open-loop stimulus. The change log of `fifo_rd`, `morse_code`, and `morse_fcw` matched for 19,300,012 cycles, including reset, later ticks, an empty FIFO, and two mark lengths. `audio_fifo_ctrl` and `speed_trap` were not simulated. Details: `docs/m3c-validation.md`.
+
+## M4a — GHDL simulation and GTKWave
+
+Run a VHDL testbench from the studio. The testbench is chosen explicitly. The hierarchy root is not assumed to be a testbench. The language standard and the library profile are the project settings. Stop time, waveform format, and testbench generic overrides are stored on the project, not in `ui.json`.
+
+The run resolves design-unit dependencies, then uses the same GHDL flags as M3c: `--std=93` or `--std=08`, and `-fsynopsys -fexplicit` only for the legacy profile. Each run keeps its own directory under `workspace/simulations/`. Analysis, elaboration, and simulation failures stay separate. GHW is the preferred waveform. VCD is the alternative. GTKWave opens the file when it is on `PATH`. It is not installed automatically. A signal map records stable object ids beside hierarchical VHDL names for a later viewer. Details: `docs/m4a-simulation.md`.
+
+## M4a.1 — GTKWave integration and verification
+
+GTKWave stays an external viewer. The executable path is `workspace/tools.json`. An empty path uses `PATH`. A path that is not a file is reported, and the waveform is kept. One optional `.gtkw` file belongs to the simulation configuration and is passed through when it exists. A missing save file is not replaced with a generated signal list.
+
+VCD headers are compared with the prepared map. A stored path that is absent, and a VCD name that has no object id, are diagnostics. GHW names are not read back and are not guessed. The viewer process is detached from the API. Details, including the official Windows build that was not installed: `docs/m4a1-gtkwave.md`.
+
+## M4b — Browser waveform view
+
+Show the waveform inside the studio and let a click on a port or net select the matching signal. M4a prepared the object-id map and did not build that viewer. Stimulus editing and interactive forcing stay here as well.
+
+Vivado XSim, Verilator, and mixed-language simulation can later use the same simulator boundary. They are not part of M4. M5 does not replace M4: synthesis is not a simulation.
 
 ## M5 — FPGA implementation and deployment
 
-Integrate an external FPGA toolchain so a student can implement and program a design without creating the vendor project by hand. HDL-Maker does not contain a synthesizer or a place-and-route algorithm.
+Integrate an external FPGA toolchain so a student can implement a design without creating the vendor project by hand. HDL-Maker does not contain a synthesizer or a place-and-route algorithm. The work is split:
 
-### Architecture
+| Step | What it does |
+| --- | --- |
+| M5a | Vivado non-project batch: synthesis, or implementation and bitstream |
+| M5b | JTAG programming through the Vivado Hardware Manager |
+| M5c | Timing and resource views in the studio, and later ILA |
 
-A Python toolchain adapter in the backend. The first adapter is AMD Vivado, used in batch mode through a generated Tcl script. The board catalog is the `boardfiles/` folder (the Vivado 2019.1 definitions kept in this checkout, including Zybo and Zybo Z7-20). The studio's Target board list is one entry per `board.xml`. Adding a folder that contains `board.xml` extends the list. The saved choice is that file's relative path. M5 reads the part number from the selected file and does not substitute another board. Pin and timing data still have to be taken from that file; they are not guessed.
+The board catalog stays the `boardfiles/` folder. The studio's Target board list is one entry per `board.xml`. The saved choice is that file's relative path. The FPGA part is read from the selected file. A part that the file does not name stops the build. No other device is substituted. Pin numbers, I/O standards, and clock periods are not guessed. Details of the batch flow: `docs/m5a-vivado.md`.
 
-The student actions, once the earlier milestones exist, are Generate HDL, Build FPGA, and Program Board. Vivado's graphical IDE stays closed.
+### M5a — Vivado batch
 
-### Toolchain detection
+Done in the working tree. The first flow is Vivado non-project mode, not project mode. Synthesis and bitstream are separate runs. A passed synthesis leaves the later stages at `not_run` and does not report a bitstream.
 
-- Locate installed Vivado versions and remember a configurable install path.
-- Report whether the selected part is supported by that install.
-- Do not bundle AMD software.
+The project stores the FPGA top-level entity, the board, the part, the XDC paths, and the target. The VHDL standard and the library profile are the existing project fields. The top entity is not the simulation testbench and not the hierarchy root. Constraints are external XDC files. A missing pin, I/O standard, or clock on a port that the top architecture uses as a clock is a diagnostic, and the run does not start. HDL-Maker does not write an XDC from a port-to-resource mapping in this step.
 
-### Board manager
+`vivado.bat` is local tool configuration in `workspace/tools.json`. The global `PATH` is not changed. Vivado is not bundled. On Windows the argument list is `cmd.exe /d /c vivado.bat -mode batch -source <script>`, with `shell=False`. Each build is a new directory under `workspace/builds/`.
 
-A versioned board profile stores the board name, the FPGA part, clocks, LEDs, buttons, switches, I/O standards, and the constraint source. Pin and timing data are imported from the vendor or board-maker files for that exact board. A profile does not guess a pin.
+Vivado 2019.1 on this machine synthesized `examples/fpga/zybo-z7-10-counter` for `xc7z010clg400-1` and wrote a bitstream. The only DRC finding was warning ZPS7-1, because the design does not contain the Zynq PS7 cell. No PS, Vitis, or block design was added. The board was not programmed.
 
-The studio maps top-level HDL ports to board resources, for example `clk` to the board clock or `led(0)` to LED 0. HDL-Maker checks the mapping against the profile: every mapped port exists, the width matches the resource, the I/O standard is one the profile allows, and a clock has a period from the profile. From a valid mapping it writes an XDC file. An incomplete mapping is reported and is not filled in.
+### M5b — JTAG programming
 
-### Build
+Not started. Detect connected hardware through the Vivado Hardware Manager, match it to the selected board, ask for confirmation that names the device, and download the bitstream over JTAG. The first mode is volatile configuration. Persistent boot images and flash programming stay outside M5b.
 
-- Generate a reproducible Tcl script for Vivado project mode.
-- Include the generated VHDL or SystemVerilog sources, the referenced libraries, the top-level design, and the XDC file.
-- Keep the generated project and reports in a build directory, separate from the student source project and from `libs/`.
-- Run synthesis, implementation, and bitstream generation.
-- Stream the log, allow cancellation, and keep a build history.
-- Collect timing, utilization, and DRC reports.
-- A non-project Tcl flow may follow project mode. It is not the first flow.
-- If the selected part and the profile part differ, the build stops. HDL-Maker does not substitute another device.
+### M5c — Reports and ILA
 
-Invocation uses `Popen` with an argument list (`vivado.bat -mode batch -source <script>`), streamed stdout, cancellation, and a timeout. `shell=True` is not used.
+Not started. M5a already writes utilization, timing, and DRC files into the build directory and can open those files. A studio summary of timing and resources, and a hardware debugger that reads ILA probes back onto diagram nets, belong here.
 
-### Programming
+### Outside M5
 
-- Detect connected hardware through the Vivado Hardware Manager.
-- Match the connected device to the selected board profile.
-- Ask for an explicit confirmation that names the device about to be programmed.
-- Download the bitstream over JTAG and report success or failure.
-- The first programming mode is volatile JTAG configuration. The configuration is lost when the board powers off.
-- Persistent boot images, flash programming, and boot-file generation are outside the first M5 delivery.
-
-### Outside the first M5 delivery
-
-- Vitis, XSA export, and Zynq Processing System software. A pure logic design needs Vivado only. Vitis starts when a student builds software for the ARM core.
+- Vitis, XSA export, and Zynq Processing System software.
 - Embedded Linux.
-- A hardware debugger that reads Vivado ILA probes back onto diagram nets.
-- Intel Quartus and Lattice toolchains. The adapter boundary should allow them later. They are not implemented in M5.
+- AXI IP Integrator and a generated block design.
+- Intel Quartus and Lattice toolchains. The adapter boundary can hold them later.
 - Programming whatever device happens to be first in the JTAG chain.
-
-### Verification
-
-When the board choice is recorded and Vivado is installed, verify one LED-counter demonstration on that board:
-
-1. HDL generation from the studio document.
-2. Constraint validation against the imported board profile.
-3. Vivado synthesis.
-4. Implementation and bitstream generation.
-5. JTAG programming of the matched device after confirmation.
-6. The LEDs behave as specified on the physical board.
-
-If the board or Vivado is absent, report that the hardware steps were not run. Do not record a simulated hardware pass.
+- A new release ZIP. The existing student package is unchanged.
 
 ## M6 — Legacy diagram migration
 
@@ -176,4 +191,4 @@ M1.5 investigated the graphical sources. A later migration edits more of the imp
 
 ## First demonstration
 
-`examples/` contains an 8-bit counter, a comparator, and a small controller FSM. M1 imports them. M2 edits and connects them. M2c edits the controller state diagram. M3 generates VHDL. M4 simulates it. M5, after the board decision, implements an LED counter on that board.
+`examples/` contains an 8-bit counter, a comparator, and a small controller FSM. M1 imports them. M2 edits and connects them. M2c edits the controller state diagram. M2d makes its actions and conditions readable. M3 generates VHDL. M4 simulates it. M5a implements a separate Zybo Z7-10 counter through Vivado and does not program the board.

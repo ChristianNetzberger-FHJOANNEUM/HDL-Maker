@@ -30,4 +30,4 @@ Opening a child loads the saved document. Returning uses the hierarchy stack for
 
 ## What did not change
 
-Embedded HDL text is still stored and not parsed. The 14 state diagrams are still not editable. Original files under `libs/` and `examples/` are not written. New wires still use one elbow. There is no global router.
+Embedded HDL text is still stored and not parsed. State diagrams are editable through M2c (`docs/m2c-limitations.md`). Original files under `libs/` and `examples/` are not written. New wires still use one elbow. There is no global router.

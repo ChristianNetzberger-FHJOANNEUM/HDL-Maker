@@ -17,5 +17,5 @@ M2a edits a copy of an imported block diagram. These limits are known from `libs
 - Deleting an instance asks for confirmation when wires are attached, then removes those wires.
 - Undo stores document snapshots, up to 40. It is local to the open page.
 - `tb_audio1/symbol.sb` still has a symbol body and no placed ports. Adding that component creates an instance without pins.
-- State diagrams are still counted only. M2c is the FSM import. M2a does not edit them.
+- State diagrams are edited by M2c. M2a itself only edits block diagrams.
 - The original view and the editable copy are separate. Saving writes `workspace/diagrams/edg_*.json` and does not write `.bd`, `.sb`, `.sm`, or `.vhd`.

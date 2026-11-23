@@ -6,8 +6,11 @@ The original import stays unchanged.
 
 Schema version stays 1. M2b adds optional fields (a created design has no
 source file, a diagram can declare generics, an instance can point at another
-editable design, a top-level port can carry a default). Old files still load.
-Do not raise the version without a migration that rewrites existing documents.
+editable design, a top-level port can carry a default). M2c adds an optional
+kind plus state and transition lists. M2d adds optional text-box geometry.
+M3b adds the optional FSM interface: clock, reset, signal table, and anchor kinds.
+A block diagram leaves those lists empty. Old files still load. Do not raise the version without a migration
+that rewrites existing documents.
 """
 
 from __future__ import annotations
@@ -21,6 +24,8 @@ from app.models.design import (
     DiagramGeneric,
     Diagnostic,
     Direction,
+    FsmEndKind,
+    FsmMachine,
     Point,
     PreservedRecord,
     WidthStatus,
@@ -155,6 +160,48 @@ class DiagramGenericDef(APIModel):
     default_text: str | None = None
 
 
+class EditableTextBox(APIModel):
+    """Geometry of one HDL Designer text rectangle. The words live on the state or transition."""
+
+    id: str
+    owner_id: str
+    role: Literal["entry", "during", "exit", "condition", "actions"]
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class EditableState(APIModel):
+    id: str
+    name: str
+    hds_uid: str | None = None
+    hds_object: int | None = None
+    x: int
+    y: int
+    width: int
+    height: int
+    entry_actions: str | None = None
+    during_actions: str | None = None
+    exit_actions: str | None = None
+    encoding: str | None = None
+    wait_text: str | None = None
+
+
+class EditableTransition(APIModel):
+    id: str
+    hds_uid: str | None = None
+    hds_object: int | None = None
+    start_state_id: str | None = None
+    end_state_id: str | None = None
+    start_kind: FsmEndKind | None = None
+    end_kind: FsmEndKind | None = None
+    condition: str | None = None
+    actions: str | None = None
+    priority: str | None = None
+    points: list[Point] = Field(default_factory=list)
+
+
 class DiagramProvenance(APIModel):
     library_id: str
     origin: DiagramOrigin = "import"
@@ -167,12 +214,18 @@ class EditableDiagram(APIModel):
     schema_version: Literal[1] = EDITABLE_SCHEMA_VERSION
     id: str
     name: str
+    kind: Literal["block", "state"] = "block"
     entity_name: str | None = None
     architecture_name: str | None = None
+    state_signal_name: str | None = None
+    fsm: FsmMachine | None = None
     frame: LayoutFrame
     provenance: DiagramProvenance
     generics: list[DiagramGenericDef] = Field(default_factory=list)
     instances: list[EditableInstance] = Field(default_factory=list)
+    states: list[EditableState] = Field(default_factory=list)
+    transitions: list[EditableTransition] = Field(default_factory=list)
+    text_boxes: list[EditableTextBox] = Field(default_factory=list)
     diagram_ports: list[EditableDiagramPort] = Field(default_factory=list)
     junctions: list[EditableJunction] = Field(default_factory=list)
     nets: list[EditableNet] = Field(default_factory=list)

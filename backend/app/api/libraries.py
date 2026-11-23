@@ -10,6 +10,7 @@ from app.importers.errors import ScanError
 from app.importers.inventory import examples_library_path, import_library, read_unit_source
 from app.models.design import DesignUnit, ProjectFile, SourceText
 from app.storage.project_store import load_project
+from app.storage.tools_store import ToolSettings, load_tools, save_tools
 from app.storage.ui_store import UiSettings, load_ui, save_ui
 
 router = APIRouter(tags=["libraries"])
@@ -43,6 +44,16 @@ def get_ui() -> UiSettings:
 @router.put("/ui", response_model=UiSettings)
 def put_ui(body: UiSettings) -> UiSettings:
     return save_ui(body)
+
+
+@router.get("/tools", response_model=ToolSettings)
+def get_tools() -> ToolSettings:
+    return load_tools()
+
+
+@router.put("/tools", response_model=ToolSettings)
+def put_tools(body: ToolSettings) -> ToolSettings:
+    return save_tools(body)
 
 
 @router.get("/examples/path", response_model=ExamplesPath)

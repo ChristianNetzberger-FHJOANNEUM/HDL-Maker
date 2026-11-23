@@ -31,6 +31,7 @@ def test_ui_settings_are_restored_from_json(tmp_path, monkeypatch) -> None:
         "include_side_data": False,
         "board_id": "",
         "hierarchy_root_id": "",
+        "state_text_px": 13,
     }
     saved = client.put(
         "/api/ui",
@@ -66,6 +67,28 @@ def test_second_scan_does_not_duplicate_units(tmp_path, monkeypatch) -> None:
     assert first.status_code == 200
     assert len(second.json()["design_units"]) == len(first.json()["design_units"]) == 1
     assert second.json()["design_units"][0]["id"] == first.json()["design_units"][0]["id"]
+
+
+def test_state_text_px_defaults_and_clamps(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HDS_WORKSPACE", str(tmp_path / "ws"))
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "ui.json").write_text(
+        '{"library_name": "demo", "board_id": "zybo-z7-10/A.0/board.xml"}\n',
+        encoding="utf-8",
+    )
+    loaded = client.get("/api/ui")
+    assert loaded.status_code == 200
+    assert loaded.json()["state_text_px"] == 13
+    assert loaded.json()["board_id"] == "zybo-z7-10/A.0/board.xml"
+    low = client.put("/api/ui", json={"library_name": "demo", "state_text_px": 2, "board_id": "zybo-z7-10/A.0/board.xml"})
+    assert low.status_code == 200
+    assert low.json()["state_text_px"] == 8
+    high = client.put("/api/ui", json={"library_name": "demo", "state_text_px": 40, "board_id": "zybo-z7-10/A.0/board.xml"})
+    assert high.json()["state_text_px"] == 16
+    kept = client.put("/api/ui", json={"library_name": "demo", "state_text_px": 11, "board_id": "zybo-z7-10/A.0/board.xml"})
+    assert kept.json()["state_text_px"] == 11
+    assert kept.json()["board_id"] == "zybo-z7-10/A.0/board.xml"
 
 
 def test_cli_reports_without_saving(tmp_path, monkeypatch, capsys) -> None:

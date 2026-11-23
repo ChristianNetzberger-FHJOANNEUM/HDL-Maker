@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
-import { VueFlow } from '@vue-flow/core'
-import { computed } from 'vue'
+import { VueFlow, useVueFlow } from '@vue-flow/core'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { DiagramDocument } from '../../models/design'
+import { useStudioStore } from '../../stores/studio'
+import { fitZoomFor, readableTextBox, usePaneWidth } from './textLayout'
 
 const props = defineProps<{
   diagram: DiagramDocument | null
@@ -11,7 +13,30 @@ const props = defineProps<{
 
 defineEmits<{ edit: [] }>()
 
+const studio = useStudioStore()
+const pane = usePaneWidth()
+const { fitView } = useVueFlow({ id: 'diagram-view' })
+const fittedFor = ref('')
+
 const TARGET_SPAN = 1100
+
+function boxText(
+  owner: {
+    entry_actions?: string | null
+    during_actions?: string | null
+    exit_actions?: string | null
+    condition?: string | null
+    actions?: string | null
+  },
+  role: string,
+): string {
+  if (role === 'entry') return owner.entry_actions ?? ''
+  if (role === 'during') return owner.during_actions ?? ''
+  if (role === 'exit') return owner.exit_actions ?? ''
+  if (role === 'condition') return owner.condition ?? ''
+  if (role === 'actions') return owner.actions ?? ''
+  return ''
+}
 
 interface Box {
   id: string
@@ -22,6 +47,8 @@ interface Box {
   y: number
   width: number
   height: number
+  fontSize: number
+  lineHeight: number
 }
 
 const placed = computed(() => {
@@ -81,9 +108,27 @@ const placed = computed(() => {
       block.y2,
     )
   }
+  for (const state of diagram.states ?? []) {
+    add(state.id, 'state', state.name, '', state.x1, state.y1, state.x2, state.y2)
+    for (const box of state.text_boxes ?? []) {
+      add(box.id, 'text', boxText(state, box.role), '', box.x1, box.y1, box.x2, box.y2)
+    }
+  }
+  for (const transition of diagram.transitions ?? []) {
+    for (const box of transition.text_boxes ?? []) {
+      add(box.id, 'text', boxText(transition, box.role), '', box.x1, box.y1, box.x2, box.y2)
+    }
+  }
   const wires = diagram.wires.filter((wire) => wire.points.length >= 2)
+  const transitions = (diagram.transitions ?? []).filter((item) => item.points.length >= 2)
   for (const wire of wires) {
     for (const point of wire.points) {
+      xs.push(point.x)
+      ys.push(point.y)
+    }
+  }
+  for (const transition of transitions) {
+    for (const point of transition.points) {
       xs.push(point.x)
       ys.push(point.y)
     }
@@ -97,9 +142,18 @@ const placed = computed(() => {
   const mapX = (value: number) => (value - minX) * scale
   // The source files place titles at a higher Y than the component rectangle.
   const mapY = (value: number) => (maxY - value) * scale
+  const width = Math.max((maxX - minX) * scale, 1)
+  const height = Math.max((maxY - minY) * scale, 1)
+  const fitZoom = fitZoomFor(pane.width.value, width)
   const boxes: Box[] = raw.map((box) => {
     const left = mapX(Math.min(box.x1, box.x2))
     const top = mapY(Math.max(box.y1, box.y2))
+    const importedWidth = Math.max(Math.abs(box.x2 - box.x1) * scale, 2)
+    const importedHeight = Math.max(Math.abs(box.y2 - box.y1) * scale, 2)
+    const readable =
+      box.kind === 'text'
+        ? readableTextBox(box.title, importedWidth, importedHeight, fitZoom, studio.stateTextPx)
+        : null
     return {
       id: box.id,
       kind: box.kind,
@@ -107,15 +161,28 @@ const placed = computed(() => {
       subtitle: box.subtitle,
       x: left,
       y: top,
-      width: Math.max(Math.abs(box.x2 - box.x1) * scale, 2),
-      height: Math.max(Math.abs(box.y2 - box.y1) * scale, 2),
+      width: readable ? readable.width : importedWidth,
+      height: readable ? readable.height : importedHeight,
+      fontSize: readable?.fontSize ?? 0,
+      lineHeight: readable?.lineHeight ?? 0,
     }
   })
-  const width = Math.max((maxX - minX) * scale, 1)
-  const height = Math.max((maxY - minY) * scale, 1)
-  const routes = wires.map((wire) => wire.points.map((point) => `${mapX(point.x)},${mapY(point.y)}`).join(' '))
+  const routes = [
+    ...wires.map((wire) => wire.points.map((point) => `${mapX(point.x)},${mapY(point.y)}`).join(' ')),
+    ...transitions.map((transition) => transition.points.map((point) => `${mapX(point.x)},${mapY(point.y)}`).join(' ')),
+  ]
   return { empty: false as const, boxes, routes, width, height }
 })
+
+watch(
+  () => [props.diagram?.id ?? '', pane.width.value] as const,
+  async ([id, width]) => {
+    if (!id || width < 200 || fittedFor.value === id) return
+    fittedFor.value = id
+    await nextTick()
+    await fitView({ padding: 0.12 })
+  },
+)
 
 const nodes = computed(() => {
   const layout = placed.value
@@ -138,7 +205,7 @@ const nodes = computed(() => {
       position: { x: box.x, y: box.y },
       draggable: false,
       connectable: false,
-      zIndex: 1,
+      zIndex: box.kind === 'text' ? 2 : 1,
       data: box,
       style: { width: `${box.width}px`, height: `${box.height}px` },
     })),
@@ -148,8 +215,8 @@ const nodes = computed(() => {
 const note = computed(() => {
   const diagram = props.diagram
   if (!diagram) return ''
-  if (diagram.view === 'state') {
-    return 'State and transition geometry is counted and is not drawn. The machine name is in the properties.'
+  if (diagram.view === 'state' && !(diagram.states ?? []).length) {
+    return 'This state diagram has no placed states. Palette records without a uid are listed in the diagnostics.'
   }
   return 'Read only. Coordinates come from the HDL Designer file. Y is flipped because titles sit above the component box in that file.'
 })
@@ -164,10 +231,14 @@ const note = computed(() => {
         <span v-if="diagram.entity_name"> · {{ diagram.entity_name }}</span>
         <span v-if="diagram.architecture_name"> / {{ diagram.architecture_name }}</span>
         · {{ note }}
-        <button v-if="diagram.view === 'block'" type="button" @click="$emit('edit')">Edit a copy</button>
+        <button v-if="diagram.view === 'block' || diagram.view === 'state'" type="button" @click="$emit('edit')">
+          Edit a copy
+        </button>
       </p>
+      <div :ref="pane.bind" class="canvas-host">
       <VueFlow
         v-if="nodes.length"
+        id="diagram-view"
         :key="diagram.id"
         class="canvas"
         :nodes="nodes"
@@ -181,7 +252,7 @@ const note = computed(() => {
       >
         <template #node-box="{ data }">
           <div class="box" :class="data.kind">
-            <strong>{{ data.title }}</strong>
+            <strong :style="data.fontSize ? { fontSize: `${data.fontSize}px`, lineHeight: `${data.lineHeight}px` } : undefined">{{ data.title }}</strong>
             <span v-if="data.subtitle">{{ data.subtitle }}</span>
           </div>
         </template>
@@ -194,6 +265,7 @@ const note = computed(() => {
         <Controls :show-interactive="false" />
       </VueFlow>
       <p v-else class="note">{{ note }}</p>
+      </div>
     </template>
   </div>
 </template>
@@ -206,10 +278,21 @@ const note = computed(() => {
   min-height: 0;
 }
 
-.canvas {
+.canvas-host {
   flex: 1;
   min-height: 0;
+}
+
+.canvas {
+  width: 100%;
+  height: 100%;
   background: #f4f6f8;
+}
+
+.canvas :deep(.vue-flow__node-box) {
+  padding: 0;
+  border: none;
+  background: transparent;
 }
 
 .note {
@@ -245,6 +328,36 @@ const note = computed(() => {
   color: #3d3112;
 }
 
+.box.state {
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-color: #0b5cab;
+  background: rgba(229, 240, 250, 0.92);
+  color: #16324f;
+}
+
+.box.text {
+  border-radius: 2px;
+  border-color: #5c6775;
+  background: rgba(255, 255, 255, 0.94);
+  color: #16324f;
+  overflow: hidden;
+  padding: 4px 6px;
+}
+
+.box.text strong {
+  white-space: pre-wrap;
+  overflow: visible;
+  text-overflow: clip;
+  font-weight: 400;
+  font-family: Consolas, 'Courier New', monospace;
+  overflow-wrap: break-word;
+}
+
 .box strong,
 .box span {
   display: block;
@@ -262,5 +375,10 @@ const note = computed(() => {
   fill: none;
   stroke: #3d4754;
   stroke-width: 1.5;
+}
+
+.routes text {
+  fill: #16324f;
+  font-size: 11px;
 }
 </style>

@@ -7,8 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api.diagrams import router as diagrams_router
+from app.api.fpga import router as fpga_router
+from app.api.hdl import router as hdl_router
 from app.api.health import router as health_router
 from app.api.libraries import router as libraries_router
+from app.api.simulate import router as simulate_router
 from app.studio_ui import install_frontend
 
 app = FastAPI(title="HDL Design Studio", version=__version__)
@@ -26,4 +29,7 @@ app.add_middleware(
 app.include_router(health_router, prefix="/api")
 app.include_router(libraries_router, prefix="/api")
 app.include_router(diagrams_router, prefix="/api")
+app.include_router(hdl_router, prefix="/api")
+app.include_router(simulate_router, prefix="/api")
+app.include_router(fpga_router, prefix="/api")
 install_frontend(app)

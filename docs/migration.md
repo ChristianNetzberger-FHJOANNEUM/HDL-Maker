@@ -16,7 +16,7 @@ Scan the selected directory recursively and report:
 - graphical views: `.bd`, `.sb`, `.sm`, `.ibd`, `.fc`, `.tt`, and `._epf`
 - every other extension as unrecognized
 
-`.bd` and `.sb` are parsed. `.sm` contributes its envelope only. The other graphical extensions are counted. Hidden directories such as `.hdlsidedata` stay skipped unless the scan is asked to list them.
+`.bd`, `.sb`, and `.sm` are parsed. A state diagram contributes its placed states and transitions. The other graphical extensions are counted. Hidden directories such as `.hdlsidedata` stay skipped unless the scan is asked to list them.
 
 ## Stage 2 — HDL extraction (M1)
 

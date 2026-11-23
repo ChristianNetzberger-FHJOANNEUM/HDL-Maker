@@ -76,12 +76,36 @@ def serve_frontend() -> bool:
     return os.environ.get("HDS_SERVE_UI") == "1"
 
 
+def builds_dir() -> Path:
+    """One directory per FPGA build. Earlier builds are left in place."""
+    path = workspace_dir() / "builds"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def simulations_dir() -> Path:
+    """One directory per simulation run. Earlier runs are left in place."""
+    path = workspace_dir() / "simulations"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def generated_vhdl_dir(standard: str) -> Path:
+    """Dedicated generator output. This is not a source directory and not libs/."""
+    return workspace_dir() / "generated" / f"vhdl-{standard}"
+
+
 def project_file() -> Path:
     return workspace_dir() / "project.json"
 
 
 def ui_file() -> Path:
     return workspace_dir() / "ui.json"
+
+
+def tools_file() -> Path:
+    """Local tool paths, such as the GTKWave executable. Not a diagram."""
+    return workspace_dir() / "tools.json"
 
 
 def examples_dir() -> Path:

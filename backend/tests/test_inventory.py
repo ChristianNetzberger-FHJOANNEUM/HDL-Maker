@@ -21,12 +21,16 @@ def test_examples_library_inventory() -> None:
 
     controller = by_name[("entity", "controller")]
     assert [port.name for port in controller.ports] == ["clk", "rst", "equal", "enable", "done"]
+    zybo = by_name[("entity", "zybo_counter")]
+    assert [port.name for port in zybo.ports] == ["clk", "led"]
+
     architectures = {(unit.parent_name, unit.name) for unit in units if unit.kind == "architecture"}
     assert architectures == {
         ("counter", "rtl"),
         ("counter", "behavioral"),
         ("comparator", "rtl"),
         ("controller", "fsm"),
+        ("zybo_counter", "rtl"),
     }
     assert ("package", "utils_pkg") in by_name
     assert ("package_body", "utils_pkg") in by_name
@@ -40,7 +44,7 @@ def test_examples_library_inventory() -> None:
     assert any(item.code == "metadata_not_interpreted" for item in report.diagnostics)
     assert any(item.code == "systemverilog_deferred" for item in report.diagnostics)
     assert not any(unit.language == "systemverilog" for unit in units)
-    assert report.counts["entities"] == 3
+    assert report.counts["entities"] == 4
 
 
 def test_rescan_keeps_ids_and_does_not_duplicate(tmp_path, monkeypatch) -> None:

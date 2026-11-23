@@ -12,6 +12,7 @@ without a port or generic map is not recorded.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 _INST_RE = re.compile(
     r"""(?ix)
@@ -89,10 +90,16 @@ _UNIT_WORDS = {
 _FOLLOWS = re.compile(r"(?i)\s*(?:generic|port)\s+map\b")
 
 
-def instantiation_names(architecture_body: str) -> list[str]:
-    """Return instantiated design names in source order, without duplicates."""
-    found: list[str] = []
-    seen: set[str] = set()
+@dataclass(frozen=True)
+class InstantiationSite:
+    label: str
+    library: str | None
+    unit: str
+
+
+def instantiation_sites(architecture_body: str) -> list[InstantiationSite]:
+    """Each direct or component instantiation, in source order."""
+    found: list[InstantiationSite] = []
     for match in _INST_RE.finditer(architecture_body):
         label = match.group("label")
         unit = match.group("unit")
@@ -101,10 +108,18 @@ def instantiation_names(architecture_body: str) -> list[str]:
         if _FOLLOWS.match(architecture_body, match.end()) is None:
             continue
         library = match.group("library")
-        if library and library.lower() != "work":
-            name = f"{library}.{unit}"
-        else:
-            name = unit
+        if library and library.lower() == "work":
+            library = None
+        found.append(InstantiationSite(label=label, library=library, unit=unit))
+    return found
+
+
+def instantiation_names(architecture_body: str) -> list[str]:
+    """Return instantiated design names in source order, without duplicates."""
+    found: list[str] = []
+    seen: set[str] = set()
+    for site in instantiation_sites(architecture_body):
+        name = f"{site.library}.{site.unit}" if site.library else site.unit
         key = name.lower()
         if key in seen:
             continue

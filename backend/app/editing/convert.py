@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from app.editing.validate import connection_checks, described_width
 from app.identity import new_id
-from app.models.design import DesignUnit, DiagramDocument, DiagramPort, Point
+from app.models.design import DesignUnit, Diagnostic, DiagramDocument, DiagramPort, Point
 from app.models.editable import (
     DiagramProvenance,
     EditableBlock,
@@ -20,6 +20,9 @@ from app.models.editable import (
     EditableJunction,
     EditableNet,
     EditablePort,
+    EditableState,
+    EditableTextBox,
+    EditableTransition,
     EditableWire,
     LayoutFrame,
     NetEndpoint,
@@ -28,8 +31,10 @@ from app.models.editable import (
 
 
 def editable_from_import(diagram: DiagramDocument, units: list[DesignUnit]) -> EditableDiagram:
+    if diagram.view == "state":
+        return _from_state(diagram)
     if diagram.view != "block":
-        raise ValueError("Only a block diagram can be copied into the editor.")
+        raise ValueError("Only a block diagram or a state diagram can be copied into the editor.")
     entities = _entities(diagram.library_id, units)
     instances = [_instance(item, entities) for item in diagram.instances]
     diagram_ports = [_diagram_port(item) for item in diagram.ports]
@@ -90,6 +95,150 @@ def editable_from_import(diagram: DiagramDocument, units: list[DesignUnit]) -> E
     )
     editable.checks = connection_checks(editable)
     return editable
+
+
+def _from_state(diagram: DiagramDocument) -> EditableDiagram:
+    checks: list[Diagnostic] = []
+    states: list[EditableState] = []
+    text_boxes: list[EditableTextBox] = []
+    id_map: dict[str, str] = {}
+    for source in diagram.states:
+        if source.x1 is None or source.y1 is None or source.x2 is None or source.y2 is None:
+            checks.append(
+                Diagnostic(
+                    severity="warning",
+                    code="state_extent_missing",
+                    message=f"State {source.name or source.hds_uid or source.id} has no extent and was not placed.",
+                )
+            )
+            continue
+        left, right = sorted((source.x1, source.x2))
+        bottom, top = sorted((source.y1, source.y2))
+        copied = EditableState(
+            id=new_id("st"),
+            name=source.name,
+            hds_uid=source.hds_uid,
+            hds_object=source.hds_object,
+            x=left,
+            y=top,
+            width=max(right - left, 1),
+            height=max(top - bottom, 1),
+            entry_actions=source.entry_actions,
+            during_actions=source.during_actions,
+            exit_actions=source.exit_actions,
+            encoding=source.encoding,
+            wait_text=source.wait_text,
+        )
+        states.append(copied)
+        id_map[source.id] = copied.id
+        text_boxes.extend(_text_boxes(source.text_boxes, copied.id, checks))
+    transitions: list[EditableTransition] = []
+    for source in diagram.transitions:
+        start = id_map.get(source.start_state_id) if source.start_state_id else None
+        end = id_map.get(source.end_state_id) if source.end_state_id else None
+        if source.start_state_id and start is None or source.end_state_id and end is None:
+            checks.append(
+                Diagnostic(
+                    severity="warning",
+                    code="transition_end_unplaced",
+                    message=(
+                        f"Transition {source.hds_uid or source.id} refers to a state that has no extent."
+                    ),
+                )
+            )
+        transitions.append(
+            EditableTransition(
+                id=new_id("trn"),
+                hds_uid=source.hds_uid,
+                hds_object=source.hds_object,
+                start_state_id=start,
+                end_state_id=end,
+                start_kind=source.start_kind,
+                end_kind=source.end_kind,
+                condition=source.condition,
+                actions=source.actions,
+                priority=source.priority,
+                points=[Point(x=point.x, y=point.y) for point in source.points],
+            )
+        )
+        text_boxes.extend(_text_boxes(source.text_boxes, transitions[-1].id, checks))
+    return EditableDiagram(
+        id=new_id("edg"),
+        name=diagram.entity_name or diagram.source_path,
+        kind="state",
+        entity_name=diagram.entity_name,
+        architecture_name=diagram.architecture_name,
+        state_signal_name=diagram.state_signal_name,
+        fsm=diagram.fsm.model_copy(deep=True) if diagram.fsm is not None else None,
+        frame=_state_frame(states, transitions, text_boxes),
+        provenance=DiagramProvenance(
+            origin="import",
+            source_diagram_id=diagram.id,
+            source_path=diagram.source_path,
+            source_sha256=diagram.sha256,
+            library_id=diagram.library_id,
+        ),
+        states=states,
+        transitions=transitions,
+        text_boxes=text_boxes,
+        checks=checks,
+        preserved_records=list(diagram.preserved_records),
+    )
+
+
+def _text_boxes(sources, owner_id: str, checks: list[Diagnostic]) -> list[EditableTextBox]:
+    copied: list[EditableTextBox] = []
+    for source in sources:
+        left, right = sorted((source.x1, source.x2))
+        bottom, top = sorted((source.y1, source.y2))
+        width = right - left
+        height = top - bottom
+        if width < 1 or height < 1:
+            checks.append(
+                Diagnostic(
+                    severity="warning",
+                    code="text_box_extent_missing",
+                    message=f"A {source.role} text has no area and was not placed.",
+                )
+            )
+            continue
+        copied.append(
+            EditableTextBox(
+                id=new_id("tbx"),
+                owner_id=owner_id,
+                role=source.role,
+                x=left,
+                y=top,
+                width=width,
+                height=height,
+            )
+        )
+    return copied
+
+
+def _state_frame(
+    states: list[EditableState],
+    transitions: list[EditableTransition],
+    text_boxes: list[EditableTextBox],
+) -> LayoutFrame:
+    xs: list[int] = []
+    ys: list[int] = []
+    for state in states:
+        xs.extend((state.x, state.x + state.width))
+        ys.extend((state.y, state.y - state.height))
+    for transition in transitions:
+        for point in transition.points:
+            xs.append(point.x)
+            ys.append(point.y)
+    for box in text_boxes:
+        xs.extend((box.x, box.x + box.width))
+        ys.extend((box.y, box.y - box.height))
+    if not xs:
+        return LayoutFrame(origin_x=0, origin_y=0, scale=1)
+    origin_x = min(xs)
+    origin_y = max(ys)
+    span = max(max(xs) - origin_x, origin_y - min(ys), 1)
+    return LayoutFrame(origin_x=origin_x, origin_y=origin_y, scale=1100 / span)
 
 
 def _entities(library_id: str, units: list[DesignUnit]) -> dict[str, DesignUnit | None]:

@@ -20,7 +20,8 @@ body,
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
   color: inherit;
 }
@@ -113,6 +114,17 @@ input {
 .tabs button.active {
   background: #fff;
   border-color: #d0d5dd;
+}
+
+.tabs button.gear {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+}
+
+.tabs button.gear svg {
+  width: 16px;
+  height: 16px;
 }
 
 .stage {

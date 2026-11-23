@@ -87,10 +87,10 @@ def post_editable_from_import(source_id: str) -> EditableDiagram:
             status_code=404,
             detail={"code": "diagram_not_found", "message": "Imported diagram not found."},
         )
-    if source.view != "block":
+    if source.view not in {"block", "state"}:
         raise HTTPException(
             status_code=400,
-            detail={"code": "diagram_not_block", "message": "Only a block diagram can be edited in this milestone."},
+            detail={"code": "diagram_not_block", "message": "Only a block diagram or a state diagram can be edited."},
         )
     created = editable_from_import(source, project.design_units)
     try:

@@ -1,8 +1,8 @@
 """Semantic extract for the HDL Designer records observed in this library.
 
 Only fields that appear in the sample ``.bd``, ``.sb``, and ``.sm`` files are
-read. A record type that was not in those samples is stored whole. State and
-transition records are counted and are not turned into an editable FSM.
+read. A record type that was not in those samples is stored whole. Placed
+states and transitions are read by ``states.read_machine``.
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 
 from app.identity import new_id
+from app.importers.hds.fsm_machine import read_fsm_interface
+from app.importers.hds.states import read_machine
 from app.importers.hds.grammar import (
     Array,
     Atom,
@@ -258,17 +260,15 @@ def extract_graphical(text: str, *, relative: str, file_hash: str, library_id: s
     elif view == "symbol":
         _read_symbol(diagram, model)
     else:
-        diagram.diagnostics.append(
-            Diagnostic(
-                severity="info",
-                code="state_semantics_not_imported",
-                message=(
-                    f"{relative} is a state diagram. States and transitions were counted "
-                    "and were not converted into an editable machine."
-                ),
-                path=relative,
-            )
-        )
+        states, transitions, findings = read_machine(model, relative)
+        machine, machine_findings = read_fsm_interface(model, document.first("Header"))
+        diagram.states = states
+        diagram.transitions = transitions
+        diagram.fsm = machine
+        diagram.diagnostics.extend(findings)
+        diagram.diagnostics.extend(machine_findings)
+        if any(item.severity == "warning" for item in findings):
+            diagram.parse_status = "partial"
     if preserved:
         diagram.parse_status = "partial"
         names = ", ".join(sorted({item.type_name for item in preserved}))

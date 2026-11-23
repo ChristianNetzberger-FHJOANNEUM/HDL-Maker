@@ -20,6 +20,8 @@ def test_empty_project_matches_schema_version() -> None:
     project = ProjectFile(project_id="proj_test", name="empty")
     payload = project.model_dump(mode="json")
     assert payload["schema_version"] == 2
+    assert payload["vhdl_standard"] == "93"
+    assert payload["library_profile"] == "ieee"
     assert payload["libraries"] == []
     assert payload["design_units"] == []
     assert payload["diagrams"] == []
@@ -41,9 +43,13 @@ def test_schema_v1_project_loads_and_is_saved_as_v2(tmp_path, monkeypatch) -> No
         }
     )
     assert loaded.schema_version == 1
+    assert loaded.vhdl_standard == "93"
+    assert loaded.library_profile == "ieee"
     assert loaded.diagrams == []
     save_project(loaded)
     stored = load_project()
     assert stored.schema_version == 2
+    assert stored.vhdl_standard == "93"
+    assert stored.library_profile == "ieee"
     assert stored.project_id == "proj_old"
     assert stored.diagrams == []

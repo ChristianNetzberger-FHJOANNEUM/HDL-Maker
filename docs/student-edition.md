@@ -28,4 +28,8 @@ Projects and UI settings are stored in `Dokumente\HDL-Maker\Projects` (the Windo
 
 The original HDL Designer libraries are not included. A student selects a library directory in the program. The Examples button opens the bundled demo.
 
-FSM editing, VHDL generation, and simulation are not part of this package.
+## License
+
+HDL-Maker is MIT-licensed. `packaging/build_release.ps1` copies `LICENSE` next to `HDL-Maker.exe` on the next build. Copyright (c) 2026 Christian Netzberger. The copyright and permission notice stays with every copy. The ZIP already in `release/` was built before that copy step and before the FSM editor. It was not rebuilt for this change.
+
+Third-party board definitions and any generated simulator output keep the notices described in `docs/third-party-notices.md`. The package does not contain Vivado, Vitis, or ModelSim executables.

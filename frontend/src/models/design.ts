@@ -86,10 +86,35 @@ export interface Library {
   } | null
 }
 
+export interface GenericOverride {
+  name: string
+  value: string
+}
+
+export interface SimulationConfig {
+  testbench_unit_id: string
+  stop_time: string
+  waveform_format: 'ghw' | 'vcd'
+  generic_overrides: GenericOverride[]
+  gtkw_path: string
+}
+
+export interface FpgaBuildConfig {
+  top_unit_id: string
+  board_id: string
+  part: string
+  xdc_paths: string[]
+  target: 'synthesis' | 'bitstream'
+}
+
 export interface ProjectFile {
   schema_version: number
   project_id: string
   name: string
+  vhdl_standard: '93' | '2008'
+  library_profile: 'ieee' | 'synopsys'
+  simulation?: SimulationConfig
+  fpga?: FpgaBuildConfig
   libraries: Library[]
   design_units: DesignUnit[]
   diagrams: DiagramDocument[]
@@ -135,6 +160,45 @@ export interface DiagramWire {
   points: { x: number; y: number }[]
 }
 
+export interface DiagramTextBox {
+  id: string
+  role: 'entry' | 'during' | 'exit' | 'condition' | 'actions'
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
+export interface DiagramState {
+  id: string
+  name: string
+  hds_uid: string | null
+  hds_object: number | null
+  x1: number | null
+  y1: number | null
+  x2: number | null
+  y2: number | null
+  entry_actions: string | null
+  during_actions: string | null
+  exit_actions: string | null
+  encoding: string | null
+  wait_text: string | null
+  text_boxes?: DiagramTextBox[]
+}
+
+export interface DiagramTransition {
+  id: string
+  hds_uid: string | null
+  hds_object: number | null
+  start_state_id: string | null
+  end_state_id: string | null
+  condition: string | null
+  actions: string | null
+  priority: string | null
+  points: { x: number; y: number }[]
+  text_boxes?: DiagramTextBox[]
+}
+
 export interface DiagramDocument {
   id: string
   library_id: string
@@ -147,6 +211,8 @@ export interface DiagramDocument {
   state_signal_name: string | null
   parse_status: ParseStatus
   instances: DiagramInstance[]
+  states: DiagramState[]
+  transitions: DiagramTransition[]
   ports: DiagramPort[]
   nets: { id: string; name: string; hds_object: number | null }[]
   wires: DiagramWire[]
@@ -171,6 +237,8 @@ export interface Health {
   version: string
   python: string
   ghdl: string | null
+  gtkwave: string | null
+  vivado: string | null
 }
 
 export interface SourceText {

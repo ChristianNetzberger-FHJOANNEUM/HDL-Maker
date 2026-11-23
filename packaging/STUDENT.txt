@@ -28,8 +28,14 @@ Im Programm ein Verzeichnis mit VHDL-Dateien angeben und auf Scan klicken.
 Die Schaltfläche Examples öffnet die mitgelieferten kleinen Beispiele.
 Die Original-HDL-Designer-Bibliothek ist nicht enthalten und wird nicht verändert.
 
+Lizenz
+------
+HDL-Maker steht unter der MIT-Lizenz. Der Hinweis steht in der Datei LICENSE
+neben diesem Text. Copyright (c) 2026 Christian Netzberger. Der Hinweis muss
+bei Weitergabe erhalten bleiben.
+
 Diese Fassung
 -------------
 Enthalten sind Bibliotheksimport, Blockdiagramme und das Anlegen eigener Designs.
-FSM-Editor, VHDL-Generierung und Simulation sind noch nicht enthalten.
+Die mitgebaute ZIP dieser Fassung entstand vor dem FSM-Editor und vor LICENSE.
 Der Server ist nur auf diesem PC erreichbar, nicht im Netzwerk.

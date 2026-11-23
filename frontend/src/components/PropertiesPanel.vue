@@ -157,7 +157,25 @@ function widthText(port: Port): string {
 <template>
   <aside class="properties">
     <h2>Properties</h2>
-    <template v-if="studio.editing && studio.editable">
+    <template v-if="studio.editing && studio.editable?.kind === 'state'">
+      <p class="note">{{ studio.dirty ? 'Unsaved changes' : 'Saved in the workspace' }}</p>
+      <dl>
+        <div>
+          <dt>Design</dt>
+          <dd class="mono">{{ studio.editable.provenance.source_path }}</dd>
+        </div>
+        <div>
+          <dt>States</dt>
+          <dd>{{ studio.editable.states?.length ?? 0 }}</dd>
+        </div>
+        <div>
+          <dt>Transitions</dt>
+          <dd>{{ studio.editable.transitions?.length ?? 0 }}</dd>
+        </div>
+      </dl>
+      <p class="note">Select a state or a transition. Its name, condition, and actions are beside the canvas.</p>
+    </template>
+    <template v-else-if="studio.editing && studio.editable">
       <p class="note">{{ studio.dirty ? 'Unsaved changes' : 'Saved in the workspace' }}</p>
       <dl>
         <div>
@@ -296,6 +314,14 @@ function widthText(port: Port): string {
         <div>
           <dt>Instances</dt>
           <dd>{{ studio.selectedDiagram.instances.length }}</dd>
+        </div>
+        <div v-if="studio.selectedDiagram.states?.length">
+          <dt>States</dt>
+          <dd>{{ studio.selectedDiagram.states.length }}</dd>
+        </div>
+        <div v-if="studio.selectedDiagram.transitions?.length">
+          <dt>Transitions</dt>
+          <dd>{{ studio.selectedDiagram.transitions.length }}</dd>
         </div>
         <div>
           <dt>Preserved records</dt>
