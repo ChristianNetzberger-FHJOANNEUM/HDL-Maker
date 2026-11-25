@@ -18,6 +18,11 @@ export type Block = {
   symbolId?: string
   /** Id of a ComponentDefinition, when this block is an instance of one. A sheet may store it without a project. */
   componentId?: string
+  /**
+   * Symbol pin ids this instance does not show.
+   * The symbol definition and every other instance keep those pins.
+   */
+  suppressedPins?: string[]
   parameters?: Record<string, string>
 }
 
@@ -33,10 +38,17 @@ export type Port = {
   /** Logical component port. No coordinates. Set only by an explicit id binding. */
   interfacePortId?: string
   /**
-   * Last fraction along the side. Left and right run from top to bottom.
-   * Top and bottom run from left to right. Used when the definition pin is gone.
+   * Fraction along `side`. Left and right run from top to bottom.
+   * Top and bottom run from left to right.
+   * With `placed`, this is the instance's own graphic position.
+   * Without it, a bound symbol pin supplies the position and `t` is the fallback.
    */
   t?: number
+  /**
+   * This instance draws from its own `side` and `t`.
+   * The symbol pin, the logical port, and every other instance stay where they are.
+   */
+  placed?: boolean
   /** Fractions inside the symbol when the pin is free. Absent on a side pin. */
   x?: number
   y?: number

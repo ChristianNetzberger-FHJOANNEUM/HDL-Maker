@@ -72,4 +72,4 @@ The Project button in the lab opens the sample. U1 and U2 cite the same componen
 
 D4b walks the instance path and opens the document id of the selected step. The path is block ids, not block names.
 
-D4c can edit `ComponentPort` and the binding list, then reuse the D3e rule that a symbol change keeps instance port ids. It should not start matching pins by name. The inner port and the outer port stay different objects that share `interfacePortId`.
+Editing those ports is recorded in [d4c-component-interface-authoring.md](d4c-component-interface-authoring.md). A binding is still an explicit pair of ids. The inner port and the outer port stay different objects that share `interfacePortId`.

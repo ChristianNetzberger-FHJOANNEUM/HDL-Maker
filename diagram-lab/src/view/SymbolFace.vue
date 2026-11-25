@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { assetDataUrl } from '../core/assets'
 import type { ImageAsset, Point, PortSide, SymbolLabel, SymbolShape } from '../core/document'
+import { fitSymbolShapes } from '../core/geometry'
 
 export type FacePin = {
   id: string
@@ -19,11 +21,51 @@ const props = defineProps<{
   labels: SymbolLabel[]
   pins: FacePin[]
   assets?: ImageAsset[]
+  /** Symbol definition size. When set, shapes are mapped into `width` and `height`. */
+  symbolWidth?: number
+  symbolHeight?: number
   selectedShape?: number | null
   selectedPin?: string | null
   selectedLabel?: string | null
   hit?: boolean
+  /** When set, a pin pointer starts a sheet gesture instead of a palette drag. */
+  interactivePins?: boolean
+  hitRadius?: number
+  /** Visible pin radius in the same units as `width`. The hit circle stays separate. */
+  markRadius?: number
+  /**
+   * A single rectangular body is drawn on the instance outline.
+   * Pin names sit inside that outline. The symbol definition is not changed.
+   */
+  flushBody?: boolean
 }>()
+
+const emit = defineEmits<{
+  portDown: [id: string, event: PointerEvent]
+}>()
+
+function onPinDown(pin: FacePin, event: PointerEvent): void {
+  if (!props.interactivePins) return
+  event.stopPropagation()
+  event.preventDefault()
+  emit('portDown', pin.id, event)
+}
+
+const drawn = computed(() => {
+  const body = props.flushBody && props.shapes.length === 1 && props.shapes[0].kind === 'rect' ? props.shapes[0] : null
+  if (body) {
+    return {
+      shapes: [{ ...body, x: 0, y: 0, width: props.width, height: props.height }],
+      labels: props.labels.map((label) => ({
+        ...label,
+        x: body.width > 0 ? ((label.x - body.x) / body.width) * props.width : label.x,
+        y: body.height > 0 ? ((label.y - body.y) / body.height) * props.height : label.y,
+      })),
+    }
+  }
+  if (!props.symbolWidth || !props.symbolHeight) return { shapes: props.shapes, labels: props.labels }
+  return fitSymbolShapes(props.shapes, props.labels, props.symbolWidth, props.symbolHeight, props.width, props.height)
+})
 
 function pointsAttr(points: Point[]): string {
   return points.map((point) => `${point.x},${point.y}`).join(' ')
@@ -36,6 +78,12 @@ function hrefFor(assetId: string): string | null {
 
 function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle' | 'end' } {
   if (pin.free) return { x: pin.x, y: pin.y - 8, anchor: 'middle' }
+  if (props.flushBody) {
+    if (pin.side === 'left') return { x: pin.x + 8, y: pin.y + 3, anchor: 'start' }
+    if (pin.side === 'right') return { x: pin.x - 8, y: pin.y + 3, anchor: 'end' }
+    if (pin.side === 'top') return { x: pin.x, y: pin.y + 14, anchor: 'middle' }
+    return { x: pin.x, y: pin.y - 6, anchor: 'middle' }
+  }
   if (pin.side === 'left') return { x: pin.x - 6, y: pin.y + 3, anchor: 'end' }
   if (pin.side === 'right') return { x: pin.x + 6, y: pin.y + 3, anchor: 'start' }
   if (pin.side === 'top') return { x: pin.x, y: pin.y - 8, anchor: 'middle' }
@@ -46,7 +94,7 @@ function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle
 <template>
   <g class="symbol-face">
     <rect v-if="hit" class="symbol-hit" x="0" y="0" :width="width" :height="height" />
-    <template v-for="(shape, index) in shapes" :key="index">
+    <template v-for="(shape, index) in drawn.shapes" :key="index">
       <rect
         v-if="shape.kind === 'rect'"
         class="sym-shape"
@@ -99,15 +147,25 @@ function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle
       <text v-else class="sym-label" :x="shape.x" :y="shape.y">{{ shape.text }}</text>
     </template>
     <text
-      v-for="label in labels"
+      v-for="label in drawn.labels"
       :key="label.id"
       class="sym-label"
       :class="{ selected: selectedLabel === label.id }"
       :x="label.x"
       :y="label.y"
     >{{ label.text }}</text>
-    <g v-for="pin in pins" :key="pin.id" class="sym-pin" :class="{ selected: selectedPin === pin.id, missing: pin.missing }">
-      <circle :cx="pin.x" :cy="pin.y" r="4" />
+    <g
+      v-for="pin in pins"
+      :key="pin.id"
+      class="sym-pin"
+      :class="{ selected: selectedPin === pin.id, missing: pin.missing, live: interactivePins }"
+      :data-port="pin.id"
+      @pointerdown="onPinDown(pin, $event)"
+      @click.stop
+      @dblclick.stop
+    >
+      <circle v-if="interactivePins" class="sym-pin-hit" :cx="pin.x" :cy="pin.y" :r="hitRadius ?? 8" />
+      <circle class="sym-pin-mark" :cx="pin.x" :cy="pin.y" :r="markRadius ?? 4" />
       <text :x="nameAt(pin).x" :y="nameAt(pin).y" :text-anchor="nameAt(pin).anchor">{{ pin.name }}</text>
     </g>
   </g>

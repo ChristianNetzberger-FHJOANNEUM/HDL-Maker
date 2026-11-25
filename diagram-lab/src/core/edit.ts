@@ -1,5 +1,5 @@
 import { createId, type Block, type BlockGroup, type DiagramDocument, type Label, type Net, type Point, type Port, type Segment } from './document'
-import { portAnchor, refreshAll } from './geometry'
+import { pinLocal, pinOnBorder, portAnchor, refreshAll } from './geometry'
 import { reassignComponents } from './nets'
 
 export const GRID = 20
@@ -35,6 +35,165 @@ export function emptyDocument(): DiagramDocument {
 export function snapValue(value: number, enabled: boolean): number {
   if (!enabled) return value
   return Math.round(value / GRID) * GRID
+}
+
+function clampUnit(value: number): number {
+  return Math.min(1, Math.max(0, value))
+}
+
+/** Side and fraction for a pointer near one block. The moving edge snaps. */
+export function borderPlacement(
+  block: { x: number; y: number; width: number; height: number },
+  pointer: Point,
+  snap: boolean,
+): { side: Port['side']; t: number } {
+  const x = snapValue(pointer.x, snap)
+  const y = snapValue(pointer.y, snap)
+  return pinOnBorder(block.width, block.height, x - block.x, y - block.y)
+}
+
+function borderGap(width: number, height: number, x: number, y: number): number {
+  const inside = x >= 0 && y >= 0 && x <= width && y <= height
+  if (inside) return Math.min(Math.abs(x), Math.abs(width - x), Math.abs(y), Math.abs(height - y))
+  const cx = Math.min(width, Math.max(0, x))
+  const cy = Math.min(height, Math.max(0, y))
+  return Math.hypot(x - cx, y - cy)
+}
+
+/** The block edge closest to the pointer, when the pointer is within `radius`. */
+export function nearestBlockBorder(
+  blocks: Array<Pick<Block, 'id' | 'x' | 'y' | 'width' | 'height'>>,
+  pointer: Point,
+  snap: boolean,
+  radius: number,
+): { blockId: string; side: Port['side']; t: number; x: number; y: number } | null {
+  let best: { blockId: string; side: Port['side']; t: number; x: number; y: number; gap: number } | null = null
+  for (const block of blocks) {
+    const gap = borderGap(block.width, block.height, pointer.x - block.x, pointer.y - block.y)
+    if (gap > radius || (best !== null && gap >= best.gap)) continue
+    const placed = borderPlacement(block, pointer, snap)
+    const local = pinLocal(block.width, block.height, placed.side, placed.t)
+    best = { blockId: block.id, side: placed.side, t: placed.t, x: block.x + local.x, y: block.y + local.y, gap }
+  }
+  if (!best) return null
+  return { blockId: best.blockId, side: best.side, t: best.t, x: best.x, y: best.y }
+}
+
+/** Graphic position of one instance port. The symbol definition is not written. */
+export function placePort(doc: DiagramDocument, portId: string, side: Port['side'], t: number): void {
+  const port = doc.ports.find((item) => item.id === portId)
+  if (!port) return
+  port.side = side
+  port.t = clampUnit(t)
+  port.placed = true
+  delete port.x
+  delete port.y
+  refreshAll(doc)
+}
+
+/** First `pN` that is not already used, ignoring letter case. */
+export function unusedPortName(names: string[]): string {
+  const taken = new Set(names.map((name) => name.toLowerCase()))
+  for (let index = 1; index < 10000; index += 1) {
+    const name = `p${index}`
+    if (!taken.has(name)) return name
+  }
+  return `p${names.length + 1}`
+}
+
+export function portNameTaken(names: string[], name: string, except?: string): boolean {
+  const key = name.trim().toLowerCase()
+  return names.some((item) => item !== except && item.toLowerCase() === key)
+}
+
+/** A new instance port on the chosen edge. It has no symbol pin and no logical port. */
+export function addPortAt(doc: DiagramDocument, blockId: string, side: Port['side'], t: number): string | null {
+  const block = doc.blocks.find((item) => item.id === blockId)
+  if (!block) return null
+  const name = unusedPortName(doc.ports.filter((item) => item.blockId === blockId).map((item) => item.name))
+  const id = createId('prt')
+  doc.ports.push({ id, blockId, name, side, t: clampUnit(t), placed: true })
+  refreshAll(doc)
+  return id
+}
+
+export function portIsWired(doc: DiagramDocument, portId: string): boolean {
+  return doc.segments.some(
+    (segment) =>
+      (segment.start.kind === 'port' && segment.start.portId === portId) ||
+      (segment.end.kind === 'port' && segment.end.portId === portId),
+  )
+}
+
+/** Remember a symbol pin this instance must not grow back. The symbol itself is not written. */
+export function hideSymbolPin(block: { suppressedPins?: string[] }, symbolPortId: string | undefined): void {
+  if (!symbolPortId) return
+  const ids = new Set(block.suppressedPins ?? [])
+  ids.add(symbolPortId)
+  block.suppressedPins = [...ids]
+}
+
+/** Drop an unwired port. A wired port and its wire stay. Returns false when nothing changed. */
+export function removeUnwiredPort(doc: DiagramDocument, portId: string): boolean {
+  const port = doc.ports.find((item) => item.id === portId)
+  if (!port || portIsWired(doc, portId)) return false
+  const block = doc.blocks.find((item) => item.id === port.blockId)
+  if (block) hideSymbolPin(block, port.symbolPortId)
+  doc.ports = doc.ports.filter((item) => item.id !== portId)
+  refreshAll(doc)
+  return true
+}
+
+/** Rename one instance port. A name already used on that block, ignoring case, is refused. */
+export function renameInstancePort(doc: DiagramDocument, portId: string, name: string): boolean {
+  const port = doc.ports.find((item) => item.id === portId)
+  const trimmed = name.trim()
+  if (!port || !trimmed) return false
+  const taken = doc.ports.some(
+    (item) => item.blockId === port.blockId && item.id !== port.id && item.name.toLowerCase() === trimmed.toLowerCase(),
+  )
+  if (taken) return false
+  port.name = trimmed
+  return true
+}
+
+export const RESIZE_HANDLES = ['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'] as const
+
+export type ResizeHandle = (typeof RESIZE_HANDLES)[number]
+
+/**
+ * New box for one handle drag. The opposite side or corner stays fixed.
+ * The moving edge snaps. The stored size cannot fall below one grid step.
+ */
+export function resizeBox(
+  origin: { x: number; y: number; width: number; height: number },
+  handle: ResizeHandle,
+  pointer: Point,
+  snap: boolean,
+): { x: number; y: number; width: number; height: number } {
+  const right = origin.x + origin.width
+  const bottom = origin.y + origin.height
+  const east = handle === 'ne' || handle === 'e' || handle === 'se'
+  const west = handle === 'nw' || handle === 'w' || handle === 'sw'
+  const south = handle === 'sw' || handle === 's' || handle === 'se'
+  const north = handle === 'nw' || handle === 'n' || handle === 'ne'
+  let x = origin.x
+  let y = origin.y
+  let width = origin.width
+  let height = origin.height
+  if (east) width = Math.max(GRID, snapValue(pointer.x, snap) - origin.x)
+  if (west) {
+    const edge = Math.min(right - GRID, snapValue(pointer.x, snap))
+    x = edge
+    width = right - edge
+  }
+  if (south) height = Math.max(GRID, snapValue(pointer.y, snap) - origin.y)
+  if (north) {
+    const edge = Math.min(bottom - GRID, snapValue(pointer.y, snap))
+    y = edge
+    height = bottom - edge
+  }
+  return { x, y, width, height }
 }
 
 export function addBlock(doc: DiagramDocument, template: BlockTemplate, at: Point, snap: boolean): string {
@@ -123,6 +282,7 @@ export function duplicateBlocks(doc: DiagramDocument, blockIds: string[], dx: nu
     blockMap.set(id, nextId)
     doc.blocks.push({ ...block, id: nextId, x: block.x + dx, y: block.y + dy })
     for (const port of doc.ports.filter((item) => item.blockId === id)) {
+      if (block.componentId && port.symbolPortId && !port.interfacePortId && !portIsWired(doc, port.id)) continue
       const portId = createId('prt')
       portMap.set(port.id, portId)
       doc.ports.push({ ...port, id: portId, blockId: nextId })
@@ -219,6 +379,13 @@ export function pasteFragment(doc: DiagramDocument, fragment: Fragment, dx: numb
   for (const port of fragment.ports) {
     const blockId = blockMap.get(port.blockId)
     if (!blockId) continue
+    const source = fragment.blocks.find((block) => block.id === port.blockId)
+    const wired = fragment.segments.some(
+      (segment) =>
+        (segment.start.kind === 'port' && segment.start.portId === port.id) ||
+        (segment.end.kind === 'port' && segment.end.portId === port.id),
+    )
+    if (source?.componentId && port.symbolPortId && !port.interfacePortId && !wired) continue
     const id = createId('prt')
     portMap.set(port.id, id)
     doc.ports.push({ ...port, id, blockId })

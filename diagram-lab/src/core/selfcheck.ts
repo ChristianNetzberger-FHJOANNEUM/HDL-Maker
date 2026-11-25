@@ -1,26 +1,29 @@
-import { parseDocument, serialize } from './document'
-import { autoRoute, labelPlacement, moveBlock, pinLocal, pinOnBorder, polylineLength, portAnchor, simplifyOrthogonal } from './geometry'
+import { createId, parseDocument, serialize } from './document'
+import { autoRoute, fitSymbolShapes, labelPlacement, moveBlock, pinLocal, pinOnBorder, polylineLength, portAnchor, simplifyOrthogonal } from './geometry'
 import { netFixture } from './fixture'
 import { addNameLabel, commitWire, crossings, deleteSegment, labelText, mergeNets, moveLabelAlong, netPortIds, placeSpan, probeWire, renameNet, setRouted } from './nets'
 import { wireClick } from './wiretool'
 import { symbolSheet } from './symbolsheet'
-import { addImageAsset, addSymbolLabel, addSymbolPort, addSymbolShape, defineSymbol, instantiateSymbol, moveFreeSymbolPort, moveSymbolPort, removeSymbolPort, setComponent, setSymbolSize, symbolDiagnostics } from './symbols'
+import { addImageAsset, addSymbolLabel, addSymbolPort, addSymbolShape, applySymbol, defineSymbol, instantiateSymbol, moveFreeSymbolPort, moveSymbolPort, removeSymbolPort, setComponent, setSymbolSize, symbolDiagnostics } from './symbols'
 import { auditAssets, base64ToBytes, inspectImage, sha256, sha256Sync } from './assets'
 import { PICTURE_SOURCES, pictureAssets } from './pictures'
 import { builtinLibraries } from './catalog'
 import { cloneSymbol, emptyUserLibrary, mergeLibrary, parseLibrary, placeLibrarySymbol, publishSymbolRevision, removeLibrarySymbol, saveSymbolToLibrary, serializeLibrary } from './library'
-import { emptyDocument, groupBlocks, duplicateGroup, duplicateBlocks, deleteBlocks, placeTemplate, BLOCK_TEMPLATES, linkPorts, captureFragment, pasteFragment } from './edit'
+import { emptyDocument, groupBlocks, duplicateGroup, duplicateBlocks, deleteBlocks, placeTemplate, BLOCK_TEMPLATES, linkPorts, captureFragment, pasteFragment, resizeBox, setBlockFields, addPortAt, borderPlacement, nearestBlockBorder, placePort, removeUnwiredPort, renameInstancePort, unusedPortName } from './edit'
 import { addPort } from './commands'
 import { EditSession } from './session'
 import { JsonRecordStorage } from './storage'
 import { isOrthogonal, orthogonalize } from './orthogonalize'
 import { sampleDocument } from './sample'
-import { addComponent, createProject, documentById, findCycles, hierarchicalNets, implementationDocument, instancePaths, instantiateComponent, removeComponent, setImplementation, validateProject } from './component'
+import { addComponent, componentById, createProject, documentById, findCycles, hierarchicalNets, implementationDocument, instancePaths, instancesOf, instantiateComponent, removeComponent, setImplementation, validateProject } from './component'
+import { duplicateComponent, expandComponent, extractComponent, makeUnique, previewExpand, previewExtract, renameComponent } from './hierarchy'
+import { addBoundPin, addInterfacePort, bindInterfacePort, classifyPortDelete, createImplementation, interfaceDiagnostics, logicalPortName, openAsDiagram, removeInterfacePort, renameInterfacePort } from './interface'
 import { breadcrumbs, contentBounds, descend, DocumentSessions, parentLocation, resolveLocation, rootLocation, sharedDefinitionLabel, treeNodes } from './navigate'
 import { JsonProjectStorage, parseProject, ProjectSession, sampleProject, serializeProject } from './project'
 import { compareSymbols } from './compare'
 import { acceptanceSheet, benchSheet } from './acceptance'
 import { commitSymbolUpdate, detachInstance, dropPortWires, prepareSymbolUpdate, rebindPort } from './migration'
+import { digitalProject, generalProject, signalProject } from './references'
 
 const failures: string[] = []
 
@@ -970,6 +973,1339 @@ if (d4bAddB.ok) {
   const d4bToA = d4bToB ? treeNodes(d4bCycle, d4bToB.steps).find((node) => node.instanceName === 'ToA') : undefined
   const d4bAgain = d4bToA ? treeNodes(d4bCycle, d4bToA.steps) : []
   check(d4bAgain.some((node) => node.status === 'cycle' && !node.expandable), 'a repeated diagram is not expanded again')
+}
+
+let d4c = createProject('Design')
+const d4cSource = addComponent(d4c, { name: 'SignalSource', ports: [], implementation: { kind: 'none' } })
+const d4cProc = d4cSource.ok ? addComponent(d4cSource.project, { name: 'Processing', ports: [], implementation: { kind: 'none' } }) : d4cSource
+const d4cOut = d4cProc.ok ? addComponent(d4cProc.project, { name: 'Output', ports: [], implementation: { kind: 'none' } }) : d4cProc
+check(d4cOut.ok && d4cOut.project.components.every((item) => item.implementation.kind === 'none'), 'a new component has no implementation')
+if (d4cSource.ok && d4cProc.ok && d4cOut.ok) {
+  d4c = d4cOut.project
+  const d4cRoot = d4c.rootDocumentId
+  const d4cProcId = d4cProc.value.componentId
+  const d4cPlaceS = instantiateComponent(d4c, d4cRoot, d4cSource.value.componentId, { x: 80, y: 80 }, 'SignalSource')
+  const d4cPlaceP = d4cPlaceS.ok ? instantiateComponent(d4cPlaceS.project, d4cRoot, d4cProcId, { x: 300, y: 80 }, 'Processing') : d4cPlaceS
+  const d4cPlaceO = d4cPlaceP.ok ? instantiateComponent(d4cPlaceP.project, d4cRoot, d4cOut.value.componentId, { x: 520, y: 80 }, 'Output') : d4cPlaceP
+  check(d4cPlaceO.ok === true, 'abstract components can be placed on the empty root')
+  if (d4cPlaceO.ok) {
+    d4c = d4cPlaceO.project
+    const d4cIn1 = addInterfacePort(d4c, d4cProcId, 'in1', 'left')
+    const d4cIn2 = d4cIn1.ok ? addInterfacePort(d4cIn1.project, d4cProcId, 'in2', 'left') : d4cIn1
+    const d4cOutPort = d4cIn2.ok ? addInterfacePort(d4cIn2.project, d4cProcId, 'out', 'right') : d4cIn2
+    check(d4cOutPort.ok === true, 'Processing gains two inputs and one output in one definition')
+    if (d4cOutPort.ok && d4cIn1.ok) {
+      d4c = d4cOutPort.project
+      const d4cSheet = documentById(d4c, d4cRoot)
+      const d4cBlock = d4cSheet?.blocks.find((block) => block.name === 'Processing')
+      const d4cPorts = d4cSheet?.ports.filter((port) => port.blockId === d4cBlock?.id) ?? []
+      const d4cBeforeIds = d4cPorts.map((port) => port.id).join('|')
+      const d4cIn1Port = d4cPorts.find((port) => port.interfacePortId === d4cIn1.value.interfacePortId)
+      const d4cSrc = d4cSheet?.blocks.find((block) => block.name === 'SignalSource')
+      const d4cSrcPort = addInterfacePort(d4c, d4cSource.value.componentId, 'y', 'right')
+      if (d4cSrcPort.ok && d4cSheet && d4cIn1Port && d4cSrc) {
+        d4c = d4cSrcPort.project
+        const d4cLive = documentById(d4c, d4cRoot)
+        const d4cY = d4cLive?.ports.find((port) => port.interfacePortId === d4cSrcPort.value.interfacePortId)
+        const d4cKept = d4cLive?.ports.find((port) => port.id === d4cIn1Port.id)
+        if (d4cLive && d4cY && d4cKept) {
+          d4cLive.nets.push({ id: 'net_d4c', name: 'link' })
+          d4cLive.segments.push({
+            id: 'seg_d4c',
+            netId: 'net_d4c',
+            points: [{ x: d4cY.t ?? 0, y: 0 }, { x: 10, y: 0 }],
+            start: { kind: 'port', portId: d4cY.id },
+            end: { kind: 'port', portId: d4cKept.id },
+            routed: 'manual',
+          })
+          const d4cRenamed = renameInterfacePort(d4c, d4cProcId, d4cIn1.value.interfacePortId, 'data')
+          const d4cRenamedDoc = d4cRenamed.ok ? documentById(d4cRenamed.project, d4cRoot) : null
+          const d4cRenamedPort = d4cRenamedDoc?.ports.find((port) => port.id === d4cIn1Port.id)
+          check(Boolean(d4cRenamed.ok && d4cRenamedPort?.name === 'data' && d4cRenamedPort.interfacePortId === d4cIn1.value.interfacePortId), 'renaming a logical port keeps the port id')
+          check(Boolean(d4cRenamedDoc?.nets.some((net) => net.id === 'net_d4c') && d4cRenamedDoc?.segments.some((segment) => segment.id === 'seg_d4c' && segment.end.kind === 'port' && segment.end.portId === d4cIn1Port.id)), 'renaming does not retarget the wire')
+          if (d4cRenamed.ok) {
+            d4c = d4cRenamed.project
+            const d4cRefused = removeInterfacePort(d4c, d4cProcId, d4cIn1.value.interfacePortId)
+            const d4cRefusedDoc = documentById(d4c, d4cRoot)
+            check(
+              Boolean(
+                !d4cRefused.ok &&
+                  d4cRefused.project === d4c &&
+                  d4cRefusedDoc?.ports.some((port) => port.id === d4cIn1Port.id) &&
+                  d4cRefusedDoc?.segments.some((segment) => segment.id === 'seg_d4c') &&
+                  componentById(d4c, d4cProcId)?.ports.some((port) => port.id === d4cIn1.value.interfacePortId),
+              ),
+              'a wired logical port is refused, and the project is unchanged',
+            )
+            check(!interfaceDiagnostics(d4c, d4cProcId).some((note) => note.kind === 'wired-removed'), 'refusing a wired port does not leave an orphan')
+            const d4cMade = createImplementation(d4c, d4cProcId)
+            check(d4cMade.ok === true, 'Create implementation adds one empty child diagram')
+            if (d4cMade.ok) {
+              const d4cChild = documentById(d4cMade.project, d4cMade.value.documentId)
+              const d4cBoundary = d4cChild?.ports.filter((port) => port.interfacePortId) ?? []
+              check(d4cBoundary.length === 3 && d4cBoundary.every((port) => port.id !== d4cIn1Port.id), 'the child sheet gets its own connectors')
+              const d4cAgain = createImplementation(d4cMade.project, d4cProcId)
+              check(!d4cAgain.ok && d4cAgain.project === d4cMade.project, 'a second implementation is refused and changes nothing')
+              const d4cStay = descend(d4c, rootLocation(d4c), d4cBlock?.id ?? '')
+              check(d4cStay.kind === 'stay', 'double-click still does not invent a diagram before Create implementation')
+              const d4cOpen = descend(d4cMade.project, rootLocation(d4cMade.project), d4cBlock?.id ?? '')
+              check(d4cOpen.kind === 'ok' && d4cOpen.location.documentId === d4cMade.value.documentId, 'after Create implementation the existing navigation opens that diagram')
+              const d4cFilter = addComponent(d4cMade.project, { name: 'Filter', ports: [], implementation: { kind: 'none' } })
+              const d4cGain = d4cFilter.ok ? addComponent(d4cFilter.project, { name: 'Gain', ports: [], implementation: { kind: 'none' } }) : d4cFilter
+              const d4cReg = d4cGain.ok ? addComponent(d4cGain.project, { name: 'Register', ports: [], implementation: { kind: 'none' } }) : d4cGain
+              const d4cInner = d4cReg.ok && d4cFilter.ok && d4cGain.ok
+                ? instantiateComponent(d4cReg.project, d4cMade.value.documentId, d4cFilter.value.componentId, { x: 80, y: 40 }, 'Filter')
+                : null
+              const d4cInner2 = d4cInner?.ok && d4cGain.ok ? instantiateComponent(d4cInner.project, d4cMade.value.documentId, d4cGain.value.componentId, { x: 80, y: 140 }, 'Gain') : d4cInner
+              const d4cInner3 = d4cInner2?.ok && d4cReg.ok ? instantiateComponent(d4cInner2.project, d4cMade.value.documentId, d4cReg.value.componentId, { x: 80, y: 240 }, 'Register') : d4cInner2
+              const d4cInside = d4cInner3?.ok ? documentById(d4cInner3.project, d4cMade.value.documentId) : null
+              check(Boolean(d4cInside && ['Filter', 'Gain', 'Register'].every((name) => d4cInside.blocks.some((block) => block.name === name))), 'the implementation contains Filter, Gain, and Register')
+              if (d4cInner3?.ok) {
+                const d4cSecond = instantiateComponent(d4cInner3.project, d4cRoot, d4cProcId, { x: 300, y: 240 }, 'Processing')
+                if (d4cSecond.ok && d4cIn2.ok && d4cOutPort.ok) {
+                  const d4cRootSheet = documentById(d4cSecond.project, d4cRoot)
+                  const d4cBoth = d4cRootSheet?.blocks.filter((block) => block.componentId === d4cProcId) ?? []
+                  const d4cLogical = new Set(componentById(d4cSecond.project, d4cProcId)?.ports.map((port) => port.id) ?? [])
+                  const d4cIdsOf = (blockId: string) =>
+                    (d4cRootSheet?.ports.filter((port) => port.blockId === blockId && port.interfacePortId && d4cLogical.has(port.interfacePortId)).map((port) => port.interfacePortId) ?? [])
+                      .sort()
+                      .join('|')
+                  check(d4cBoth.length === 2 && d4cIdsOf(d4cBoth[0].id) === d4cIdsOf(d4cBoth[1].id), 'both Processing instances cite the same logical ports')
+                  const d4cPortIds = (blockId: string) => d4cRootSheet?.ports.filter((port) => port.blockId === blockId).map((port) => port.id).join('|')
+                  check(d4cPortIds(d4cBoth[0].id) !== d4cPortIds(d4cBoth[1].id), 'the two instances do not share port ids')
+                  const d4cFlag = addInterfacePort(d4cSecond.project, d4cProcId, 'flag', 'right')
+                  if (d4cFlag.ok) {
+                    const d4cAfter = documentById(d4cFlag.project, d4cRoot)
+                    const d4cFlags = d4cAfter?.ports.filter((port) => port.interfacePortId === d4cFlag.value.interfacePortId) ?? []
+                    check(d4cFlags.length === 2 && d4cFlags[0].id !== d4cFlags[1].id, 'a new logical port appears on both instances with its own port ids')
+                    check(d4cBeforeIds.split('|').every((id) => d4cAfter?.ports.some((port) => port.id === id) || id === d4cIn1Port.id), 'older unwired port ids are not rewritten')
+                    const d4cSameName = defineSymbol(documentById(d4cFlag.project, d4cRoot)!, { name: 'Processing', width: 120, height: 80, ports: [{ id: 'pin_in2', name: 'in2', side: 'left', t: 0.5 }] })
+                    const d4cDefined = componentById(d4cFlag.project, d4cProcId)
+                    if (d4cDefined) d4cDefined.symbolId = d4cSameName
+                    const d4cUnbound = documentById(d4cFlag.project, d4cRoot)?.ports.find((port) => port.interfacePortId === d4cIn2.value.interfacePortId)
+                    check(d4cUnbound?.symbolPortId === undefined, 'a pin with the same name is not bound automatically')
+                    const d4cBound = bindInterfacePort(d4cFlag.project, d4cProcId, d4cIn2.value.interfacePortId, 'pin_in2')
+                    const d4cBoundPort = d4cBound.ok ? documentById(d4cBound.project, d4cRoot)?.ports.find((port) => port.id === d4cUnbound?.id) : null
+                    check(Boolean(d4cBound.ok && d4cBoundPort?.symbolPortId === 'pin_in2' && d4cBoundPort.interfacePortId === d4cIn2.value.interfacePortId), 'binding uses the pin id and keeps the instance port')
+                    const d4cBox = { project: d4cBound.ok ? d4cBound.project : d4cFlag.project }
+                    const d4cSessions = new DocumentSessions(
+                      (id) => documentById(d4cBox.project, id),
+                      (next) => {
+                        const index = d4cBox.project.documents.findIndex((item) => item.id === next.id)
+                        if (index >= 0) d4cBox.project.documents[index] = next
+                      },
+                    )
+                    const d4cSheetSession = d4cSessions.get(d4cRoot)
+                    d4cSheetSession.execute((draft) => {
+                      const block = draft.blocks.find((item) => item.id === d4cBoth[0].id)
+                      if (block) block.name = 'Local'
+                    })
+                    const d4cProjectUndo = new ProjectSession(
+                      () => d4cBox.project,
+                      (next) => {
+                        d4cBox.project = next
+                      },
+                    )
+                    d4cProjectUndo.transact((current) => {
+                      const result = addInterfacePort(current, d4cProcId, 'aux', 'left')
+                      return result.ok ? result.project : current
+                    })
+                    d4cSessions.discard()
+                    const d4cFresh = d4cSessions.get(d4cRoot)
+                    check(Boolean(!d4cFresh.canUndo && documentById(d4cBox.project, d4cRoot)?.blocks.some((block) => block.name === 'Local')), 'a project command drops the sheet undo stack and keeps the earlier sheet edit')
+                    check(Boolean(documentById(d4cBox.project, d4cRoot)?.ports.some((port) => port.name === 'aux')), 'the project command added the port')
+                    d4cFresh.execute((draft) => {
+                      const block = draft.blocks.find((item) => item.name === 'Local')
+                      if (block) block.name = 'Later'
+                    })
+                    d4cProjectUndo.undo()
+                    const d4cRestored = documentById(d4cBox.project, d4cRoot)
+                    check(Boolean(d4cRestored?.blocks.some((block) => block.name === 'Local') && !d4cRestored?.ports.some((port) => port.name === 'aux')), 'project undo restores the snapshot and does not let a later sheet edit write back')
+                    d4cProjectUndo.redo()
+                    const d4cRedone = documentById(d4cBox.project, d4cRoot)
+                    check(Boolean(d4cRedone?.blocks.some((block) => block.name === 'Later') && d4cRedone?.ports.some((port) => port.name === 'aux')), 'project redo returns every document to the state from just before the undo')
+                    const d4cSaved = parseProject(serializeProject(d4cBox.project))
+                    check(d4cSaved.components.some((item) => item.name === 'Processing' && item.implementation.kind === 'diagram') && d4cSaved.components.some((item) => item.name === 'Filter'), 'save and reload keep the hierarchy')
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function d4dBlock(target: ReturnType<typeof emptyDocument>, name: string, x: number, y: number): string {
+  const id = createId('blk')
+  target.blocks.push({ id, name, x, y, width: 80, height: 40 })
+  return id
+}
+
+function d4dPort(target: ReturnType<typeof emptyDocument>, blockId: string, name: string, side: 'left' | 'right' | 'top' | 'bottom'): string {
+  const id = createId('prt')
+  target.ports.push({ id, blockId, name, side, t: 0.5 })
+  return id
+}
+
+function d4dPortsOnNet(target: ReturnType<typeof emptyDocument>, netId: string): string[] {
+  const ids = new Set<string>()
+  for (const segment of target.segments.filter((item) => item.netId === netId)) {
+    if (segment.start.kind === 'port') ids.add(segment.start.portId)
+    if (segment.end.kind === 'port') ids.add(segment.end.portId)
+  }
+  return [...ids].sort()
+}
+
+function d4dReachable(target: ReturnType<typeof emptyDocument>, portId: string): string[] {
+  const ports = new Set<string>()
+  const seenSegments = new Set<string>()
+  const seenJunctions = new Set<string>()
+  const pending: Array<{ kind: 'port'; id: string } | { kind: 'junction'; id: string }> = [{ kind: 'port', id: portId }]
+  const seenPorts = new Set<string>([portId])
+  while (pending.length > 0) {
+    const item = pending.shift()
+    if (!item) break
+    if (item.kind === 'port') ports.add(item.id)
+    for (const segment of target.segments) {
+      if (seenSegments.has(segment.id)) continue
+      const ends = [segment.start, segment.end]
+      const hit = ends.some(
+        (end) =>
+          (item.kind === 'port' && end.kind === 'port' && end.portId === item.id) ||
+          (item.kind === 'junction' && end.kind === 'junction' && end.junctionId === item.id),
+      )
+      if (!hit) continue
+      seenSegments.add(segment.id)
+      for (const end of ends) {
+        if (end.kind === 'port' && !seenPorts.has(end.portId)) {
+          seenPorts.add(end.portId)
+          pending.push({ kind: 'port', id: end.portId })
+        }
+        if (end.kind === 'junction' && !seenJunctions.has(end.junctionId)) {
+          seenJunctions.add(end.junctionId)
+          pending.push({ kind: 'junction', id: end.junctionId })
+        }
+      }
+    }
+  }
+  return [...ports].sort()
+}
+
+function d4dDangling(target: ReturnType<typeof emptyDocument>): boolean {
+  const ports = new Set(target.ports.map((port) => port.id))
+  const junctions = new Set(target.junctions.map((junction) => junction.id))
+  return target.segments.some((segment) =>
+    [segment.start, segment.end].some(
+      (end) => (end.kind === 'port' && !ports.has(end.portId)) || (end.kind === 'junction' && !junctions.has(end.junctionId)),
+    ),
+  )
+}
+
+const d4dProject = createProject('Flat')
+const d4dSheet = documentById(d4dProject, d4dProject.rootDocumentId)!
+const d4dSrc = d4dBlock(d4dSheet, 'Src', 40, 80)
+const d4dA = d4dBlock(d4dSheet, 'A', 240, 40)
+const d4dB = d4dBlock(d4dSheet, 'B', 460, 40)
+const d4dC = d4dBlock(d4dSheet, 'C', 240, 220)
+const d4dD = d4dBlock(d4dSheet, 'D', 460, 220)
+const d4dE = d4dBlock(d4dSheet, 'E', 240, 400)
+const d4dSink = d4dBlock(d4dSheet, 'Sink', 680, 80)
+const d4dSrcY = d4dPort(d4dSheet, d4dSrc, 'y', 'right')
+const d4dSrcQ = d4dPort(d4dSheet, d4dSrc, 'q', 'right')
+const d4dAIn = d4dPort(d4dSheet, d4dA, 'in', 'left')
+const d4dAO = d4dPort(d4dSheet, d4dA, 'o', 'right')
+const d4dAT = d4dPort(d4dSheet, d4dA, 't', 'bottom')
+const d4dBI = d4dPort(d4dSheet, d4dB, 'i', 'left')
+const d4dBO = d4dPort(d4dSheet, d4dB, 'o', 'right')
+const d4dBX = d4dPort(d4dSheet, d4dB, 'x', 'bottom')
+const d4dCI = d4dPort(d4dSheet, d4dC, 'i', 'left')
+const d4dCO = d4dPort(d4dSheet, d4dC, 'o', 'right')
+const d4dDI = d4dPort(d4dSheet, d4dD, 'i', 'left')
+const d4dDO = d4dPort(d4dSheet, d4dD, 'o', 'right')
+const d4dDX = d4dPort(d4dSheet, d4dD, 'x', 'bottom')
+const d4dEP = d4dPort(d4dSheet, d4dE, 'p', 'left')
+const d4dEB = d4dPort(d4dSheet, d4dE, 'b', 'right')
+const d4dSinkI = d4dPort(d4dSheet, d4dSink, 'i', 'left')
+const d4dSinkB = d4dPort(d4dSheet, d4dSink, 'b', 'left')
+const d4dClk = linkPorts(d4dSheet, d4dSrcY, d4dAIn, 'clk')
+const d4dClkNet = d4dSheet.segments.find((segment) => segment.id === d4dClk)?.netId ?? ''
+const d4dBus = (() => {
+  const netId = createId('net')
+  const junctionId = createId('jnc')
+  const anchors = [d4dAO, d4dBI, d4dCI].map((id) => portAnchor(d4dSheet, id)!)
+  const x = anchors.reduce((sum, point) => sum + point.x, 0) / anchors.length
+  const y = anchors.reduce((sum, point) => sum + point.y, 0) / anchors.length
+  d4dSheet.nets.push({ id: netId, name: 'bus' })
+  d4dSheet.junctions.push({ id: junctionId, netId, x, y })
+  for (const portId of [d4dAO, d4dBI, d4dCI]) {
+    const at = portAnchor(d4dSheet, portId)!
+    d4dSheet.segments.push({ id: createId('seg'), netId, routed: 'manual', points: [{ x, y }, at], start: { kind: 'junction', junctionId }, end: { kind: 'port', portId } })
+  }
+  return { netId, junctionId }
+})()
+const d4dMid = linkPorts(d4dSheet, d4dBO, d4dDI, 'mid')
+const d4dY = (() => {
+  const netId = createId('net')
+  const junctionId = createId('jnc')
+  const anchors = [d4dDO, d4dCO, d4dSinkI].map((id) => portAnchor(d4dSheet, id)!)
+  const x = anchors.reduce((sum, point) => sum + point.x, 0) / anchors.length
+  const y = anchors.reduce((sum, point) => sum + point.y, 0) / anchors.length
+  d4dSheet.nets.push({ id: netId, name: 'y' })
+  d4dSheet.junctions.push({ id: junctionId, netId, x, y })
+  for (const portId of [d4dDO, d4dCO, d4dSinkI]) {
+    const at = portAnchor(d4dSheet, portId)!
+    const segmentId = createId('seg')
+    d4dSheet.segments.push({ id: segmentId, netId, routed: 'manual', points: [{ x, y }, at], start: { kind: 'junction', junctionId }, end: { kind: 'port', portId } })
+  }
+  return { netId, junctionId }
+})()
+const d4dTap = (() => {
+  const netId = createId('net')
+  const junctionId = createId('jnc')
+  const anchors = [d4dAT, d4dSrcQ, d4dEP].map((id) => portAnchor(d4dSheet, id)!)
+  const x = anchors.reduce((sum, point) => sum + point.x, 0) / anchors.length
+  const y = anchors.reduce((sum, point) => sum + point.y, 0) / anchors.length
+  d4dSheet.nets.push({ id: netId, name: 'tap' })
+  d4dSheet.junctions.push({ id: junctionId, netId, x, y })
+  for (const portId of [d4dAT, d4dSrcQ, d4dEP]) {
+    const at = portAnchor(d4dSheet, portId)!
+    d4dSheet.segments.push({ id: createId('seg'), netId, routed: 'manual', points: [{ x, y }, at], start: { kind: 'junction', junctionId }, end: { kind: 'port', portId } })
+  }
+  return { netId, junctionId }
+})()
+const d4dN1 = linkPorts(d4dSheet, d4dBX, d4dSinkB, 'n')
+const d4dN1Net = d4dSheet.segments.find((segment) => segment.id === d4dN1)?.netId ?? ''
+const d4dN2 = linkPorts(d4dSheet, d4dDX, d4dEB, 'n')
+const d4dN2Net = d4dSheet.segments.find((segment) => segment.id === d4dN2)?.netId ?? ''
+groupBlocks(d4dSheet, [d4dA, d4dB])
+const d4dChosen = [d4dA, d4dB, d4dC, d4dD]
+const d4dPreview = previewExtract(d4dProject, d4dSheet.id, d4dChosen)
+check(d4dPreview.ok && d4dPreview.ports.some((port) => port.name === 'clk') && d4dPreview.internalNetIds.includes(d4dBus.netId), 'extract preview names the crossing port and the internal net')
+check(d4dPreview.ok && d4dPreview.notes.some((note) => note.includes('stay separate')), 'extract preview keeps same-named nets apart')
+const d4dOne = extractComponent(d4dProject, d4dSheet.id, [d4dA], 'Only')
+check(!d4dOne.ok && d4dOne.project === d4dProject && d4dSheet.blocks.length === 7, 'extract of one block is refused and writes nothing')
+const d4dAmbiguous = createProject('Ambiguous')
+const d4dAmbiguousSheet = documentById(d4dAmbiguous, d4dAmbiguous.rootDocumentId)!
+const d4dAmbiguousA = d4dBlock(d4dAmbiguousSheet, 'A', 40, 40)
+const d4dAmbiguousC = d4dBlock(d4dAmbiguousSheet, 'C', 200, 40)
+const d4dAmbiguousB = d4dBlock(d4dAmbiguousSheet, 'B', 400, 40)
+const d4dAmbiguousPortA = d4dPort(d4dAmbiguousSheet, d4dAmbiguousA, 'p', 'right')
+const d4dAmbiguousPortB = d4dPort(d4dAmbiguousSheet, d4dAmbiguousB, 'p', 'left')
+const d4dAmbiguousNet = createId('net')
+const d4dAmbiguousJunction = createId('jnc')
+d4dAmbiguousSheet.nets.push({ id: d4dAmbiguousNet, name: 'stub' })
+d4dAmbiguousSheet.junctions.push({ id: d4dAmbiguousJunction, netId: d4dAmbiguousNet, x: 180, y: 60 })
+const d4dAmbiguousAnchorA = portAnchor(d4dAmbiguousSheet, d4dAmbiguousPortA)!
+const d4dAmbiguousAnchorB = portAnchor(d4dAmbiguousSheet, d4dAmbiguousPortB)!
+d4dAmbiguousSheet.segments.push(
+  { id: createId('seg'), netId: d4dAmbiguousNet, routed: 'manual', points: [d4dAmbiguousAnchorA, { x: 180, y: 60 }], start: { kind: 'port', portId: d4dAmbiguousPortA }, end: { kind: 'junction', junctionId: d4dAmbiguousJunction } },
+  { id: createId('seg'), netId: d4dAmbiguousNet, routed: 'manual', points: [{ x: 180, y: 60 }, d4dAmbiguousAnchorB], start: { kind: 'junction', junctionId: d4dAmbiguousJunction }, end: { kind: 'port', portId: d4dAmbiguousPortB } },
+  { id: createId('seg'), netId: d4dAmbiguousNet, routed: 'manual', points: [{ x: 180, y: 60 }, { x: 180, y: 100 }], start: { kind: 'junction', junctionId: d4dAmbiguousJunction }, end: { kind: 'free', x: 180, y: 100 } },
+)
+const d4dAmbiguousPreview = previewExtract(d4dAmbiguous, d4dAmbiguousSheet.id, [d4dAmbiguousA, d4dAmbiguousC])
+const d4dAmbiguousExtract = extractComponent(d4dAmbiguous, d4dAmbiguousSheet.id, [d4dAmbiguousA, d4dAmbiguousC], 'Stub')
+check(!d4dAmbiguousPreview.ok && !d4dAmbiguousExtract.ok && d4dAmbiguousExtract.project === d4dAmbiguous && d4dAmbiguousSheet.segments.length === 3, 'a free end on the boundary is diagnosed and not extracted')
+const d4dBox = { project: d4dProject }
+const d4dSession = new ProjectSession(
+  () => d4dBox.project,
+  (next) => {
+    d4dBox.project = next
+  },
+)
+const d4dDidExtract = d4dSession.transact((current) => {
+  const result = extractComponent(current, current.rootDocumentId, d4dChosen, 'Logic')
+  return result.ok ? result.project : current
+})
+check(d4dDidExtract && d4dBox.project.components.some((item) => item.name === 'Logic'), 'extract is one project command')
+const d4dRoot = documentById(d4dBox.project, d4dBox.project.rootDocumentId)!
+const d4dLogic = d4dBox.project.components.find((item) => item.name === 'Logic')
+const d4dInstance = d4dRoot.blocks.find((block) => block.componentId === d4dLogic?.id)
+const d4dChild = d4dLogic ? implementationDocument(d4dBox.project, d4dLogic.id) : null
+check(Boolean(d4dInstance && d4dChild && d4dChild.blocks.some((block) => block.id === d4dA) && !d4dRoot.blocks.some((block) => block.id === d4dA)), 'selected blocks move into the new diagram')
+check(Boolean(d4dChild && !d4dDangling(d4dRoot) && !d4dDangling(d4dChild)), 'extract leaves no dangling endpoint')
+check(d4dPortsOnNet(d4dRoot, d4dClkNet).includes(d4dSrcY) && !d4dPortsOnNet(d4dRoot, d4dClkNet).includes(d4dAIn), 'the outside clock port stays on its net and the inside port leaves it')
+check(Boolean(d4dChild && d4dReachable(d4dChild, d4dAIn).some((id) => d4dChild?.ports.find((port) => port.id === id)?.name === 'clk')), 'the inside clock port reaches the new boundary')
+check(Boolean(d4dChild && d4dReachable(d4dChild, d4dAO).includes(d4dBI) && d4dReachable(d4dChild, d4dAO).includes(d4dCI) && d4dChild.junctions.some((junction) => junction.id === d4dBus.junctionId)), 'the internal branch keeps its junction and its three ports')
+check(d4dRoot.junctions.some((junction) => junction.id === d4dTap.junctionId) && d4dReachable(d4dRoot, d4dSrcQ).includes(d4dEP) && !d4dReachable(d4dRoot, d4dSrcQ).includes(d4dAT), 'the outside branch stays outside and still joins its two outside ports')
+check(Boolean(d4dChild && d4dChild.junctions.some((junction) => junction.id === d4dY.junctionId) && d4dReachable(d4dChild, d4dDO).includes(d4dCO) && d4dPortsOnNet(d4dRoot, d4dY.netId).includes(d4dSinkI)), 'a junction between two inside ports moves inside and the outside port keeps the net')
+check(d4dN1Net !== d4dN2Net && d4dPortsOnNet(d4dRoot, d4dN1Net).includes(d4dSinkB) && !d4dPortsOnNet(d4dRoot, d4dN1Net).includes(d4dEB) && d4dPortsOnNet(d4dRoot, d4dN2Net).includes(d4dEB), 'two nets with the same name stay separate')
+check(d4dRoot.segments.find((segment) => segment.id === d4dClk)?.routed === 'manual' && Boolean(d4dChild && d4dChild.labels.some((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === d4dMid)), 'a manual route stays manual and the internal label moves with its segment')
+check(Boolean(d4dChild && d4dChild.groups.some((group) => group.blockIds.includes(d4dA) && group.blockIds.includes(d4dB))), 'a group whose blocks all move goes with them')
+const d4dInterface = d4dRoot.ports.find((port) => port.blockId === d4dInstance?.id && d4dPortsOnNet(d4dRoot, d4dClkNet).includes(port.id))?.interfacePortId
+check(Boolean(d4dInterface && d4dLogic?.bindings.some((binding) => binding.interfacePortId === d4dInterface) && d4dChild?.ports.some((port) => port.interfacePortId === d4dInterface && port.blockId !== d4dA)), 'the symbol pin, the instance port, and the boundary cite one logical id')
+d4dSession.undo()
+const d4dUndone = documentById(d4dBox.project, d4dBox.project.rootDocumentId)!
+check(d4dBox.project.components.length === 0 && d4dReachable(d4dUndone, d4dSrcY).includes(d4dAIn) && d4dUndone.junctions.some((junction) => junction.id === d4dBus.junctionId), 'project undo restores the flat nets and the junctions')
+d4dSession.redo()
+const d4dRedone = documentById(d4dBox.project, d4dBox.project.rootDocumentId)!
+const d4dLogicAgain = d4dBox.project.components.find((item) => item.name === 'Logic')
+const d4dInstanceAgain = d4dRedone.blocks.find((block) => block.componentId === d4dLogicAgain?.id)
+check(Boolean(d4dLogicAgain && d4dInstanceAgain && !d4dRedone.blocks.some((block) => block.id === d4dA)), 'project redo restores the extracted component')
+const d4dSecond = d4dLogicAgain && d4dInstanceAgain ? instantiateComponent(d4dBox.project, d4dRedone.id, d4dLogicAgain.id, { x: 40, y: 280 }, 'Logic2') : null
+check(Boolean(d4dSecond?.ok && d4dSecond.value.blockId !== d4dInstanceAgain?.id), 'a second instance uses the same definition')
+if (d4dSecond?.ok && d4dLogicAgain && d4dInstanceAgain) {
+  d4dBox.project = d4dSecond.project
+  const d4dOpened = descend(d4dBox.project, rootLocation(d4dBox.project), d4dInstanceAgain.id)
+  const d4dOpenedAgain = descend(d4dBox.project, rootLocation(d4dBox.project), d4dSecond.value.blockId)
+  check(d4dOpened.kind === 'ok' && d4dOpenedAgain.kind === 'ok' && d4dOpened.location.documentId === d4dOpenedAgain.location.documentId && d4dOpened.location.steps[0]?.blockId !== d4dOpenedAgain.location.steps[0]?.blockId, 'both instances open one diagram through different paths')
+  const d4dShared = d4dOpened.kind === 'ok' ? documentById(d4dBox.project, d4dOpened.location.documentId) : null
+  const d4dInner = d4dShared?.blocks.find((block) => block.id === d4dA)
+  if (d4dInner) d4dInner.name = 'A2'
+  check(d4dShared?.blocks.find((block) => block.id === d4dA)?.name === 'A2', 'an edit of the shared diagram is the diagram both instances open')
+  if (d4dInner) d4dInner.name = 'A'
+  const d4dUnique = makeUnique(d4dBox.project, d4dRedone.id, d4dSecond.value.blockId)
+  check(Boolean(d4dUnique.ok && d4dUnique.value.componentId !== d4dLogicAgain.id), 'make unique gives one instance its own definition')
+  if (d4dUnique.ok) {
+    d4dBox.project = d4dUnique.project
+    const d4dUniqueComponent = componentById(d4dBox.project, d4dUnique.value.componentId)
+    const d4dStillShared = componentById(d4dBox.project, d4dLogicAgain.id)
+    const d4dAdded = d4dUniqueComponent ? addInterfacePort(d4dBox.project, d4dUniqueComponent.id, 'flag', 'right') : null
+    check(Boolean(d4dAdded?.ok && d4dStillShared && !d4dStillShared.ports.some((port) => port.name === 'flag') && componentById(d4dAdded.project, d4dUnique.value.componentId)?.ports.some((port) => port.name === 'flag')), 'a port on the unique definition does not appear on the shared one')
+    if (d4dAdded?.ok) d4dBox.project = d4dAdded.project
+    const d4dLive = documentById(d4dBox.project, d4dBox.project.rootDocumentId)!
+    const d4dBeforeDuplicate = d4dBox.project.components.length
+    const d4dCopiedBlocks = duplicateBlocks(d4dLive, [d4dInstanceAgain.id], 40, 40)
+    const d4dCopyId = d4dCopiedBlocks.get(d4dInstanceAgain.id)
+    check(Boolean(d4dCopyId && d4dLive.blocks.find((block) => block.id === d4dCopyId)?.componentId === d4dLogicAgain.id && d4dBox.project.components.length === d4dBeforeDuplicate), 'duplicating an instance keeps the shared definition')
+    const d4dExpanded = d4dSession.transact((current) => {
+      const result = expandComponent(current, current.rootDocumentId, d4dInstanceAgain.id)
+      return result.ok ? result.project : current
+    })
+    const d4dFlat = documentById(d4dBox.project, d4dBox.project.rootDocumentId)!
+    const d4dRestoredA = d4dFlat.blocks.find((block) => block.name === 'A' && block.id !== d4dA)
+    const d4dRestoredIn = d4dRestoredA ? d4dFlat.ports.find((port) => port.blockId === d4dRestoredA.id && port.name === 'in') : undefined
+    check(Boolean(d4dExpanded && d4dRestoredIn && d4dReachable(d4dFlat, d4dSrcY).includes(d4dRestoredIn.id) && !d4dFlat.blocks.some((block) => block.id === d4dInstanceAgain.id)), 'expand puts the diagram back and keeps the outside connection')
+    check(Boolean(d4dRestoredA && d4dReachable(d4dFlat, d4dFlat.ports.find((port) => port.blockId === d4dRestoredA.id && port.name === 'o')?.id ?? '').length >= 3), 'the expanded branch still joins the inside ports')
+    check(Boolean(d4dUniqueComponent && implementationDocument(d4dBox.project, d4dUnique.value.componentId)?.blocks.some((block) => block.name === 'A') && !d4dDangling(d4dFlat)), 'the other instance keeps its own diagram and expand leaves no dangling wire')
+    d4dSession.undo()
+    const d4dCollapsed = documentById(d4dBox.project, d4dBox.project.rootDocumentId)!
+    check(Boolean(d4dCollapsed.blocks.some((block) => block.id === d4dInstanceAgain.id) && d4dReachable(d4dCollapsed, d4dSrcY).some((id) => d4dCollapsed.ports.find((port) => port.id === id)?.blockId === d4dInstanceAgain.id)), 'project undo of expand restores the instance and its wires')
+    const d4dSaved = parseProject(serializeProject(d4dBox.project))
+    check(Boolean(d4dSaved.components.some((item) => item.id === d4dLogicAgain.id) && d4dSaved.components.some((item) => item.id === d4dUnique.value.componentId) && documentById(d4dSaved, d4dSaved.rootDocumentId)?.blocks.some((block) => block.id === d4dInstanceAgain.id)), 'save and reload keep both definitions and the hierarchy')
+  }
+}
+const d4dRenamed = d4dLogicAgain ? renameComponent(d4dBox.project, d4dLogicAgain.id, 'Logic renamed') : null
+check(Boolean(d4dRenamed?.ok && componentById(d4dRenamed.project, d4dLogicAgain?.id ?? '')?.name === 'Logic renamed' && documentById(d4dRenamed.project, d4dRenamed.project.rootDocumentId)?.blocks.find((block) => block.id === d4dInstanceAgain?.id)?.name === 'Logic'), 'renaming a component keeps the instance name and its port ids')
+const d4dUsedDelete = d4dLogicAgain ? removeComponent(d4dBox.project, d4dLogicAgain.id) : null
+check(Boolean(d4dUsedDelete && !d4dUsedDelete.ok && d4dUsedDelete.project === d4dBox.project), 'a used component is kept and named in the refusal')
+const d4dDrop = addComponent(createProject('Drop'), { name: 'Box', ports: [], implementation: { kind: 'diagram', document: emptyDocument() } })
+const d4dDropped = d4dDrop.ok ? removeComponent(d4dDrop.project, d4dDrop.value.componentId) : d4dDrop
+check(Boolean(d4dDropped.ok && d4dDropped.project.components.length === 0 && d4dDropped.project.documents.length === 1), 'deleting an unused component also deletes its private diagram')
+const d4dDuplicated = d4dLogicAgain ? duplicateComponent(d4dBox.project, d4dLogicAgain.id) : null
+check(Boolean(d4dDuplicated?.ok && d4dDuplicated.value.componentId !== d4dLogicAgain?.id && implementationDocument(d4dDuplicated.project, d4dDuplicated.value.componentId)?.id !== implementationDocument(d4dDuplicated.project, d4dLogicAgain?.id ?? '')?.id), 'duplicating a component copies its diagram and keeps the original')
+const d4dNone = addComponent(createProject('None'), { name: 'Plain', ports: [], implementation: { kind: 'none' } })
+const d4dNonePlaced = d4dNone.ok ? instantiateComponent(d4dNone.project, d4dNone.project.rootDocumentId, d4dNone.value.componentId, { x: 0, y: 0 }, 'P') : null
+const d4dNoExpand = d4dNonePlaced?.ok ? previewExpand(d4dNonePlaced.project, d4dNonePlaced.project.rootDocumentId, d4dNonePlaced.value.blockId) : null
+check(Boolean(d4dNoExpand && !d4dNoExpand.ok), 'expand refuses a component that has no diagram')
+const d4dHist = { project: createProject('Hist') }
+const d4dHistSheet = documentById(d4dHist.project, d4dHist.project.rootDocumentId)!
+const d4dHistA = d4dBlock(d4dHistSheet, 'A', 40, 40)
+const d4dHistB = d4dBlock(d4dHistSheet, 'B', 200, 40)
+const d4dHistSessions = new DocumentSessions(
+  (id) => documentById(d4dHist.project, id),
+  (next) => {
+    const index = d4dHist.project.documents.findIndex((item) => item.id === next.id)
+    if (index >= 0) d4dHist.project.documents[index] = next
+  },
+)
+d4dHistSessions.get(d4dHistSheet.id).execute((draft) => {
+  const block = draft.blocks.find((item) => item.id === d4dHistA)
+  if (block) block.name = 'A local'
+})
+const d4dHistProject = new ProjectSession(
+  () => d4dHist.project,
+  (next) => {
+    d4dHist.project = next
+  },
+)
+check(d4dHistSessions.anyPending(), 'a sheet edit is pending before the project command')
+d4dHistProject.transact((current) => {
+  const result = extractComponent(current, current.rootDocumentId, [d4dHistA, d4dHistB], 'Pair')
+  return result.ok ? result.project : current
+})
+check(d4dHistSessions.anyPending(), 'the sheet session still exists until the editor discards it')
+d4dHistSessions.discard()
+check(Boolean(!d4dHistSessions.get(d4dHist.project.rootDocumentId).canUndo && documentById(d4dHist.project, d4dHist.project.rootDocumentId)?.blocks.every((block) => block.name !== 'A local')), 'discarding sheet history cannot restore the pre-extract names onto the new diagram')
+d4dHistProject.undo()
+check(Boolean(documentById(d4dHist.project, d4dHist.project.rootDocumentId)?.blocks.some((block) => block.name === 'A local') && d4dHist.project.components.length === 0), 'project undo keeps the sheet edit from before the command and removes the extract')
+
+const digital = digitalProject()
+const signal = signalProject()
+const general = generalProject()
+const digitalRoot = documentById(digital, digital.rootDocumentId)
+const datapath = digitalRoot?.blocks.find((block) => block.name === 'Datapath')
+const openedPath = datapath ? descend(digital, rootLocation(digital), datapath.id) : null
+const pathSheet = openedPath && openedPath.kind === 'ok' ? documentById(digital, openedPath.location.documentId) : null
+const counterU1 = pathSheet?.blocks.find((block) => block.name === 'U1')
+const counterU2 = pathSheet?.blocks.find((block) => block.name === 'U2')
+const openedCounter = openedPath && openedPath.kind === 'ok' && counterU1 ? descend(digital, openedPath.location, counterU1.id) : null
+const counterSheet = openedCounter && openedCounter.kind === 'ok' ? documentById(digital, openedCounter.location.documentId) : null
+const stageBlock = counterSheet?.blocks.find((block) => block.name === 'Stage')
+const openedStage = openedCounter && openedCounter.kind === 'ok' && stageBlock ? descend(digital, openedCounter.location, stageBlock.id) : null
+check(validateProject(digital).length === 0 && findCycles(digital).length === 0, 'the digital reference validates and has no cycle')
+check(Boolean(digitalRoot?.nets.some((net) => net.name === 'clk') && digitalRoot.junctions.length > 0 && digitalRoot.labels.length > 0), 'the digital root has a named branched clock')
+check(Boolean(counterU1 && counterU2 && counterU1.componentId === counterU2.componentId && counterU1.id !== counterU2.id), 'two counters share one definition')
+check(Boolean(openedStage && openedStage.kind === 'ok' && openedStage.location.steps.length === 3), 'the digital reference opens three levels')
+check(Boolean(pathSheet?.blocks.some((block) => block.name === 'Register') && pathSheet.blocks.some((block) => block.name === 'Mux')), 'the datapath contains a register and a multiplexer')
+const signalRoot = documentById(signal, signal.rootDocumentId)
+const signalMimes = new Set((signalRoot?.assets ?? []).map((asset) => asset.mime))
+const mixer = signalRoot?.symbols.find((symbol) => symbol.name === 'Mixer')
+check(validateProject(signal).length === 0 && signalMimes.has('image/svg+xml') && signalMimes.has('image/png'), 'the signal reference validates and keeps an SVG and a bitmap')
+check(Boolean(mixer?.ports.some((pin) => pin.side === 'top') && mixer.ports.some((pin) => pin.side === 'left') && signal.components.some((item) => item.name === 'Channel')), 'the signal reference uses several pin sides and a nested channel')
+const generalRoot = documentById(general, general.rootDocumentId)
+check(Boolean(generalRoot && generalRoot.strokes.length === 1 && generalRoot.groups.length === 1 && generalRoot.symbols.some((symbol) => symbol.id === 'sym_decision') && generalRoot.assets.some((asset) => asset.mime === 'image/png') && generalRoot.assets.some((asset) => asset.mime === 'image/svg+xml')), 'the general reference has a flowchart, pictures, a group, and ink')
+const referenceReloaded = parseProject(serializeProject(digital))
+check(Boolean(referenceReloaded && referenceReloaded.components.length === digital.components.length && validateProject(referenceReloaded).length === 0), 'a reference project reloads')
+
+const openAsLibraries = builtinLibraries()
+const genericSymbol = openAsLibraries.find((library) => library.id === 'lib_general')?.symbols.find((symbol) => symbol.id === 'sym_block')
+const openAsHeld = { project: createProject('Open as') }
+const openAsRoot = documentById(openAsHeld.project, openAsHeld.project.rootDocumentId)
+const openAsPlaced = genericSymbol && openAsRoot ? placeLibrarySymbol(openAsRoot, genericSymbol, { x: 80, y: 60 }, 'Counter') : null
+const openAsBlock = openAsPlaced && openAsPlaced.ok ? openAsRoot?.blocks.find((block) => block.id === openAsPlaced.blockId) : null
+const openAsMate = openAsRoot ? createId('blk') : ''
+if (openAsRoot && openAsMate) {
+  openAsRoot.blocks.push({ id: openAsMate, name: 'Sink', x: 420, y: 60, width: 120, height: 72 })
+  openAsRoot.ports.push({ id: 'prt_open_sink', blockId: openAsMate, name: 'in', side: 'left', t: 0.5 })
+}
+if (openAsBlock) {
+  openAsBlock.x = 140
+  openAsBlock.y = 96
+  openAsBlock.width = 210
+  openAsBlock.height = 128
+}
+const openAsPort = openAsRoot?.ports.find((port) => port.blockId === openAsBlock?.id && port.symbolPortId === 'pin_block_out')
+const openAsWire = openAsPort ? linkPorts(openAsRoot!, openAsPort.id, 'prt_open_sink', 'count') : null
+const openAsPortsBefore = openAsRoot?.ports.filter((port) => port.blockId === openAsBlock?.id).map((port) => ({ ...port })) ?? []
+const openAsSegmentsBefore = JSON.stringify(openAsRoot?.segments ?? [])
+const openAsLabelsBefore = JSON.stringify(openAsRoot?.labels ?? [])
+const openAsSession = new ProjectSession(
+  () => openAsHeld.project,
+  (next) => {
+    openAsHeld.project = next
+  },
+)
+openAsSession.transact((current) => {
+  const result = openAsDiagram(current, current.rootDocumentId, openAsBlock?.id ?? '')
+  return result.ok ? result.project : current
+})
+const openAsSheet = documentById(openAsHeld.project, openAsHeld.project.rootDocumentId)
+const openAsAfter = openAsSheet?.blocks.find((block) => block.id === openAsBlock?.id)
+const openAsComponent = openAsHeld.project.components[0]
+const openAsChildId = openAsComponent?.implementation.kind === 'diagram' ? openAsComponent.implementation.documentId : undefined
+const openAsChild = openAsChildId ? documentById(openAsHeld.project, openAsChildId) : null
+const openAsBoundary = openAsChild?.blocks.find((block) => block.name === 'Boundary' && !block.componentId)
+check(Boolean(openAsAfter && openAsAfter.x === 140 && openAsAfter.y === 96 && openAsAfter.width === 210 && openAsAfter.height === 128 && openAsAfter.name === 'Counter' && openAsAfter.symbolId === 'sym_block' && openAsAfter.componentId === openAsComponent?.id && openAsHeld.project.components.length === 1), 'open as keeps the drawn block and its size')
+check(Boolean(openAsPortsBefore.length > 0 && openAsPortsBefore.every((port) => openAsSheet?.ports.some((item) => item.id === port.id && item.symbolPortId === port.symbolPortId && item.side === port.side && item.t === port.t && item.interfacePortId))), 'open as keeps instance port ids and adds one interface id')
+check(openAsSegmentsBefore === JSON.stringify(openAsSheet?.segments ?? []) && openAsLabelsBefore === JSON.stringify(openAsSheet?.labels ?? []) && Boolean(openAsWire), 'open as keeps the wires and their labels')
+check(Boolean(openAsComponent && openAsComponent.implementation.kind === 'diagram' && openAsComponent.bindings.every((binding) => binding.symbolPortId === 'pin_block_in' || binding.symbolPortId === 'pin_block_out')), 'open as binds symbol pins by id')
+check(Boolean(openAsBoundary && openAsComponent?.ports.every((port) => openAsChild?.ports.some((item) => item.blockId === openAsBoundary?.id && item.interfacePortId === port.id))), 'the new boundary cites the same interface ids')
+check(validateProject(openAsHeld.project).length === 0 && findCycles(openAsHeld.project).length === 0, 'open as validates')
+const openAsAgain = openAsDiagram(openAsHeld.project, openAsHeld.project.rootDocumentId, openAsBlock?.id ?? '')
+check(!openAsAgain.ok && openAsAgain.project === openAsHeld.project, 'open as again does not create a second diagram')
+const openAsSecond = instantiateComponent(openAsHeld.project, openAsHeld.project.rootDocumentId, openAsComponent?.id ?? '', { x: 140, y: 280 }, 'Counter 2')
+const openAsSecondSheet = openAsSecond.ok ? documentById(openAsSecond.project, openAsSecond.project.rootDocumentId) : null
+const openAsCopy = openAsSecondSheet?.blocks.find((block) => block.id === (openAsSecond.ok ? openAsSecond.value.blockId : ''))
+check(Boolean(openAsSecond.ok && openAsCopy && openAsCopy.id !== openAsAfter?.id && openAsCopy.componentId === openAsAfter?.componentId && openAsSecond.project.components.length === 1), 'a second instance shares the definition and keeps its own block id')
+openAsSession.undo()
+const openAsUndone = documentById(openAsHeld.project, openAsHeld.project.rootDocumentId)?.blocks.find((block) => block.id === openAsBlock?.id)
+check(Boolean(openAsUndone && !openAsUndone.componentId && openAsUndone.width === 210 && openAsUndone.height === 128 && openAsHeld.project.components.length === 0), 'project undo restores the generic block')
+openAsSession.redo()
+check(Boolean(documentById(openAsHeld.project, openAsHeld.project.rootDocumentId)?.blocks.find((block) => block.id === openAsBlock?.id)?.componentId && openAsHeld.project.components.length === 1 && openAsHeld.project.documents.length === 2), 'project redo restores the component and its diagram')
+const bareHeld = { project: createProject('Bare') }
+const bareRoot = documentById(bareHeld.project, bareHeld.project.rootDocumentId)
+if (bareRoot) bareRoot.blocks.push({ id: 'blk_bare', name: 'Plain', x: 40, y: 40, width: 180, height: 90 })
+const bareOpened = openAsDiagram(bareHeld.project, bareHeld.project.rootDocumentId, 'blk_bare')
+const bareChild = bareOpened.ok ? documentById(bareOpened.project, bareOpened.value.documentId) : null
+check(Boolean(bareOpened.ok && bareChild && bareChild.ports.length === 0 && bareChild.blocks.some((block) => block.name === 'Boundary')), 'a block without ports gets an empty interface')
+const abstract = addComponent(createProject('Abstract'), { name: 'Latch', ports: [{ id: 'ifp_latch', name: 'q' }], implementation: { kind: 'none' } })
+const abstractPlaced = abstract.ok ? instantiateComponent(abstract.project, abstract.project.rootDocumentId, abstract.value.componentId, { x: 30, y: 30 }, 'Latch') : null
+const abstractSheet = abstractPlaced && abstractPlaced.ok ? documentById(abstractPlaced.project, abstractPlaced.project.rootDocumentId) : null
+const abstractBlock = abstractSheet?.blocks.find((block) => block.id === (abstractPlaced && abstractPlaced.ok ? abstractPlaced.value.blockId : ''))
+if (abstractBlock) {
+  abstractBlock.width = 240
+  abstractBlock.height = 100
+}
+const abstractOpened = abstractPlaced && abstractPlaced.ok && abstractBlock ? openAsDiagram(abstractPlaced.project, abstractPlaced.project.rootDocumentId, abstractBlock.id) : null
+const abstractAfter = abstractOpened && abstractOpened.ok ? documentById(abstractOpened.project, abstractOpened.project.rootDocumentId)?.blocks.find((block) => block.id === abstractBlock?.id) : null
+check(Boolean(abstractOpened && abstractOpened.ok && !abstractOpened.value.createdDefinition && abstractOpened.project.components.length === 1 && abstractAfter?.width === 240 && abstractAfter.height === 100), 'open as on an abstract component adds a diagram and keeps the block')
+const boundaryProject = createProject('Boundary')
+const boundaryRoot = documentById(boundaryProject, boundaryProject.rootDocumentId)
+if (boundaryRoot) boundaryRoot.blocks.push({ id: 'blk_boundary_only', name: 'Boundary', x: 10, y: 10, width: 80, height: 40 })
+const boundaryRefused = openAsDiagram(boundaryProject, boundaryProject.rootDocumentId, 'blk_boundary_only')
+check(!boundaryRefused.ok && boundaryRefused.project === boundaryProject, 'open as refuses the boundary block')
+
+const fitted = fitSymbolShapes(
+  [{ kind: 'rect', x: 10, y: 10, width: 68, height: 44 }],
+  [{ id: 'lbl_fit', text: 'Text', x: 28, y: 36 }],
+  88,
+  64,
+  176,
+  64,
+)
+const fittedRect = fitted.shapes[0]
+check(
+  fittedRect?.kind === 'rect' && fittedRect.x === 20 && fittedRect.y === 10 && fittedRect.width === 136 && fittedRect.height === 44 && fitted.labels[0]?.x === 56 && fitted.labels[0]?.y === 36 && fitted.labels[0]?.text === 'Text',
+  'a symbol rect scales to the instance and the label keeps its text',
+)
+const fittedPicture = fitSymbolShapes(
+  [{ kind: 'image', assetId: 'ast_fit', x: 20, y: 4, width: 120, height: 80, lockAspect: true }],
+  [],
+  160,
+  108,
+  320,
+  108,
+)
+const fittedImage = fittedPicture.shapes[0]
+check(
+  fittedImage?.kind === 'image' && fittedImage.width === 120 && fittedImage.height === 80 && fittedImage.x === 100 && fittedImage.y === 4,
+  'a locked picture keeps its aspect inside the scaled slot',
+)
+const east = resizeBox({ x: 100, y: 80, width: 200, height: 100 }, 'e', { x: 340, y: 80 }, false)
+const west = resizeBox({ x: 100, y: 80, width: 200, height: 100 }, 'w', { x: 40, y: 80 }, false)
+const corner = resizeBox({ x: 100, y: 80, width: 200, height: 100 }, 'nw', { x: 60, y: 40 }, false)
+const tooSmall = resizeBox({ x: 100, y: 80, width: 200, height: 100 }, 'e', { x: 110, y: 80 }, false)
+const snapped = resizeBox({ x: 100, y: 80, width: 200, height: 100 }, 'e', { x: 333, y: 80 }, true)
+check(east.x === 100 && east.y === 80 && east.width === 240 && east.height === 100, 'the east handle keeps the left side')
+check(west.x === 40 && west.width === 260 && west.x + west.width === 300 && west.height === 100, 'the west handle keeps the right side')
+check(corner.x === 60 && corner.y === 40 && corner.x + corner.width === 300 && corner.y + corner.height === 180, 'a corner handle keeps the opposite corner')
+check(tooSmall.width === 20 && tooSmall.x === 100 && snapped.width === 240 && snapped.x === 100, 'resize keeps a minimum size and snaps the moving edge')
+
+const resizeDoc = emptyDocument()
+const resizeSymbol = defineSymbol(resizeDoc, { name: 'Counter', width: 88, height: 64, ports: [{ id: 'pin_resize_out', name: 'out', side: 'right', t: 0.5 }] })
+const resizeA = instantiateSymbol(resizeDoc, resizeSymbol, { x: 40, y: 40 }, 'A')
+const resizeB = instantiateSymbol(resizeDoc, resizeSymbol, { x: 280, y: 40 }, 'B')
+const resizePortA = resizeDoc.ports.find((port) => port.blockId === resizeA)
+const resizePortB = resizeDoc.ports.find((port) => port.blockId === resizeB)
+const resizeWire = resizePortA && resizePortB ? linkPorts(resizeDoc, resizePortA.id, resizePortB.id, 'count') : null
+const resizeSegment = resizeDoc.segments.find((segment) => segment.id === resizeWire)
+const resizeTrunk = resizeSegment?.points[1]?.x
+const resizeNet = resizeSegment?.netId
+const resizeLabel = resizeDoc.labels[0]?.anchor
+const resizeSession = new EditSession(
+  () => resizeDoc,
+  (next) => {
+    resizeDoc.blocks = next.blocks
+    resizeDoc.ports = next.ports
+    resizeDoc.segments = next.segments
+    resizeDoc.labels = next.labels
+    resizeDoc.nets = next.nets
+    resizeDoc.symbols = next.symbols
+  },
+)
+resizeSession.begin()
+resizeSession.preview((draft) => {
+  const box = resizeBox({ x: 40, y: 40, width: 88, height: 64 }, 'e', { x: 200, y: 40 }, false)
+  setBlockFields(draft, resizeA ?? '', box)
+})
+resizeSession.preview((draft) => {
+  const box = resizeBox({ x: 40, y: 40, width: 88, height: 64 }, 'e', { x: 240, y: 40 }, false)
+  setBlockFields(draft, resizeA ?? '', box)
+})
+resizeSession.commit()
+const resizeAfterA = resizeDoc.blocks.find((block) => block.id === resizeA)
+const resizeAfterB = resizeDoc.blocks.find((block) => block.id === resizeB)
+const resizeAfterSymbol = resizeDoc.symbols.find((symbol) => symbol.id === resizeSymbol)
+const resizeAfterSegment = resizeDoc.segments.find((segment) => segment.id === resizeWire)
+const resizeStart = resizeAfterSegment?.start
+check(
+  Boolean(
+    resizeAfterA &&
+      resizeAfterA.width === 200 &&
+      resizeAfterA.x === 40 &&
+      resizeAfterA.height === 64 &&
+      resizeAfterB?.width === 88 &&
+      resizeAfterSymbol?.width === 88 &&
+      resizePortA &&
+      resizeDoc.ports.some((port) => port.id === resizePortA.id && port.symbolPortId === 'pin_resize_out') &&
+      resizeAfterSegment?.netId === resizeNet &&
+      resizeAfterSegment?.points[1]?.x === resizeTrunk &&
+      resizeStart?.kind === 'port' &&
+      resizeStart.portId === resizePortA.id &&
+      resizeLabel?.kind === 'segment' &&
+      resizeDoc.labels[0]?.anchor.kind === 'segment' &&
+      resizeDoc.labels[0].anchor.segmentId === resizeWire,
+  ),
+  'resize changes one instance and keeps the symbol, the other instance, and the net',
+)
+resizeSession.undo()
+check(resizeDoc.blocks.find((block) => block.id === resizeA)?.width === 88, 'one resize gesture undoes to the original size')
+resizeSession.redo()
+check(resizeDoc.blocks.find((block) => block.id === resizeA)?.width === 200, 'redo restores the resized instance')
+const unchanged = new EditSession(
+  () => resizeDoc,
+  () => undefined,
+)
+unchanged.begin()
+unchanged.preview((draft) => setBlockFields(draft, resizeA ?? '', { width: resizeDoc.blocks.find((block) => block.id === resizeA)?.width }))
+unchanged.commit()
+check(!unchanged.canUndo, 'a resize that does not change the box adds no undo step')
+const resizeCancelled = new EditSession(
+  () => resizeDoc,
+  (next) => {
+    resizeDoc.blocks = next.blocks
+    resizeDoc.segments = next.segments
+  },
+)
+resizeCancelled.begin()
+resizeCancelled.preview((draft) => setBlockFields(draft, resizeA ?? '', { width: 320 }))
+resizeCancelled.cancel()
+check(resizeDoc.blocks.find((block) => block.id === resizeA)?.width === 200 && !resizeCancelled.canUndo, 'a cancelled resize restores the box and adds no undo step')
+
+const edgeBlock = { x: 100, y: 80, width: 200, height: 100 }
+const edgeRight = borderPlacement(edgeBlock, { x: 300, y: 133 }, true)
+const edgeLeft = borderPlacement(edgeBlock, { x: 100, y: 130 }, false)
+const edgeTop = borderPlacement(edgeBlock, { x: 150, y: 80 }, false)
+const edgeBottom = borderPlacement(edgeBlock, { x: 200, y: 180 }, false)
+check(edgeRight.side === 'right' && edgeRight.t === 0.6, 'a snapped pointer on the right edge stores side and t')
+check(edgeLeft.side === 'left' && edgeLeft.t === 0.5 && edgeTop.side === 'top' && edgeTop.t === 0.25 && edgeBottom.side === 'bottom' && edgeBottom.t === 0.5, 'each block side can receive a port')
+const edgeNear = nearestBlockBorder([{ id: 'blk_edge', ...edgeBlock }], { x: 104, y: 130 }, false, 12)
+check(edgeNear?.blockId === 'blk_edge' && edgeNear.side === 'left', 'a pointer near an edge chooses that block')
+check(nearestBlockBorder([{ id: 'blk_edge', ...edgeBlock }], { x: 200, y: 130 }, false, 12) === null, 'a pointer in the middle of a block is not an edge')
+
+const portDoc = emptyDocument()
+const portSymbol = defineSymbol(portDoc, {
+  name: 'Gate',
+  width: 88,
+  height: 64,
+  ports: [{ id: 'pin_port_out', name: 'out', side: 'right', t: 0.5 }],
+})
+const portA = instantiateSymbol(portDoc, portSymbol, { x: 40, y: 40 }, 'A') ?? ''
+const portB = instantiateSymbol(portDoc, portSymbol, { x: 280, y: 40 }, 'B') ?? ''
+const portOutA = portDoc.ports.find((port) => port.blockId === portA && port.symbolPortId === 'pin_port_out')
+const portOutB = portDoc.ports.find((port) => port.blockId === portB && port.symbolPortId === 'pin_port_out')
+const addedLeft = addPortAt(portDoc, portA, 'left', 0.25)
+const addedTop = addPortAt(portDoc, portA, 'top', 0.4)
+const addedBottom = addPortAt(portDoc, portA, 'bottom', 0.7)
+check(
+  Boolean(addedLeft && addedTop && addedBottom && portDoc.ports.filter((port) => port.blockId === portA).length === 4),
+  'ports can be added on the left, the top, and the bottom',
+)
+const mate = addPortAt(portDoc, portB, 'left', 0.5) ?? ''
+const portWire = linkPorts(portDoc, addedLeft ?? '', mate, 'carry')
+const portSegment = portDoc.segments.find((segment) => segment.id === portWire)
+const portTrunk = portSegment?.points[1]?.x
+const portNet = portSegment?.netId
+const portLabel = portDoc.labels[0]?.anchor
+placePort(portDoc, addedLeft ?? '', 'left', 0.8)
+const slid = portDoc.ports.find((port) => port.id === addedLeft)
+check(slid?.side === 'left' && slid.t === 0.8 && slid.placed === true && slid.id === addedLeft, 'a port slides along its side and keeps its id')
+check(portDoc.segments.find((segment) => segment.id === portWire)?.points[1]?.x === portTrunk, 'sliding a port keeps the manual trunk')
+placePort(portDoc, addedLeft ?? '', 'bottom', 0.2)
+const switched = portDoc.ports.find((port) => port.id === addedLeft)
+const switchedAnchor = portAnchor(portDoc, addedLeft ?? '')
+const switchedLabel = portDoc.labels[0]?.anchor
+check(
+  Boolean(
+    switched?.side === 'bottom' &&
+      switched.id === addedLeft &&
+      switched.t === 0.2 &&
+      switchedAnchor &&
+      Math.abs(switchedAnchor.y - (40 + 64)) < 0.5 &&
+      portDoc.segments.find((segment) => segment.id === portWire)?.netId === portNet &&
+      portDoc.segments.find((segment) => segment.id === portWire)?.start.kind === 'port' &&
+      switchedLabel?.kind === 'segment' &&
+      switchedLabel.segmentId === portWire &&
+      portLabel?.kind === 'segment',
+  ),
+  'changing side keeps the net, the port id, and the label',
+)
+placePort(portDoc, portOutA?.id ?? '', 'top', 0.3)
+const placedOut = portDoc.ports.find((port) => port.id === portOutA?.id)
+const otherOut = portDoc.ports.find((port) => port.id === portOutB?.id)
+const symbolOut = portDoc.symbols.find((symbol) => symbol.id === portSymbol)?.ports.find((pin) => pin.id === 'pin_port_out')
+check(
+  Boolean(placedOut?.placed && placedOut.side === 'top' && placedOut.symbolPortId === 'pin_port_out' && otherOut?.side === 'right' && !otherOut.placed && symbolOut?.side === 'right' && symbolOut.t === 0.5),
+  'a graphic move changes one instance and leaves the symbol and the other instance',
+)
+moveSymbolPort(portDoc, portSymbol, 'pin_port_out', 'right', 0.2)
+check(portDoc.ports.find((port) => port.id === portOutA?.id)?.side === 'top' && portDoc.ports.find((port) => port.id === portOutB?.id)?.t === 0.2, 'a symbol pin move follows only instances without their own position')
+setBlockFields(portDoc, portA, { width: 176, height: 128 })
+const portGrown = portAnchor(portDoc, addedLeft ?? '')
+check(Boolean(portGrown && Math.abs(portGrown.x - (40 + 176 * 0.2)) < 0.5 && Math.abs(portGrown.y - (40 + 128)) < 0.5), 'a later resize keeps the relative port position')
+const portSession = new EditSession(
+  () => portDoc,
+  (next) => {
+    portDoc.blocks = next.blocks
+    portDoc.ports = next.ports
+    portDoc.segments = next.segments
+    portDoc.labels = next.labels
+    portDoc.symbols = next.symbols
+  },
+)
+portSession.begin()
+portSession.preview((draft) => placePort(draft, addedTop ?? '', 'top', 0.55))
+portSession.preview((draft) => placePort(draft, addedTop ?? '', 'top', 0.75))
+portSession.commit()
+check(portDoc.ports.find((port) => port.id === addedTop)?.t === 0.75, 'one port gesture stores the last position')
+portSession.undo()
+check(portDoc.ports.find((port) => port.id === addedTop)?.t === 0.4, 'undo restores the port and its wires together')
+portSession.redo()
+check(portDoc.ports.find((port) => port.id === addedTop)?.t === 0.75, 'redo restores the moved port')
+const portSame = new EditSession(
+  () => portDoc,
+  () => undefined,
+)
+portSame.begin()
+portSame.preview((draft) => placePort(draft, addedTop ?? '', 'top', 0.75))
+portSame.commit()
+check(!portSame.canUndo, 'a port move that does not change the position adds no undo step')
+const portCancel = new EditSession(
+  () => portDoc,
+  (next) => {
+    portDoc.ports = next.ports
+    portDoc.segments = next.segments
+  },
+)
+portCancel.begin()
+portCancel.preview((draft) => placePort(draft, addedTop ?? '', 'right', 0.1))
+portCancel.cancel()
+check(portDoc.ports.find((port) => port.id === addedTop)?.side === 'top' && portDoc.ports.find((port) => port.id === addedTop)?.t === 0.75 && !portCancel.canUndo, 'a cancelled port move restores the position and adds no undo step')
+check(removeUnwiredPort(portDoc, addedLeft ?? '') === false && portDoc.segments.some((segment) => segment.id === portWire), 'a wired port stays, and its wire is not deleted')
+check(removeUnwiredPort(portDoc, addedBottom ?? '') && !portDoc.ports.some((port) => port.id === addedBottom), 'an unwired port can be removed')
+const portStored = parseDocument(serialize(portDoc))
+check(portStored.ports.find((port) => port.id === portOutA?.id)?.placed === true && portStored.ports.find((port) => port.id === portOutA?.id)?.side === 'top', 'save and load keep the instance position')
+
+const portProject = createProject('Ports')
+const portRoot = documentById(portProject, portProject.rootDocumentId)
+const portRootSymbol = portRoot ? defineSymbol(portRoot, { name: 'Box', width: 88, height: 64, ports: [{ id: 'pin_box_q', name: 'q', side: 'right', t: 0.5 }] }) : ''
+const portFirst = portRoot ? instantiateSymbol(portRoot, portRootSymbol, { x: 40, y: 40 }, 'Box') : ''
+if (portRoot && portFirst) {
+  addPortAt(portRoot, portFirst, 'left', 0.2)
+  addPortAt(portRoot, portFirst, 'top', 0.3)
+  addPortAt(portRoot, portFirst, 'bottom', 0.8)
+  placePort(portRoot, portRoot.ports.find((port) => port.blockId === portFirst && port.symbolPortId === 'pin_box_q')?.id ?? '', 'right', 0.15)
+}
+const portBefore = portRoot?.ports.filter((port) => port.blockId === portFirst).map((port) => ({ id: port.id, side: port.side, t: port.t, placed: port.placed, symbolPortId: port.symbolPortId })) ?? []
+const portOpened = openAsDiagram(portProject, portProject.rootDocumentId, portFirst ?? '')
+const portOpenedRoot = portOpened.ok ? documentById(portOpened.project, portProject.rootDocumentId) : null
+const portOpenedChild = portOpened.ok ? documentById(portOpened.project, portOpened.value.documentId) : null
+const portOpenedBlock = portOpenedRoot?.blocks.find((block) => block.id === portFirst)
+const portOpenedComponent = portOpened.ok ? componentById(portOpened.project, portOpened.value.componentId) : null
+check(
+  Boolean(
+    portOpened.ok &&
+      portBefore.every((port) => portOpenedRoot?.ports.some((item) => item.id === port.id && item.side === port.side && item.t === port.t && item.placed === true && item.symbolPortId === port.symbolPortId && item.interfacePortId)) &&
+      portOpenedChild?.ports.filter((port) => port.placed).length === 4 &&
+      portOpenedComponent?.bindings.length === 1 &&
+      portOpenedComponent.bindings[0]?.symbolPortId === 'pin_box_q' &&
+      portOpenedRoot?.symbols.find((symbol) => symbol.id === portRootSymbol)?.ports.find((pin) => pin.id === 'pin_box_q')?.t === 0.5,
+  ),
+  'open as keeps placed ports, binds only the existing pin, and leaves the symbol',
+)
+const portOpenedComponentId = portOpened.ok ? portOpened.value.componentId : ''
+const portSecond = portOpened.ok ? instantiateComponent(portOpened.project, portProject.rootDocumentId, portOpened.value.componentId, { x: 240, y: 40 }, 'Box') : null
+const portSecondId = portSecond?.ok ? portSecond.value.blockId : ''
+const portSecondRoot = portSecond?.ok ? documentById(portSecond.project, portProject.rootDocumentId) : null
+const portSecondBlock = portSecondRoot?.blocks.find((block) => block.id === portSecondId)
+check(
+  Boolean(
+    portSecond?.ok &&
+      portSecondBlock &&
+      !portSecondRoot?.ports.some((port) => port.blockId === portSecondBlock.id && port.placed) &&
+      portSecondRoot?.ports.filter((port) => port.blockId === portSecondBlock.id && port.interfacePortId).length === 4 &&
+      portOpenedRoot?.ports.find((port) => port.blockId === portFirst && port.placed && port.side === 'top'),
+  ),
+  'a second instance has the logical ports and not the first instance positions',
+)
+const portLogical = portSecond?.ok
+  ? addInterfacePort(portSecond.project, portOpenedComponentId, 'extra', 'bottom', {
+      documentId: portProject.rootDocumentId,
+      blockId: portFirst ?? '',
+      t: 0.9,
+    })
+  : null
+const portLogicalId = portLogical?.ok ? portLogical.value.interfacePortId : ''
+const portLogicalRoot = portLogical?.ok ? documentById(portLogical.project, portProject.rootDocumentId) : null
+const portLogicalFirst = portLogicalRoot?.ports.find((port) => port.blockId === portFirst && port.interfacePortId === portLogicalId)
+const portLogicalSecond = portLogicalRoot?.ports.find((port) => port.blockId === portSecondId && port.interfacePortId === portLogicalId)
+const portLogicalSymbol = portLogicalRoot?.symbols.find((symbol) => symbol.id === portRootSymbol)
+check(
+  Boolean(
+    portLogical?.ok &&
+      portLogicalFirst?.placed === true &&
+      portLogicalFirst.t === 0.9 &&
+      portLogicalFirst.side === 'bottom' &&
+      portLogicalSecond &&
+      !portLogicalSecond.placed &&
+      portLogicalSymbol?.ports.length === 1,
+  ),
+  'a new logical port reaches every instance, and only the chosen instance stores the graphic position',
+)
+
+let hideDoc = emptyDocument()
+const hideSymbol = defineSymbol(hideDoc, {
+  name: 'Hide',
+  width: 88,
+  height: 64,
+  ports: [
+    { id: 'pin_hide_in', name: 'in', side: 'left', t: 0.5 },
+    { id: 'pin_hide_out', name: 'out', side: 'right', t: 0.5 },
+  ],
+})
+const hideA = instantiateSymbol(hideDoc, hideSymbol ?? '', { x: 20, y: 20 }, 'A') ?? ''
+const hideB = instantiateSymbol(hideDoc, hideSymbol ?? '', { x: 180, y: 20 }, 'B') ?? ''
+const hideOut = hideDoc.ports.find((port) => port.blockId === hideA && port.symbolPortId === 'pin_hide_out')
+placePort(hideDoc, hideOut?.id ?? '', 'bottom', 0.25)
+const hideAdded = addPortAt(hideDoc, hideA, 'top', 0.3)
+const hideAddedAgain = addPortAt(hideDoc, hideA, 'left', 0.7)
+check(
+  Boolean(hideAdded && hideAddedAgain && hideDoc.ports.find((port) => port.id === hideAdded)?.name !== hideDoc.ports.find((port) => port.id === hideAddedAgain)?.name),
+  'automatic names skip a name that is already used',
+)
+check(unusedPortName(['p1', 'P2']) === 'p3', 'automatic names ignore letter case')
+check(renameInstancePort(hideDoc, hideAdded ?? '', 'IN') === false && hideDoc.ports.find((port) => port.id === hideAdded)?.name !== 'IN', 'a generic rename refuses a name that differs only by case')
+check(removeUnwiredPort(hideDoc, hideOut?.id ?? '') && !hideDoc.ports.some((port) => port.id === hideOut?.id), 'a placed bound pin can be removed from one instance')
+check(
+  Boolean(
+    hideDoc.symbols.find((symbol) => symbol.id === hideSymbol)?.ports.some((pin) => pin.id === 'pin_hide_out') &&
+      hideDoc.ports.some((port) => port.blockId === hideB && port.symbolPortId === 'pin_hide_out'),
+  ),
+  'removing an instance pin leaves the symbol and the other instance',
+)
+applySymbol(hideDoc, hideSymbol ?? '')
+check(
+  Boolean(!hideDoc.ports.some((port) => port.blockId === hideA && port.symbolPortId === 'pin_hide_out') && hideDoc.blocks.find((block) => block.id === hideA)?.suppressedPins?.includes('pin_hide_out')),
+  'a symbol refresh does not restore a pin hidden on one instance',
+)
+check(removeUnwiredPort(hideDoc, hideAdded ?? '') && !hideDoc.ports.some((port) => port.id === hideAdded), 'an added unwired port can be removed')
+const hideFreed = addPortAt(hideDoc, hideA, 'right', 0.4)
+const hideNames = hideDoc.ports.filter((port) => port.blockId === hideA).map((port) => port.name.toLowerCase())
+check(Boolean(hideFreed) && new Set(hideNames).size === hideNames.length, 'after a deletion the next automatic name is still unique')
+const hideIn = hideDoc.ports.find((port) => port.blockId === hideA && port.symbolPortId === 'pin_hide_in')
+const hideOther = hideDoc.ports.find((port) => port.blockId === hideB && port.symbolPortId === 'pin_hide_out')
+const hideWire = hideIn && hideOther ? linkPorts(hideDoc, hideIn.id, hideOther.id, 'kept') : null
+check(Boolean(hideWire) && removeUnwiredPort(hideDoc, hideIn?.id ?? '') === false && hideDoc.segments.some((segment) => segment.id === hideWire), 'a wired port and its wire are kept')
+check(classifyPortDelete(null, hideDoc, hideIn?.id ?? '')?.kind === 'wired' && classifyPortDelete(null, hideDoc, hideFreed ?? '')?.kind === 'local', 'a generic port is deleted locally, and a wired one is refused')
+const hideSession = new EditSession(
+  () => hideDoc,
+  (next) => {
+    hideDoc = next
+  },
+)
+const hidePlain = hideDoc.ports.find((port) => port.blockId === hideA && !port.symbolPortId)?.id ?? ''
+hideSession.execute((draft) => {
+  removeUnwiredPort(draft, hidePlain)
+})
+check(!hideDoc.ports.some((port) => port.id === hidePlain) && hideSession.canUndo, 'a local port deletion is one undo step')
+hideSession.undo()
+check(hideDoc.ports.some((port) => port.id === hidePlain), 'undo restores the deleted port')
+hideSession.redo()
+check(!hideDoc.ports.some((port) => port.id === hidePlain), 'redo removes the port again')
+const hideSaved = parseDocument(serialize(hideDoc))
+check(Boolean(hideSaved.blocks.find((block) => block.id === hideA)?.suppressedPins?.includes('pin_hide_out')), 'save and load keep a hidden symbol pin')
+
+const nameProject = createProject('Names')
+const nameRoot = documentById(nameProject, nameProject.rootDocumentId)
+let nameSymbol = ''
+let nameFirst = ''
+if (nameRoot) {
+  nameSymbol = defineSymbol(nameRoot, { name: 'Box', width: 88, height: 64, ports: [{ id: 'pin_name_out', name: 'out', side: 'right', t: 0.5 }] }) ?? ''
+  nameFirst = instantiateSymbol(nameRoot, nameSymbol, { x: 40, y: 40 }, 'A') ?? ''
+  renameInstancePort(nameRoot, nameRoot.ports.find((port) => port.blockId === nameFirst && port.symbolPortId === 'pin_name_out')?.id ?? '', 'clk')
+}
+const nameOpened = openAsDiagram(nameProject, nameProject.rootDocumentId, nameFirst)
+const nameSecond = nameOpened.ok ? instantiateComponent(nameOpened.project, nameProject.rootDocumentId, nameOpened.value.componentId, { x: 240, y: 40 }, 'B') : null
+const nameSecondId = nameSecond?.ok ? nameSecond.value.blockId : ''
+const nameKeptPort = nameSecond?.ok && nameOpened.ok ? addInterfacePort(nameSecond.project, nameOpened.value.componentId, 'keep', 'left') : null
+const nameSheet = nameKeptPort?.ok ? documentById(nameKeptPort.project, nameProject.rootDocumentId) : null
+const nameMate = nameSheet ? addPortAt(nameSheet, nameSecondId, 'left', 0.2) : null
+const nameClk = nameSheet?.ports.find((port) => port.blockId === nameSecondId && port.symbolPortId === 'pin_name_out')
+const nameWire = nameClk && nameMate ? linkPorts(nameSheet!, nameClk.id, nameMate, 'clk') : null
+const nameLogicalId = nameClk?.interfacePortId ?? ''
+const nameRemoved = nameKeptPort?.ok && nameLogicalId ? removeInterfacePort(nameKeptPort.project, nameOpened.ok ? nameOpened.value.componentId : '', nameLogicalId) : null
+const nameAfter = nameKeptPort?.ok ? documentById(nameKeptPort.project, nameProject.rootDocumentId) : null
+const nameChild = nameKeptPort?.ok && nameOpened.ok ? documentById(nameKeptPort.project, nameOpened.value.documentId) : null
+const nameBoundary = nameChild?.blocks.find((block) => block.name === 'Boundary' && !block.componentId)
+const nameKept = nameAfter?.ports.find((port) => port.id === nameClk?.id)
+const nameFirstPort = nameAfter?.ports.find((port) => port.blockId === nameFirst && port.symbolPortId === 'pin_name_out')
+const nameClass = nameAfter && nameKept && nameKeptPort?.ok ? classifyPortDelete(nameKeptPort.project, nameAfter, nameKept.id) : null
+const nameExtra = nameKeptPort?.ok && nameOpened.ok ? addInterfacePort(nameKeptPort.project, nameOpened.value.componentId, 'extra', 'top') : null
+const nameClash = nameExtra?.ok && nameOpened.ok ? addInterfacePort(nameExtra.project, nameOpened.value.componentId, 'EXTRA', 'bottom') : null
+const nameRename = nameExtra?.ok && nameOpened.ok ? renameInterfacePort(nameExtra.project, nameOpened.value.componentId, nameExtra.value.interfacePortId, 'KEEP') : null
+check(nameSheet?.ports.find((port) => port.blockId === nameSecondId && port.symbolPortId === 'pin_name_out')?.name === 'clk', 'a second instance shows the logical name')
+check(nameSheet?.symbols.find((symbol) => symbol.id === nameSymbol)?.ports.find((pin) => pin.id === 'pin_name_out')?.name === 'out', 'the symbol pin keeps its own name')
+check(
+  Boolean(
+    nameRemoved &&
+      !nameRemoved.ok &&
+      nameRemoved.project === nameKeptPort?.project &&
+      nameFirstPort?.interfacePortId === nameLogicalId &&
+      nameKept?.interfacePortId === nameLogicalId &&
+      nameWire &&
+      nameAfter?.segments.some((segment) => segment.id === nameWire) &&
+      nameChild?.ports.some((port) => port.blockId === nameBoundary?.id && port.interfacePortId === nameLogicalId) &&
+      nameAfter?.symbols.find((symbol) => symbol.id === nameSymbol)?.ports.some((pin) => pin.id === 'pin_name_out') &&
+      !nameAfter?.blocks.find((block) => block.id === nameFirst)?.suppressedPins?.includes('pin_name_out') &&
+      nameClass?.kind === 'logical',
+  ),
+  'a logical port wired on one instance is refused on every instance and on the boundary',
+)
+check(Boolean(nameExtra?.ok && !nameClash?.ok && !nameRename?.ok && nameClash?.project === nameExtra?.project), 'a logical name cannot be reused in another case')
+const nameExtraId = nameExtra?.ok ? nameExtra.value.interfacePortId : ''
+const nameExtraChild = nameExtra?.ok && nameOpened.ok ? documentById(nameExtra.project, nameOpened.value.documentId) : null
+const nameExtraBoundary = nameExtraChild?.blocks.find((block) => block.name === 'Boundary' && !block.componentId)
+const nameBoundaryPort = nameExtraChild?.ports.find((port) => port.blockId === nameExtraBoundary?.id && port.interfacePortId === nameExtraId)
+const nameBoundaryClass = nameExtra?.ok && nameExtraChild && nameBoundaryPort ? classifyPortDelete(nameExtra.project, nameExtraChild, nameBoundaryPort.id) : null
+check(nameBoundaryClass?.kind === 'logical', 'a boundary port deletes the logical port, not only the connector')
+
+const syncProject = createProject('Sync')
+const syncSheet = documentById(syncProject, syncProject.rootDocumentId)
+let syncSymbol = ''
+let syncA = ''
+if (syncSheet) {
+  syncSymbol = defineSymbol(syncSheet, {
+    name: 'Generic block',
+    width: 88,
+    height: 64,
+    ports: [
+      { id: 'pin_sync_in', name: 'in', side: 'left', t: 0.5 },
+      { id: 'pin_sync_out', name: 'out', side: 'right', t: 0.5 },
+    ],
+  }) ?? ''
+  syncA = instantiateSymbol(syncSheet, syncSymbol, { x: 80, y: 80 }, 'Generic block') ?? ''
+}
+const syncAddedTop = syncSheet ? addPortAt(syncSheet, syncA, 'top', 0.3) : null
+const syncAddedRight = syncSheet ? addPortAt(syncSheet, syncA, 'right', 0.4) : null
+const syncOpened = openAsDiagram(syncProject, syncProject.rootDocumentId, syncA)
+const syncBox = { project: syncOpened.ok ? syncOpened.project : syncProject }
+const syncComponentId = syncOpened.ok ? syncOpened.value.componentId : ''
+const syncChildId = syncOpened.ok ? syncOpened.value.documentId : ''
+const syncLogical = (name: string) => componentById(syncBox.project, syncComponentId)?.ports.find((port) => port.name === name)?.id ?? ''
+const syncOn = (documentId: string, blockId: string, interfacePortId: string) =>
+  documentById(syncBox.project, documentId)?.ports.find((port) => port.blockId === blockId && port.interfacePortId === interfacePortId)
+const syncBoundaryOf = () => {
+  const child = documentById(syncBox.project, syncChildId)
+  return child?.blocks.find((block) => block.name === 'Boundary' && !block.componentId) ?? null
+}
+if (syncOpened.ok && syncSheet && syncAddedTop && syncAddedRight) {
+  const syncInId = syncLogical('in')
+  const syncOutId = syncLogical('out')
+  const syncP1Id = syncLogical('p1')
+  const syncP2Id = syncLogical('p2')
+  const syncSessions = new DocumentSessions(
+    (id) => documentById(syncBox.project, id),
+    (next) => {
+      const index = syncBox.project.documents.findIndex((item) => item.id === next.id)
+      if (index >= 0) syncBox.project.documents[index] = next
+    },
+  )
+  syncSessions.get(syncChildId)
+  syncSessions.get(syncBox.project.rootDocumentId)
+  const syncSecond = instantiateComponent(syncBox.project, syncBox.project.rootDocumentId, syncComponentId, { x: 280, y: 80 }, 'Generic block')
+  if (syncSecond.ok) syncBox.project = syncSecond.project
+  const syncB = syncSecond.ok ? syncSecond.value.blockId : ''
+  const syncOpenedNames = documentById(syncBox.project, syncChildId)?.ports.map((port) => port.name) ?? []
+  check(['in', 'out', 'p1', 'p2'].every((name) => syncOpenedNames.includes(name)), 'open as puts the original pins and the added ports on the boundary')
+  const syncHere = addInterfacePort(syncBox.project, syncComponentId, 'here', 'left')
+  if (syncHere.ok) syncBox.project = syncHere.project
+  const syncOther = syncHere.ok ? addInterfacePort(syncBox.project, syncComponentId, 'other', 'right') : null
+  if (syncOther?.ok) syncBox.project = syncOther.project
+  const syncEdge = syncOther?.ok ? addInterfacePort(syncBox.project, syncComponentId, 'edge', 'top') : null
+  if (syncEdge?.ok) syncBox.project = syncEdge.project
+  const syncHereId = syncHere.ok ? syncHere.value.interfacePortId : ''
+  const syncOtherId = syncOther?.ok ? syncOther.value.interfacePortId : ''
+  const syncEdgeId = syncEdge?.ok ? syncEdge.value.interfacePortId : ''
+  const syncRoot = documentById(syncBox.project, syncBox.project.rootDocumentId)
+  const syncMoved = syncRoot?.ports.find((port) => port.id === syncAddedRight)
+  if (syncRoot && syncMoved) placePort(syncRoot, syncMoved.id, 'bottom', 0.8)
+  const syncSymbolPorts = JSON.stringify(syncRoot?.symbols.find((symbol) => symbol.id === syncSymbol)?.ports ?? [])
+  const syncMateBlock = syncRoot ? placeTemplate(syncRoot, BLOCK_TEMPLATES[0], false) : ''
+  const syncMate = syncRoot && syncMateBlock ? addPortAt(syncRoot, syncMateBlock, 'left', 0.5) : null
+  const syncHerePort = syncOn(syncBox.project.rootDocumentId, syncA, syncHereId)
+  const syncHereWire = syncRoot && syncHerePort && syncMate ? linkPorts(syncRoot, syncHerePort.id, syncMate, 'here') : null
+  const syncHistory = new ProjectSession(
+    () => syncBox.project,
+    (next) => {
+      syncBox.project = next
+    },
+  )
+  const syncRefusedHere = syncHistory.transact((current) => {
+    const result = removeInterfacePort(current, syncComponentId, syncHereId)
+    return result.ok ? result.project : current
+  })
+  const syncHereDirect = removeInterfacePort(syncBox.project, syncComponentId, syncHereId)
+  check(Boolean(syncHereWire) && !syncRefusedHere && !syncHistory.canUndo && !syncHereDirect.ok && syncHereDirect.project === syncBox.project, 'a wire on this instance refuses the logical delete and adds no undo step')
+  check(!syncHereDirect.ok && syncHereDirect.message.includes('Generic block') && syncHereDirect.message.includes('kept'), 'the refusal names the wired instance')
+  const syncOtherMate = syncRoot && syncMateBlock ? addPortAt(syncRoot, syncMateBlock, 'left', 0.2) : null
+  const syncOtherPort = syncOn(syncBox.project.rootDocumentId, syncB, syncOtherId)
+  const syncOtherWire = syncRoot && syncOtherPort && syncOtherMate ? linkPorts(syncRoot, syncOtherPort.id, syncOtherMate, 'other') : null
+  const syncOtherDirect = removeInterfacePort(syncBox.project, syncComponentId, syncOtherId)
+  check(Boolean(syncOtherWire && !syncOtherDirect.ok && syncOtherDirect.project === syncBox.project && syncOn(syncBox.project.rootDocumentId, syncA, syncOtherId)), 'a wire on another instance refuses the delete on this one')
+  const syncChild = documentById(syncBox.project, syncChildId)
+  const syncInner = syncChild ? placeTemplate(syncChild, BLOCK_TEMPLATES[0], false) : ''
+  const syncInnerPort = syncChild && syncInner ? addPortAt(syncChild, syncInner, 'left', 0.5) : null
+  const syncEdgePort = syncOn(syncChildId, syncBoundaryOf()?.id ?? '', syncEdgeId)
+  const syncEdgeWire = syncChild && syncEdgePort && syncInnerPort ? linkPorts(syncChild, syncEdgePort.id, syncInnerPort, 'edge') : null
+  const syncEdgeDirect = removeInterfacePort(syncBox.project, syncComponentId, syncEdgeId)
+  check(Boolean(syncEdgeWire && !syncEdgeDirect.ok && syncEdgeDirect.message.includes('Boundary') && syncOn(syncBox.project.rootDocumentId, syncA, syncEdgeId)), 'a wire on the boundary refuses the delete on the parent')
+  const syncStale = parseProject(serializeProject(syncBox.project))
+  const syncStaleRoot = documentById(syncStale, syncStale.rootDocumentId)
+  const syncStalePort = syncStaleRoot?.ports.find((port) => port.interfacePortId === syncP1Id)
+  if (syncStalePort) syncStalePort.interfacePortId = 'ifp_missing'
+  const syncStaleMate = syncStaleRoot ? addPortAt(syncStaleRoot, syncStaleRoot.blocks[0]?.id ?? '', 'left', 0.1) : null
+  const syncStaleWire = syncStaleRoot && syncStalePort && syncStaleMate ? linkPorts(syncStaleRoot, syncStalePort.id, syncStaleMate, 'stale') : null
+  const syncStaleClass = syncStaleRoot && syncStalePort ? classifyPortDelete(syncStale, syncStaleRoot, syncStalePort.id) : null
+  check(
+    Boolean(syncStaleWire && syncStaleClass?.kind === 'dangling' && syncStaleClass.wired && interfaceDiagnostics(syncStale, syncComponentId).some((note) => note.kind === 'wired-removed' && note.portId === syncStalePort?.id)),
+    'an already invalid wired interface reference is still diagnosed',
+  )
+  const syncInRemoved = removeInterfacePort(syncBox.project, syncComponentId, syncInId)
+  if (syncInRemoved.ok) syncBox.project = syncInRemoved.project
+  check(syncInRemoved.ok && !syncOn(syncChildId, syncBoundaryOf()?.id ?? '', syncInId) && !syncOn(syncBox.project.rootDocumentId, syncA, syncInId), 'deleting an original symbol pin removes that logical port from the boundary')
+  check(documentById(syncBox.project, syncBox.project.rootDocumentId)?.symbols.some((symbol) => symbol.ports.some((pin) => pin.id === 'pin_sync_in')) === true, 'the symbol pin itself stays in the symbol')
+  const syncOutPort = syncOn(syncChildId, syncBoundaryOf()?.id ?? '', syncOutId)
+  const syncOutSheet = documentById(syncBox.project, syncChildId)
+  const syncOutDecision = syncOutSheet && syncOutPort ? classifyPortDelete(syncBox.project, syncOutSheet, syncOutPort.id) : null
+  const syncOutRemoved = syncOutDecision?.kind === 'logical' ? removeInterfacePort(syncBox.project, syncOutDecision.componentId, syncOutDecision.interfacePortId) : null
+  if (syncOutRemoved?.ok) syncBox.project = syncOutRemoved.project
+  check(Boolean(syncOutRemoved?.ok && !syncOn(syncBox.project.rootDocumentId, syncA, syncOutId) && !syncOn(syncBox.project.rootDocumentId, syncB, syncOutId) && !syncOn(syncChildId, syncBoundaryOf()?.id ?? '', syncOutId)), 'deleting the same port from the boundary removes it from every instance')
+  const syncKept = syncOn(syncBox.project.rootDocumentId, syncA, syncP2Id)
+  const syncOtherKept = syncOn(syncBox.project.rootDocumentId, syncB, syncP2Id)
+  const syncBoundaryKept = syncOn(syncChildId, syncBoundaryOf()?.id ?? '', syncP2Id)
+  check(Boolean(syncKept?.placed && syncKept.side === 'bottom' && syncKept.t === 0.8 && !syncOtherKept?.placed && syncBoundaryKept?.placed && syncBoundaryKept.side !== 'bottom'), 'a graphic move stays on the instance that was moved')
+  check(JSON.stringify(documentById(syncBox.project, syncBox.project.rootDocumentId)?.symbols.find((symbol) => symbol.id === syncSymbol)?.ports ?? []) === syncSymbolPorts, 'logical deletes do not change the symbol definition')
+  const syncFromBoundary = addInterfacePort(syncBox.project, syncComponentId, 'added', 'left', {
+    documentId: syncChildId,
+    blockId: syncBoundaryOf()?.id ?? '',
+    t: 0.2,
+  })
+  if (syncFromBoundary.ok) syncBox.project = syncFromBoundary.project
+  const syncAddedId = syncFromBoundary.ok ? syncFromBoundary.value.interfacePortId : ''
+  const syncBoundaryAdded = syncOn(syncChildId, syncBoundaryOf()?.id ?? '', syncAddedId)
+  check(Boolean(syncFromBoundary.ok && syncBoundaryAdded?.placed && syncBoundaryAdded.t === 0.2 && syncOn(syncBox.project.rootDocumentId, syncA, syncAddedId) && syncOn(syncBox.project.rootDocumentId, syncB, syncAddedId) && !syncOn(syncBox.project.rootDocumentId, syncA, syncAddedId)?.placed), 'a port added on the boundary appears on every instance, and only the boundary keeps that position')
+  const syncRenamed = syncFromBoundary.ok ? renameInterfacePort(syncBox.project, syncComponentId, syncAddedId, 'renamed') : null
+  if (syncRenamed?.ok) syncBox.project = syncRenamed.project
+  check(Boolean(syncRenamed?.ok && syncOn(syncChildId, syncBoundaryOf()?.id ?? '', syncAddedId)?.name === 'renamed' && syncOn(syncBox.project.rootDocumentId, syncB, syncAddedId)?.name === 'renamed'), 'renaming a logical port changes the boundary and every instance')
+  const syncThird = instantiateComponent(syncBox.project, syncBox.project.rootDocumentId, syncComponentId, { x: 480, y: 80 }, 'Later')
+  const syncThirdDoc = syncThird.ok ? documentById(syncThird.project, syncBox.project.rootDocumentId) : null
+  const syncThirdPorts = syncThird.ok ? syncThirdDoc?.ports.filter((port) => port.blockId === syncThird.value.blockId) ?? [] : []
+  check(Boolean(syncThird.ok && syncThirdPorts.some((port) => port.interfacePortId === syncP2Id) && syncThirdPorts.every((port) => port.interfacePortId) && !syncThirdPorts.some((port) => port.symbolPortId === 'pin_sync_in' || port.symbolPortId === 'pin_sync_out')), 'a later component instance shows only the logical ports')
+  const syncBeforeChild = documentById(syncBox.project, syncChildId)
+  const syncRemoved = syncHistory.transact((current) => {
+    const result = removeInterfacePort(current, syncComponentId, syncP1Id)
+    return result.ok ? result.project : current
+  })
+  syncSessions.discard()
+  const syncReopened = documentById(syncBox.project, syncChildId)
+  check(syncRemoved && !syncReopened?.ports.some((port) => port.interfacePortId === syncP1Id), 'deleting an added port on the parent removes it from the child that was already open')
+  check(syncBeforeChild !== syncReopened, 'reopening reads the updated child document, not the document from before the delete')
+  check(!syncSessions.get(syncChildId).canUndo && !syncOn(syncBox.project.rootDocumentId, syncA, syncP1Id) && !syncOn(syncBox.project.rootDocumentId, syncB, syncP1Id), 'both instances lose the deleted port, and the old child session is not reused')
+  const syncDown = descend(syncBox.project, rootLocation(syncBox.project), syncA)
+  const syncUp = syncDown.kind === 'ok' ? parentLocation(syncBox.project, syncDown.location) : null
+  const syncBack = syncUp ? descend(syncBox.project, syncUp, syncA) : null
+  const syncSeen = syncBack?.kind === 'ok' ? documentById(syncBox.project, syncBack.location.documentId) : null
+  check(Boolean(syncUp?.documentId === syncBox.project.rootDocumentId && syncSeen && !syncSeen.ports.some((port) => port.interfacePortId === syncP1Id) && syncSeen.ports.some((port) => port.name === 'renamed')), 'navigation between open levels shows the current interface')
+  const syncLoaded = parseProject(serializeProject(syncBox.project))
+  const syncLoadedChild = documentById(syncLoaded, syncChildId)
+  const syncLoadedRoot = documentById(syncLoaded, syncLoaded.rootDocumentId)
+  const syncLoadedA = syncLoadedRoot?.ports.find((port) => port.blockId === syncA && port.interfacePortId === syncP2Id)
+  const syncLoadedBoundary = syncLoadedChild?.blocks.find((block) => block.name === 'Boundary' && !block.componentId)
+  const syncLoadedBoundaryPorts = syncLoadedChild?.ports.filter((port) => port.blockId === syncLoadedBoundary?.id) ?? []
+  check(Boolean(syncLoadedBoundary && !syncLoadedBoundaryPorts.some((port) => port.interfacePortId === syncP1Id || port.interfacePortId === syncInId) && syncLoadedBoundaryPorts.some((port) => port.name === 'renamed') && syncLoadedA?.placed && syncLoadedA.t === 0.8), 'save and load keep the synchronized interface and the graphic position')
+  syncHistory.undo()
+  check(Boolean(documentById(syncBox.project, syncChildId)?.ports.some((port) => port.interfacePortId === syncP1Id) && syncOn(syncBox.project.rootDocumentId, syncB, syncP1Id)), 'project undo restores the deleted port on the boundary and the other instance')
+  syncHistory.redo()
+  check(!documentById(syncBox.project, syncChildId)?.ports.some((port) => port.interfacePortId === syncP1Id), 'project redo removes that port again')
+  const syncRefusedAfter = syncHistory.transact((current) => {
+    const result = removeInterfacePort(current, syncComponentId, syncHereId)
+    return result.ok ? result.project : current
+  })
+  syncHistory.undo()
+  check(Boolean(!syncRefusedAfter && documentById(syncBox.project, syncChildId)?.ports.some((port) => port.interfacePortId === syncP1Id)), 'a refused delete does not become the undo step')
+}
+
+const faceProject = createProject('Face')
+const faceRoot = documentById(faceProject, faceProject.rootDocumentId)
+let faceSymbol = ''
+let faceBlock = ''
+if (faceRoot) {
+  faceSymbol = defineSymbol(faceRoot, {
+    name: 'Generic block',
+    width: 88,
+    height: 64,
+    ports: [
+      { id: 'pin_face_in', name: 'in', side: 'left', t: 0.5 },
+      { id: 'pin_face_out', name: 'out', side: 'right', t: 0.5 },
+    ],
+  }) ?? ''
+  faceBlock = instantiateSymbol(faceRoot, faceSymbol, { x: 80, y: 80 }, 'Generic block') ?? ''
+  addPortAt(faceRoot, faceBlock, 'top', 0.3)
+  addPortAt(faceRoot, faceBlock, 'bottom', 0.4)
+  addPortAt(faceRoot, faceBlock, 'left', 0.2)
+  renameInstancePort(faceRoot, faceRoot.ports.find((port) => port.blockId === faceBlock && !port.symbolPortId && port.side === 'top')?.id ?? '', 'clk')
+  renameInstancePort(faceRoot, faceRoot.ports.find((port) => port.blockId === faceBlock && !port.symbolPortId && port.side === 'bottom')?.id ?? '', 'data')
+  renameInstancePort(faceRoot, faceRoot.ports.find((port) => port.blockId === faceBlock && !port.symbolPortId && port.side === 'left')?.id ?? '', 'en')
+}
+const faceOpened = openAsDiagram(faceProject, faceProject.rootDocumentId, faceBlock)
+const faceBox = { project: faceOpened.ok ? faceOpened.project : faceProject }
+const faceComponentId = faceOpened.ok ? faceOpened.value.componentId : ''
+const faceChildId = faceOpened.ok ? faceOpened.value.documentId : ''
+const faceBoundary = () => {
+  const child = documentById(faceBox.project, faceChildId)
+  return child?.blocks.find((block) => block.name === 'Boundary' && !block.componentId) ?? null
+}
+const facePortsOn = (documentId: string, blockId: string) =>
+  documentById(faceBox.project, documentId)?.ports.filter((port) => port.blockId === blockId) ?? []
+if (faceOpened.ok) {
+  const faceChild = documentById(faceBox.project, faceChildId)
+  const faceBoundaryPorts = facePortsOn(faceChildId, faceBoundary()?.id ?? '')
+  const faceSides = new Set(faceBoundaryPorts.map((port) => port.side))
+  check(
+    Boolean(
+      faceBoundary() &&
+        ['in', 'out', 'clk', 'data', 'en'].every((name) => faceBoundaryPorts.some((port) => port.name === name && port.interfacePortId)) &&
+        ['left', 'right', 'top', 'bottom'].every((side) => faceSides.has(side as 'left' | 'right' | 'top' | 'bottom')),
+    ),
+    'open as puts named ports on every side of the boundary',
+  )
+  check(
+    faceBoundaryPorts.every((port) => logicalPortName(faceBox.project, port) === port.name),
+    'boundary labels take the logical interface names',
+  )
+  const faceMoved = faceBoundaryPorts.find((port) => port.name === 'clk')
+  if (faceChild && faceMoved) placePort(faceChild, faceMoved.id, 'right', 0.15)
+  check(Boolean(facePortsOn(faceChildId, faceBoundary()?.id ?? '').find((port) => port.id === faceMoved?.id)?.placed && facePortsOn(faceChildId, faceBoundary()?.id ?? '').find((port) => port.id === faceMoved?.id)?.side === 'right'), 'a boundary port can move without changing the parent instance')
+  setBlockFields(faceChild!, faceBoundary()!.id, { width: 200, height: 120 })
+  const faceAfterResize = facePortsOn(faceChildId, faceBoundary()?.id ?? '')
+  check(
+    Boolean(
+      faceAfterResize.find((port) => port.id === faceMoved?.id)?.side === 'right' &&
+        faceAfterResize.find((port) => port.id === faceMoved?.id)?.t === 0.15 &&
+        documentById(faceBox.project, faceChildId)?.blocks.find((block) => block.id === faceBoundary()?.id)?.width === 200,
+    ),
+    'resizing the boundary keeps each port side and fraction',
+  )
+  const faceRenameFromParent = renameInterfacePort(faceBox.project, faceComponentId, faceBoundaryPorts.find((port) => port.name === 'data')?.interfacePortId ?? '', 'payload')
+  if (faceRenameFromParent.ok) faceBox.project = faceRenameFromParent.project
+  check(
+    Boolean(
+      faceRenameFromParent.ok &&
+        facePortsOn(faceChildId, faceBoundary()?.id ?? '').some((port) => port.name === 'payload') &&
+        facePortsOn(faceBox.project.rootDocumentId, faceBlock).some((port) => port.name === 'payload') &&
+        logicalPortName(faceBox.project, facePortsOn(faceChildId, faceBoundary()?.id ?? '').find((port) => port.name === 'payload')!) === 'payload',
+    ),
+    'renaming on the parent updates the boundary label',
+  )
+  const faceBoundaryEn = facePortsOn(faceChildId, faceBoundary()?.id ?? '').find((port) => port.name === 'en')
+  const faceRenameFromBoundary = faceBoundaryEn
+    ? renameInterfacePort(faceBox.project, faceComponentId, faceBoundaryEn.interfacePortId ?? '', 'enable')
+    : null
+  if (faceRenameFromBoundary?.ok) faceBox.project = faceRenameFromBoundary.project
+  check(
+    Boolean(
+      faceRenameFromBoundary?.ok &&
+        facePortsOn(faceBox.project.rootDocumentId, faceBlock).some((port) => port.name === 'enable') &&
+        facePortsOn(faceChildId, faceBoundary()?.id ?? '').some((port) => port.name === 'enable'),
+    ),
+    'renaming on the boundary updates every instance',
+  )
+  const faceAdded = addInterfacePort(faceBox.project, faceComponentId, 'flag', 'top', {
+    documentId: faceChildId,
+    blockId: faceBoundary()?.id ?? '',
+    t: 0.7,
+  })
+  if (faceAdded.ok) faceBox.project = faceAdded.project
+  check(
+    Boolean(
+      faceAdded.ok &&
+        facePortsOn(faceChildId, faceBoundary()?.id ?? '').some((port) => port.interfacePortId === faceAdded.value.interfacePortId && port.name === 'flag') &&
+        facePortsOn(faceBox.project.rootDocumentId, faceBlock).some((port) => port.interfacePortId === faceAdded.value.interfacePortId && port.name === 'flag'),
+    ),
+    'adding a logical port creates the label on the boundary and the instance',
+  )
+  const faceInId = componentById(faceBox.project, faceComponentId)?.ports.find((port) => port.name === 'in')?.id ?? ''
+  const faceRemovedIn = removeInterfacePort(faceBox.project, faceComponentId, faceInId)
+  if (faceRemovedIn.ok) faceBox.project = faceRemovedIn.project
+  check(
+    Boolean(
+      faceRemovedIn.ok &&
+        !facePortsOn(faceChildId, faceBoundary()?.id ?? '').some((port) => port.interfacePortId === faceInId) &&
+        !facePortsOn(faceBox.project.rootDocumentId, faceBlock).some((port) => port.interfacePortId === faceInId),
+    ),
+    'deleting a logical port removes its boundary label',
+  )
+  const faceSecond = instantiateComponent(faceBox.project, faceBox.project.rootDocumentId, faceComponentId, { x: 280, y: 80 }, 'Second')
+  const faceSecondId = faceSecond.ok ? faceSecond.value.blockId : ''
+  const faceSecondPorts = faceSecond.ok
+    ? documentById(faceSecond.project, faceBox.project.rootDocumentId)?.ports.filter((port) => port.blockId === faceSecondId) ?? []
+    : []
+  check(
+    Boolean(
+      faceSecond.ok &&
+        faceSecondPorts.every((port) => port.interfacePortId) &&
+        !faceSecondPorts.some((port) => port.symbolPortId === 'pin_face_in') &&
+        faceSecondPorts.some((port) => port.name === 'out' && port.symbolPortId === 'pin_face_out') &&
+        faceSecondPorts.some((port) => port.name === 'flag'),
+    ),
+    'a new component instance shows only the remaining logical ports',
+  )
+  if (faceSecond.ok) faceBox.project = faceSecond.project
+  const faceGeneric = documentById(faceBox.project, faceBox.project.rootDocumentId)
+  const facePlain = faceGeneric ? instantiateSymbol(faceGeneric, faceSymbol, { x: 480, y: 80 }, 'Plain') : null
+  const facePlainPorts = facePlain ? faceGeneric?.ports.filter((port) => port.blockId === facePlain) ?? [] : []
+  check(
+    Boolean(facePlain && facePlainPorts.some((port) => port.symbolPortId === 'pin_face_in') && facePlainPorts.some((port) => port.symbolPortId === 'pin_face_out') && !faceGeneric?.blocks.find((block) => block.id === facePlain)?.componentId),
+    'a plain generic block of the same symbol still has the original symbol pins',
+  )
+  check(
+    documentById(faceBox.project, faceBox.project.rootDocumentId)?.symbols.find((symbol) => symbol.id === faceSymbol)?.ports.some((pin) => pin.id === 'pin_face_in') === true,
+    'deleting a logical port does not change the symbol definition',
+  )
+  const faceDupMap = duplicateBlocks(documentById(faceBox.project, faceBox.project.rootDocumentId)!, [faceSecondId], 40, 40)
+  const faceDupId = faceDupMap.get(faceSecondId) ?? ''
+  const faceDupPorts = documentById(faceBox.project, faceBox.project.rootDocumentId)?.ports.filter((port) => port.blockId === faceDupId) ?? []
+  check(
+    Boolean(faceDupId && faceDupPorts.every((port) => port.interfacePortId) && !faceDupPorts.some((port) => port.symbolPortId === 'pin_face_in')),
+    'duplicating a component instance does not restore a deleted logical pin',
+  )
+  const faceUnique = makeUnique(faceBox.project, faceBox.project.rootDocumentId, faceSecondId)
+  const faceUniquePorts = faceUnique.ok
+    ? documentById(faceUnique.project, faceBox.project.rootDocumentId)?.ports.filter((port) => port.blockId === faceSecondId) ?? []
+    : []
+  check(
+    Boolean(faceUnique.ok && faceUniquePorts.every((port) => port.interfacePortId) && !faceUniquePorts.some((port) => port.symbolPortId === 'pin_face_in')),
+    'make unique keeps only the logical ports of that instance',
+  )
+  if (faceUnique.ok) faceBox.project = faceUnique.project
+  const faceHistory = new ProjectSession(
+    () => faceBox.project,
+    (next) => {
+      faceBox.project = next
+    },
+  )
+  const faceFlagId = componentById(faceBox.project, faceComponentId)?.ports.find((port) => port.name === 'flag')?.id ?? ''
+  faceHistory.transact((current) => {
+    const result = removeInterfacePort(current, faceComponentId, faceFlagId)
+    return result.ok ? result.project : current
+  })
+  check(!facePortsOn(faceChildId, faceBoundary()?.id ?? '').some((port) => port.interfacePortId === faceFlagId), 'project undo target lost the flag port')
+  faceHistory.undo()
+  check(facePortsOn(faceChildId, faceBoundary()?.id ?? '').some((port) => port.interfacePortId === faceFlagId && port.name === 'flag'), 'project undo restores the boundary label')
+  faceHistory.redo()
+  check(!facePortsOn(faceChildId, faceBoundary()?.id ?? '').some((port) => port.interfacePortId === faceFlagId), 'project redo removes the boundary label again')
+  const faceWireMate = documentById(faceBox.project, faceBox.project.rootDocumentId)
+  const faceWireBlock = faceWireMate ? placeTemplate(faceWireMate, BLOCK_TEMPLATES[0], false) : ''
+  const faceWirePort = faceWireMate && faceWireBlock ? addPortAt(faceWireMate, faceWireBlock, 'left', 0.5) : null
+  const faceOutPort = facePortsOn(faceBox.project.rootDocumentId, faceBlock).find((port) => port.name === 'out')
+  const faceWire = faceWireMate && faceOutPort && faceWirePort ? linkPorts(faceWireMate, faceOutPort.id, faceWirePort, 'out') : null
+  const faceLoaded = parseProject(serializeProject(faceBox.project))
+  const faceLoadedChild = documentById(faceLoaded, faceChildId)
+  const faceLoadedBoundary = faceLoadedChild?.blocks.find((block) => block.name === 'Boundary' && !block.componentId)
+  const faceLoadedRoot = documentById(faceLoaded, faceLoaded.rootDocumentId)
+  check(
+    Boolean(
+      faceWire &&
+        faceLoadedRoot?.segments.some((segment) => segment.id === faceWire) &&
+        faceLoadedBoundary &&
+        faceLoadedChild?.ports.some((port) => port.blockId === faceLoadedBoundary.id && port.name === 'payload') &&
+        !faceLoadedChild?.ports.some((port) => port.blockId === faceLoadedBoundary.id && port.name === 'in') &&
+        faceLoadedRoot?.ports.filter((port) => port.blockId === faceSecondId).every((port) => port.interfacePortId),
+    ),
+    'save and load keep boundary labels, omit deleted ports, and keep existing wires',
+  )
 }
 
 if (failures.length) {

@@ -1,4 +1,4 @@
-import type { Block, DiagramDocument, Endpoint, Point, Port, PortSide, Segment, SymbolDefinition, Waypoint } from './document'
+import type { Block, DiagramDocument, Endpoint, Point, Port, PortSide, Segment, SymbolDefinition, SymbolLabel, SymbolShape, Waypoint } from './document'
 
 export function polylineLength(points: Point[]): number {
   let total = 0
@@ -73,6 +73,10 @@ export function portAnchor(
   const block = doc.blocks.find((item) => item.id === port.blockId)
   if (!block) return null
   const origin = origins?.get(block.id) ?? { x: block.x, y: block.y }
+  if (port.placed) {
+    const local = pinLocal(block.width, block.height, port.side, port.t ?? 0.5)
+    return { x: origin.x + local.x, y: origin.y + local.y }
+  }
   const symbolPort =
     port.symbolPortId && block.symbolId
       ? doc.symbols?.find((symbol) => symbol.id === block.symbolId)?.ports.find((item) => item.id === port.symbolPortId)
@@ -294,6 +298,65 @@ export function segmentWithLiveEnds(doc: DiagramDocument, segment: Segment, orig
   const copy: Segment = { ...segment, points: segment.points.map((point) => ({ ...point })), start: segment.start, end: segment.end }
   refreshSegment(doc, copy, origins)
   return copy.points
+}
+
+/**
+ * Draw a symbol inside one instance.
+ * Shape coordinates scale from the symbol box to the instance box.
+ * An image that locks its aspect stays unstretched inside its scaled slot.
+ * Text keeps its string. The caller draws it at a fixed size in these coordinates.
+ */
+export function fitSymbolShapes(
+  shapes: SymbolShape[],
+  labels: SymbolLabel[],
+  symbolWidth: number,
+  symbolHeight: number,
+  instanceWidth: number,
+  instanceHeight: number,
+): { shapes: SymbolShape[]; labels: SymbolLabel[] } {
+  if (symbolWidth <= 0 || symbolHeight <= 0) return { shapes, labels }
+  const sx = instanceWidth / symbolWidth
+  const sy = instanceHeight / symbolHeight
+  const mapX = (value: number) => value * sx
+  const mapY = (value: number) => value * sy
+  return {
+    shapes: shapes.map((shape) => fitShape(shape, mapX, mapY, sx, sy)),
+    labels: labels.map((label) => ({ ...label, x: mapX(label.x), y: mapY(label.y) })),
+  }
+}
+
+function fitShape(shape: SymbolShape, mapX: (value: number) => number, mapY: (value: number) => number, sx: number, sy: number): SymbolShape {
+  if (shape.kind === 'line') {
+    return { ...shape, x1: mapX(shape.x1), y1: mapY(shape.y1), x2: mapX(shape.x2), y2: mapY(shape.y2) }
+  }
+  if (shape.kind === 'polygon') {
+    return { ...shape, points: shape.points.map((point) => ({ x: mapX(point.x), y: mapY(point.y) })) }
+  }
+  if (shape.kind === 'text') return { ...shape, x: mapX(shape.x), y: mapY(shape.y) }
+  if (shape.kind === 'image' && shape.lockAspect !== false && shape.width > 0 && shape.height > 0) {
+    const slotX = mapX(shape.x)
+    const slotY = mapY(shape.y)
+    const slotWidth = shape.width * sx
+    const slotHeight = shape.height * sy
+    const aspect = shape.width / shape.height
+    let width = slotWidth
+    let height = width / aspect
+    if (height > slotHeight) {
+      height = slotHeight
+      width = height * aspect
+    }
+    return {
+      ...shape,
+      x: slotX + (slotWidth - width) / 2,
+      y: slotY + (slotHeight - height) / 2,
+      width,
+      height,
+    }
+  }
+  if (shape.kind === 'rect' || shape.kind === 'ellipse' || shape.kind === 'image') {
+    return { ...shape, x: mapX(shape.x), y: mapY(shape.y), width: shape.width * sx, height: shape.height * sy }
+  }
+  return shape
 }
 
 export function moveBlock(doc: DiagramDocument, blockId: string, x: number, y: number): void {

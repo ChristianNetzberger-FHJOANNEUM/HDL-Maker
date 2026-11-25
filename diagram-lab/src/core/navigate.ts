@@ -262,4 +262,12 @@ export class DocumentSessions {
   discard(): void {
     this.sessions.clear()
   }
+
+  /** True when an open sheet still has its own undo or redo steps. */
+  anyPending(): boolean {
+    for (const session of this.sessions.values()) {
+      if (session.canUndo || session.canRedo) return true
+    }
+    return false
+  }
 }

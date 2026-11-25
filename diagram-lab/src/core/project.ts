@@ -193,6 +193,12 @@ export class ProjectSession {
     this.past.push(serializeProject(this.current()))
     this.replace(parseProject(next))
   }
+
+  /** Drop project history. Used when a different project is opened. */
+  clear(): void {
+    this.past = []
+    this.future = []
+  }
 }
 
 /** A small hierarchy: one shared counter sheet, two instances, one nested part, one unimplemented part. */

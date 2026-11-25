@@ -68,4 +68,4 @@ Signal names, wires, symbols, and pins inside a child sheet use the same editor 
 
 ## Not in D4b
 
-D4c interface synchronization, D4d top-down refinement, D4e extract, D4f libraries, D4g acceptance, the FSM editor, HDL generation, and the HDL-Maker studio are not started.
+Interface editing is D4c and is recorded in [d4c-component-interface-authoring.md](d4c-component-interface-authoring.md). Extract and expand are D4d and are recorded in [d4d-hierarchical-authoring.md](d4d-hierarchical-authoring.md). D4f libraries, D4g acceptance, the FSM editor, HDL generation, and the HDL-Maker studio are not started.

@@ -274,6 +274,36 @@ button.on {
   margin-right: 4px;
 }
 
+.components {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #d5dbe3;
+}
+
+.components button,
+.components input,
+.components select {
+  max-width: 100%;
+}
+
+.port-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.extract-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid #d5dbe3;
+}
+
 .preview-row {
   display: flex;
   gap: 8px;
@@ -346,16 +376,32 @@ button.on {
   fill: #243140;
 }
 
+.sym-pin circle.sym-pin-hit {
+  fill: transparent;
+  stroke: none;
+}
+
+.sym-pin.live {
+  cursor: grab;
+}
+
+.port-preview {
+  fill: #fff;
+  stroke: #1d6fd6;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
 .sym-pin text {
   font-size: 11px;
   fill: #243140;
 }
 
-.sym-pin.selected circle {
+.sym-pin.selected circle.sym-pin-mark {
   fill: #1d6fd6;
 }
 
-.sym-pin.missing circle {
+.sym-pin.missing circle.sym-pin-mark {
   fill: none;
   stroke: #a15c12;
   stroke-width: 1.5;
@@ -427,6 +473,18 @@ button.on {
   outline-offset: 2px;
 }
 
+.resize-handle {
+  position: absolute;
+  z-index: 6;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #1d6fd6;
+  border-radius: 1px;
+  background: #fff;
+  transform: translate(-50%, -50%);
+}
+
 .block-name {
   position: absolute;
   inset: 0;
@@ -441,12 +499,31 @@ button.on {
 
 .port {
   position: absolute;
-  width: 10px;
-  height: 10px;
-  margin-top: -5px;
+  z-index: 5;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: transparent;
+  transform: translate(-50%, -50%);
+  cursor: grab;
+}
+
+.port::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--port-mark, 7px);
+  height: var(--port-mark, 7px);
   border-radius: 50%;
   background: #243140;
-  color: transparent;
+  transform: translate(-50%, -50%);
+}
+
+.port.selected::after {
+  background: #1d6fd6;
 }
 
 footer {
@@ -467,4 +544,39 @@ textarea {
 
 .bridge {
   display: none;
+}
+
+.menu-back {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.open-as,
+.context-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #c5ced8;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(28, 36, 48, 0.16);
+}
+
+.open-as {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 240px;
+  transform: translate(-50%, -50%);
+}
+
+.context-menu {
+  position: fixed;
+  min-width: 180px;
+}
+
+.open-as button:disabled {
+  opacity: 0.45;
 }

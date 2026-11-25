@@ -1,6 +1,7 @@
 import { imageAssetIds, storeAsset, type AssetDraft } from './assets'
 import { symbolFingerprint } from './compare'
 import { createId, type DiagramDocument, type Point, type SymbolDefinition, type SymbolPort, type SymbolShape } from './document'
+import { portIsWired } from './edit'
 import { refreshAll } from './geometry'
 
 export type SymbolDiagnostic = {
@@ -38,6 +39,19 @@ export function defineSymbol(
   symbol.bodyChecksum = symbolFingerprint(symbol, doc.assets ?? [])
   doc.symbols.push(symbol)
   return id
+}
+
+/**
+ * Drop symbol pins that are not part of a component's logical interface.
+ * A pin that already has a wire stays, so an older drawing is not repaired by deletion.
+ */
+export function releaseUnboundSymbolPorts(doc: DiagramDocument, blockId: string): void {
+  const block = doc.blocks.find((item) => item.id === blockId)
+  if (!block?.componentId) return
+  doc.ports = doc.ports.filter((port) => {
+    if (port.blockId !== blockId || !port.symbolPortId || port.interfacePortId) return true
+    return portIsWired(doc, port.id)
+  })
 }
 
 /** A new block. Its pins get new ids and keep the definition's pin ids. */
@@ -85,18 +99,21 @@ export function applySymbol(doc: DiagramDocument, symbolId: string): void {
     for (const pin of symbol.ports) {
       const existing = doc.ports.find((port) => port.blockId === block.id && port.symbolPortId === pin.id)
       if (existing) {
-        existing.name = pin.name
-        existing.side = pin.side
-        existing.t = pin.t
-        if (typeof pin.x === 'number' && typeof pin.y === 'number') {
-          existing.x = pin.x
-          existing.y = pin.y
-        } else {
-          delete existing.x
-          delete existing.y
+        if (!existing.placed) {
+          if (!existing.interfacePortId) existing.name = pin.name
+          existing.side = pin.side
+          existing.t = pin.t
+          if (typeof pin.x === 'number' && typeof pin.y === 'number') {
+            existing.x = pin.x
+            existing.y = pin.y
+          } else {
+            delete existing.x
+            delete existing.y
+          }
         }
         continue
       }
+      if (block.componentId || block.suppressedPins?.includes(pin.id)) continue
       doc.ports.push({
         id: createId('prt'),
         blockId: block.id,

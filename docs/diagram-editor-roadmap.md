@@ -1,6 +1,6 @@
 # Diagram editor roadmap
 
-D0 through D5 are one program. D0 through D4b are built in `diagram-lab`. D4c is not started. The HDL-Maker editor, the VHDL generators, and the FPGA backends stay as they are while the lab proceeds.
+D0 through D5 are one program. D0 through D4d are built in `diagram-lab`. D5a prepares the acceptance review and three reference projects. D5a.1 and D5a.2 are accepted by the user. D5a.3 is built in the lab. D5a.3a corrects the first check. D5a.3b synchronizes the logical interface with the Boundary and is functionally accepted for that sync. D5a.3c shows Boundary port names and keeps component instances on the logical interface only. D5a.3 waits for the user's acceptance of D5a.3c. D4f, D4g, and D5b through D5f are not started. The HDL-Maker editor, the VHDL generators, and the FPGA backends stay as they are while the lab proceeds.
 
 The rule for the whole program: the library is a diagram editor first. HDL is an adapter.
 
@@ -16,8 +16,18 @@ The rule for the whole program: the library is a diagram editor first. HDL is an
 | D3e | Symbol-change migration and acceptance | Built in `diagram-lab`. An update is explicit. No HDL. |
 | D4a | Component and project model | Built in `diagram-lab`. No HDL. |
 | D4b | Hierarchical navigation | Built in `diagram-lab`. One path, one shared diagram, no HDL. |
-| D4c–D4g | Ports, authoring, libraries, acceptance | Specified. Not started. |
-| D5 | Whiteboard, stroke conversion, a sample exercise | Specified. Not started. |
+| D4c | Component interface authoring | Built in `diagram-lab`. Logical ports, explicit bindings, one project undo. No HDL. |
+| D4d | Extract, expand, and definition commands | Built in `diagram-lab`. One project undo. No HDL. |
+| D4f–D4g | Libraries and adapter acceptance | Specified. Not started. |
+| D5a | Functional acceptance and three reference projects | Prepared in `diagram-lab`. The user's own session is the acceptance. |
+| D5a.1 | Interactive top-down authoring | Built in `diagram-lab`. Accepted by the user on 25 Nov 2026. [d5a1-interactive-top-down-authoring.md](d5a1-interactive-top-down-authoring.md). |
+| D5a.2 | Interactive block resizing | Built in `diagram-lab`. Accepted by the user on 25 Nov 2026. [d5a2-interactive-block-resizing.md](d5a2-interactive-block-resizing.md). |
+| D5a.3 | Interactive port authoring | Built in `diagram-lab`. D5a.3a corrects delete, logical names, and the port picture. D5a.3b keeps the logical interface and the Boundary together (functionally accepted for sync). D5a.3c shows Boundary names and drops unbound symbol pins on component instances. Waiting for user acceptance of D5a.3c. [d5a3-interactive-port-authoring.md](d5a3-interactive-port-authoring.md). |
+| D5b | One chronological undo history | Specified. Not released. See [diagram-transaction-architecture.md](diagram-transaction-architecture.md). |
+| D5c | Drawing tools and interaction | Specified. Not started. Includes the earlier freehand work. |
+| D5d | Large diagrams | Specified. Not started. |
+| D5e | Export and documentation | Specified. Not started. |
+| D5f | A Vue 3 component library | Specified. Not started. |
 
 ## D1 — General block editor
 
@@ -103,15 +113,14 @@ The palette lists one library, its categories, a search field, and a preview dra
 
 ## D4 — Hierarchy and top-down design
 
-D4 is split. D4a and D4b are built. The records are [d4a-component-model.md](d4a-component-model.md) and [d4b-hierarchy-navigation.md](d4b-hierarchy-navigation.md).
+D4 is split. D4a, D4b, D4c, and D4d are built. The records are [d4a-component-model.md](d4a-component-model.md), [d4b-hierarchy-navigation.md](d4b-hierarchy-navigation.md), [d4c-component-interface-authoring.md](d4c-component-interface-authoring.md), and [d4d-hierarchical-authoring.md](d4d-hierarchical-authoring.md).
 
 | Step | Content | Status |
 | --- | --- | --- |
 | D4a | Component definition, project container, interface ids, instance paths, cycle check | Built. |
 | D4b | Open a child, breadcrumbs, project tree, shared edit session, viewport memory | Built. |
-| D4c | Edit component ports and keep the symbol and the sheets in step | Not started. |
-| D4d | Turn a generic block into a component from the top down | Not started. |
-| D4e | Extract a drawn region into a new component | Not started. |
+| D4c | Edit logical ports, bind symbol pins by id, and create an implementation on purpose | Built. |
+| D4d | Manage definitions, extract a selection, and expand one instance | Built. |
 | D4f | Reusable component libraries and a portable project package | Not started. |
 | D4g | Acceptance of the hierarchy, then the seam for an HDL or FSM adapter | Not started. |
 
@@ -121,13 +130,29 @@ A project embeds its documents and component definitions. A sheet can still be o
 
 D4b does not add a second hierarchy. The open level is a list of block ids. The tree, the breadcrumbs, and a double-click all resolve that list to the implementation document. U1 and U2 share that document and its undo history. The path, the zoom, and the pan are not part of the diagram. A missing implementation is reported and does not create a sheet.
 
+D4c edits the logical ports of one component as a single project command. Every instance and the implementation boundary receive their own port objects and the same `interfacePortId`. A symbol pin is bound only by id. A rename keeps port ids and net ids. A wired port is not deleted when its logical port goes away; the wire stays and a diagnosis names it. Sheet undo cannot roll one document back across that command. The rule is in [d4c-component-interface-authoring.md](d4c-component-interface-authoring.md).
+
+D4d uses that same project command for extract, expand, rename, duplicate, delete, and make unique. Extract moves the selected blocks and keeps each net's connectivity, including a junction that stays outside and a junction that moves inside. Same-named nets are not merged. Expand copies one implementation back onto the sheet and leaves every other instance on the shared definition. The sheet undo stack is still discarded after the command. A mixed undo history is not built. The record is [d4d-hierarchical-authoring.md](d4d-hierarchical-authoring.md).
+
 The later HDL adapter still adds entity, architecture, generics, directions, and types outside the generic core. A sketch is not emitted as if it were complete. That work is D4g and is not started. Scale, z-order, and SVG export of the sheet stay open from D1.
 
-## D5 — Whiteboard and teaching
+## D5 — Consolidation before integration
 
-Freehand with mouse, touch, and pen. Smooth the stroke, keep pressure when the pointer reports it, erase, and add arrows, text, and simple shapes. Convert a selected stroke to an orthogonal wire only after confirmation. Until then the stroke remains, and the conversion does not create a net. Refuse a stroke with too many turns. A document may hold ink and blocks together.
+D5 makes the lab a base that HDL-Maker and the Nuxt script can share. It does not start that integration. The order is D5a, then D5a.1, then D5a.2, then D5a.3, then D5b, then the drawing, performance, export, and library steps. D5a.1 and D5a.2 are accepted. D5a.3a is the correction of the first D5a.3 check. D5a.3b is the correction of the interface sync and is functionally accepted for that sync. D5a.3c is Boundary labels and interface consistency on new instances. D5b stays locked until the user has accepted D5a.3. The keyboard session can change the order of D5c through D5f. It does not skip the undo problem.
 
-The learning hook is a task object: instructions, which edits are allowed, which connections are expected, and a check that reads nets rather than coordinates. One sample task asks the student to connect the given blocks. A learning-management system is out of scope.
+| Step | Content | Status |
+| --- | --- | --- |
+| D5a | Three reference projects, a usability review, and a checklist for a session at the keyboard | Prepared. The acceptance is the user's session, not the selfcheck. [d5a-editor-acceptance.md](d5a-editor-acceptance.md). |
+| D5a.1 | A drawn block becomes a component from the sheet, through Open as | Accepted by the user on 25 Nov 2026. [d5a1-interactive-top-down-authoring.md](d5a1-interactive-top-down-authoring.md). |
+| D5a.2 | One instance can be scaled, and the symbol is drawn in that box | Accepted by the user on 25 Nov 2026. [d5a2-interactive-block-resizing.md](d5a2-interactive-block-resizing.md). |
+| D5a.3 | Ports can be added and moved on any side of one instance | Built in the lab. D5a.3a corrects the first check. D5a.3b synchronizes the logical interface (functionally accepted). D5a.3c shows Boundary names and keeps component instances on the logical interface. Waiting for user acceptance of D5a.3c. [d5a3-interactive-port-authoring.md](d5a3-interactive-port-authoring.md). |
+| D5b | One chronological transaction history for sheet edits and project commands | Specified. Not released. [diagram-transaction-architecture.md](diagram-transaction-architecture.md). |
+| D5c | Drawing tools and interaction, including routes that stay readable, fit, and the rest of the backlog | Specified. Not started. [diagram-editor-usability-backlog.md](diagram-editor-usability-backlog.md). |
+| D5d | Performance on a large sheet, including continuous mouse movement | Specified. Not started. |
+| D5e | Export of a whole diagram, and documentation for a reader outside the lab | Specified. Not started. |
+| D5f | The lab surface as a Vue 3 component library | Specified. Not started. |
+
+Freehand ink, a confirmed conversion to an orthogonal wire, and a stroke that stays ink until that confirmation are already in the lab as a prototype. Eraser, arrows, and a pen mode are D5c and are not started. A learning task that stores instructions, allowed edits, and a check against nets was specified before this split. It is not built, and it is not part of D5a.
 
 ## Studio steps that this program absorbs
 

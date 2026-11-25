@@ -2,8 +2,8 @@
 import { VueFlow, type NodeDragEvent, type ViewportTransform } from '@vue-flow/core'
 import { getStroke } from 'perfect-freehand'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { adoptWire, addPort, addStroke, removeStroke } from '../core/commands'
-import { parseDocument, serialize, type DiagramDocument, type Point, type SymbolDefinition } from '../core/document'
+import { adoptWire, addStroke, removeStroke } from '../core/commands'
+import { parseDocument, serialize, type DiagramDocument, type Point, type PortSide, type SymbolDefinition } from '../core/document'
 import {
   BLOCK_TEMPLATES,
   GRID,
@@ -17,10 +17,19 @@ import {
   groupBlocks,
   pasteFragment,
   placeTemplate,
+  addPortAt,
+  borderPlacement,
+  nearestBlockBorder,
+  placePort,
+  removeUnwiredPort,
+  renameInstancePort,
+  unusedPortName,
+  resizeBox,
   setBlockFields,
   snapBlocks,
   snapValue,
   ungroup,
+  type ResizeHandle,
 } from '../core/edit'
 import { labelPlacement, moveBlock, orthogonalTo, pinPoint, portAnchor } from '../core/geometry'
 import { netFixture } from '../core/fixture'
@@ -44,8 +53,34 @@ import { symbolSheet } from '../core/symbolsheet'
 import { defineSymbol, instantiateSymbol, moveSymbolPort, removeSymbolPort, symbolDiagnostics } from '../core/symbols'
 import { auditAssets } from '../core/assets'
 import { acceptanceSheet, benchSheet } from '../core/acceptance'
-import { documentById, validateProject, type DiagramProject, type InstanceStep } from '../core/component'
-import { JsonProjectStorage, parseProject, sampleProject, serializeProject } from '../core/project'
+import { addComponent, createProject, documentById, instancesOf, instantiateComponent, removeComponent, validateProject, type DiagramProject, type InstanceStep, type ProjectResult } from '../core/component'
+import {
+  duplicateComponent,
+  expandComponent,
+  extractComponent,
+  makeUnique,
+  previewExpand,
+  previewExtract,
+  renameComponent,
+  type ExpandPreview,
+  type ExtractPreview,
+} from '../core/hierarchy'
+import { JsonProjectStorage, parseProject, ProjectSession, sampleProject, serializeProject } from '../core/project'
+import { digitalProject, generalProject, signalProject } from '../core/references'
+import {
+  addBoundPin,
+  addInterfacePort,
+  bindInterfacePort,
+  classifyPortDelete,
+  componentOwningBlock,
+  createImplementation,
+  interfaceDiagnostics,
+  logicalPortName,
+  moveInterfacePort,
+  openAsDiagram,
+  removeInterfacePort,
+  renameInterfacePort,
+} from '../core/interface'
 import { commitSymbolUpdate, detachInstance, dropPortWires, prepareSymbolUpdate, rebindPort, type UpdatePreview } from '../core/migration'
 import { builtinLibraries } from '../core/catalog'
 import {
@@ -84,10 +119,16 @@ import SymbolEditor from './SymbolEditor.vue'
 import SymbolFace, { type FacePin } from './SymbolFace.vue'
 import SymbolPalette from './SymbolPalette.vue'
 
-type Tool = 'select' | 'pan' | 'freehand' | 'wire'
+type Tool = 'select' | 'pan' | 'freehand' | 'wire' | 'port'
 type BendDrag = { segmentId: string; xEdge: number; yEdge: number; originX: number; originY: number; axis: 'x' | 'y' | null }
 type SpanDrag = { segmentId: string; edge: number; horizontal: boolean; origin: number; pointer: Point }
 type Drag = { origin: Map<string, Point>; baseX: number; baseY: number; cancelled: boolean }
+type ResizeDrag = {
+  blockId: string
+  handle: ResizeHandle
+  origin: { x: number; y: number; width: number; height: number }
+  cancelled: boolean
+}
 type Marquee = { x: number; y: number; width: number; height: number; shift: boolean }
 
 const doc = ref<DiagramDocument>(emptyDocument())
@@ -95,6 +136,8 @@ const tool = ref<Tool>('select')
 const viewport = ref<ViewportTransform>({ x: 0, y: 0, zoom: 1 })
 const status = ref('New diagram.')
 const selected = ref<Set<string>>(new Set())
+const selectedPort = ref<string | null>(null)
+const portPreview = ref<{ x: number; y: number; side: PortSide; t: number } | null>(null)
 const selectedStroke = ref<string | null>(null)
 const preview = ref<Point[] | null>(null)
 const drawing = ref<Array<Point & { pressure: number }> | null>(null)
@@ -104,6 +147,16 @@ const stageEl = ref<HTMLElement | null>(null)
 const fileEl = ref<HTMLInputElement | null>(null)
 const canUndo = ref(false)
 const canRedo = ref(false)
+const canProjectUndo = ref(false)
+const canProjectRedo = ref(false)
+const interfaceFocus = ref<string | null>(null)
+const openAsBlock = ref<string | null>(null)
+const contextMenu = ref<{ blockId: string; x: number; y: number } | null>(null)
+const extractPlan = ref<ExtractPreview | null>(null)
+const expandPlan = ref<ExpandPreview | null>(null)
+const componentName = ref('Processing')
+const interfaceName = ref('in')
+const interfaceSide = ref<PortSide>('left')
 const fitToken = ref(0)
 const wireDraft = ref<WireDraft | null>(null)
 const wireHover = ref<Point>({ x: 0, y: 0 })
@@ -127,6 +180,9 @@ const libraryFile = ref<HTMLInputElement | null>(null)
 const zoomToken = ref(0)
 let clip: Fragment | null = null
 let drag: Drag | null = null
+let resizeDrag: ResizeDrag | null = null
+const resizing = ref(false)
+let portDrag: { portId: string; side: PortSide; t: number; placed: boolean; cancelled: boolean } | null = null
 let bendDrag: BendDrag | null = null
 let spanDrag: SpanDrag | null = null
 let junctionDrag: { id: string; originX: number; originY: number; pointer: Point } | null = null
@@ -157,8 +213,21 @@ function edits(): EditSession {
   return sheetSession
 }
 
+const projectSession = new ProjectSession(
+  () => project.value ?? createFallbackProject(),
+  (next) => {
+    project.value = next
+  },
+)
+
+function createFallbackProject(): DiagramProject {
+  return project.value ?? { schemaVersion: 1, id: '', name: '', rootDocumentId: '', documents: [], components: [], extra: {} }
+}
+
 const flowNodes = computed(() =>
-  doc.value.blocks.map((block) => ({
+  doc.value.blocks.map((block) => {
+    const symbol = block.symbolId ? doc.value.symbols.find((item) => item.id === block.symbolId) : undefined
+    return {
     id: block.id,
     type: 'block',
     position: { x: block.x, y: block.y },
@@ -166,27 +235,34 @@ const flowNodes = computed(() =>
       name: block.name,
       width: block.width,
       height: block.height,
+      symbolWidth: symbol?.width,
+      symbolHeight: symbol?.height,
       ports: doc.value.ports
         .filter((port) => port.blockId === block.id)
         .map((port) => {
           const at = portAnchor(doc.value, port.id)
-          const symbol = block.symbolId ? doc.value.symbols.find((item) => item.id === block.symbolId) : undefined
           return {
             ...port,
+            name: logicalPortName(project.value, port),
             top: (at?.y ?? block.y) - block.y,
             left: (at?.x ?? block.x) - block.x,
             missing: Boolean(port.symbolPortId && symbol && !symbol.ports.some((pin) => pin.id === port.symbolPortId)),
           }
         }),
-      shapes: block.symbolId ? (doc.value.symbols.find((item) => item.id === block.symbolId)?.shapes ?? []) : null,
-      labels: block.symbolId ? (doc.value.symbols.find((item) => item.id === block.symbolId)?.labels ?? []) : [],
+      // A plain block such as Boundary has no symbol. A flush rectangle reuses SymbolFace so port names show inside the outline.
+      shapes: symbol ? symbol.shapes : null,
+      labels: symbol ? symbol.labels : [],
       assets: doc.value.assets,
       selected: selected.value.has(block.id),
+      handles: selected.value.size === 1 && selected.value.has(block.id) && tool.value === 'select',
+      portsLive: tool.value === 'select',
+      selectedPort: selectedPort.value,
     },
-    draggable: tool.value === 'select',
+    draggable: tool.value === 'select' && !resizing.value && portDrag === null,
     connectable: false,
     style: { width: `${block.width}px`, height: `${block.height}px`, padding: 0, border: 'none', background: 'transparent', overflow: 'visible' },
-  })),
+  }
+  }),
 )
 
 const wires = computed(() => doc.value.segments.map((segment) => ({ id: segment.id, points: segment.points })))
@@ -200,6 +276,22 @@ const canNavForward = ref(false)
 const crumbs = computed(() => (project.value && navigation.value ? breadcrumbs(project.value, navigation.value) : []))
 const sharedLabel = computed(() => (project.value && navigation.value ? sharedDefinitionLabel(project.value, navigation.value) : null))
 const pathKey = computed(() => navigation.value?.steps.map((step) => step.blockId).join('/') ?? '')
+const focusedComponent = computed(() => project.value?.components.find((item) => item.id === interfaceFocus.value) ?? null)
+const componentUses = computed(() => (project.value && interfaceFocus.value ? instancesOf(project.value, interfaceFocus.value) : []))
+const interfaceNotes = computed(() => (project.value && focusedComponent.value ? interfaceDiagnostics(project.value, focusedComponent.value.id) : []))
+const symbolPins = computed(() => {
+  const current = project.value
+  const component = focusedComponent.value
+  if (!current || !component?.symbolId) return []
+  for (const document of current.documents) {
+    const symbol = document.symbols.find((item) => item.id === component.symbolId)
+    if (symbol) return symbol.ports
+  }
+  return []
+})
+const interfacePortIds = computed(() =>
+  doc.value.ports.map((port) => `${port.id}:${port.name}:${port.interfacePortId ?? ''}:${port.symbolPortId ?? ''}`).join('|'),
+)
 const treeOpen = ref(true)
 const expanded = ref<string[]>([])
 const frame = ref<{ mode: 'fit' | 'set'; x: number; y: number; width: number; height: number; zoom: number; token: number } | null>(null)
@@ -280,6 +372,20 @@ const gridLines = computed(() => {
 })
 
 const oneBlock = computed(() => (selected.value.size === 1 ? doc.value.blocks.find((block) => selected.value.has(block.id)) ?? null : null))
+const expandTarget = computed(() => {
+  const block = oneBlock.value
+  const current = project.value
+  if (!block?.componentId || !current) return null
+  const component = current.components.find((item) => item.id === block.componentId)
+  if (!component || component.implementation.kind !== 'diagram') return null
+  return block
+})
+const canMakeUnique = computed(() => {
+  const block = oneBlock.value
+  const current = project.value
+  if (!block?.componentId || !current) return false
+  return instancesOf(current, block.componentId).length >= 2
+})
 
 const marqueeBox = computed(() => {
   const box = marquee.value
@@ -299,6 +405,8 @@ const worldStyle = computed(() => ({
 function refreshHistory(): void {
   canUndo.value = edits().canUndo
   canRedo.value = edits().canRedo
+  canProjectUndo.value = project.value ? projectSession.canUndo : false
+  canProjectRedo.value = project.value ? projectSession.canRedo : false
 }
 
 function onViewport(next: ViewportTransform): void {
@@ -309,6 +417,7 @@ function openDocument(next: DiagramDocument, message: string): void {
   project.value = null
   navigation.value = null
   documentSessions.discard()
+  projectSession.clear()
   navPast.length = 0
   navFuture.length = 0
   viewMemory.clear()
@@ -713,10 +822,18 @@ function releaseGesture(): void {
   preview.value = null
   drawing.value = null
   marquee.value = null
+  stopResizeListeners()
+  stopPortListeners()
+  if (resizeDrag) resizeDrag.cancelled = true
+  if (portDrag) portDrag.cancelled = true
+  portPreview.value = null
+  resizing.value = false
   if (edits().isGesturing) {
     edits().cancel()
     if (drag) drag.cancelled = true
   }
+  resizeDrag = null
+  portDrag = null
   drag = null
   bendDrag = null
   spanDrag = null
@@ -766,6 +883,8 @@ function showLocation(next: HierarchyLocation, record: boolean, remember = true)
   const memory = viewMemory.get(viewKey(location))
   const kept = (memory?.selection ?? []).filter((id) => sheet.blocks.some((block) => block.id === id))
   selected.value = new Set(kept)
+  selectedPort.value = null
+  portPreview.value = null
   selectedStroke.value = null
   selectedSegment.value = null
   editingSymbol.value = null
@@ -779,6 +898,315 @@ function showLocation(next: HierarchyLocation, record: boolean, remember = true)
   if (resolved.message) status.value = resolved.message
 }
 
+function rebindAfterProject(): void {
+  documentSessions.discard()
+  const current = project.value
+  const location = navigation.value
+  if (!current || !location) {
+    refreshHistory()
+    return
+  }
+  const resolved = resolveLocation(current, location.steps)
+  navigation.value = resolved.location
+  reveal(resolved.location)
+  const sheet = documentById(current, resolved.location.documentId)
+  if (sheet) doc.value = sheet
+  if (interfaceFocus.value && !current.components.some((item) => item.id === interfaceFocus.value)) interfaceFocus.value = null
+  selected.value = new Set([...selected.value].filter((id) => sheet?.blocks.some((block) => block.id === id)))
+  refreshHistory()
+  syncNav()
+}
+
+function applyProject<T>(make: (current: DiagramProject) => ProjectResult<T>, done: (value: T) => string): void {
+  const open = project.value
+  if (!open) return
+  releaseGesture()
+  const outcome: { value: T | null; message: string } = { value: null, message: 'The project was not changed.' }
+  const changed = projectSession.transact((current) => {
+    const result = make(current)
+    if (!result.ok) {
+      outcome.message = result.message
+      return current
+    }
+    outcome.value = result.value
+    return result.project
+  })
+  if (!changed || outcome.value === null) {
+    status.value = outcome.message
+    refreshHistory()
+    return
+  }
+  const lostSheetHistory = documentSessions.anyPending()
+  rebindAfterProject()
+  const doneText = done(outcome.value)
+  status.value = lostSheetHistory ? `${doneText} Sheet undo was cleared. Project undo reverses this change.` : doneText
+}
+
+function undoProject(): void {
+  if (!project.value || !projectSession.canUndo) return
+  releaseGesture()
+  const lostSheetHistory = documentSessions.anyPending()
+  projectSession.undo()
+  rebindAfterProject()
+  extractPlan.value = null
+  expandPlan.value = null
+  closeOpenAs()
+  status.value = lostSheetHistory ? 'Project undone. Sheet undo was cleared.' : 'Project undone.'
+}
+
+function redoProject(): void {
+  if (!project.value || !projectSession.canRedo) return
+  releaseGesture()
+  const lostSheetHistory = documentSessions.anyPending()
+  projectSession.redo()
+  rebindAfterProject()
+  extractPlan.value = null
+  expandPlan.value = null
+  closeOpenAs()
+  status.value = lostSheetHistory ? 'Project redone. Sheet undo was cleared.' : 'Project redone.'
+}
+
+function openInstalled(created: DiagramProject, message: string): void {
+  const root = documentById(created, created.rootDocumentId)
+  if (!root) {
+    status.value = 'The project has no root diagram.'
+    return
+  }
+  project.value = created
+  documentSessions.discard()
+  projectSession.clear()
+  navPast.length = 0
+  navFuture.length = 0
+  viewMemory.clear()
+  expanded.value = []
+  interfaceFocus.value = null
+  extractPlan.value = null
+  expandPlan.value = null
+  closeOpenAs()
+  navigation.value = rootLocation(created)
+  doc.value = root
+  selected.value = new Set()
+  wireDraft.value = null
+  editingSymbol.value = null
+  refreshHistory()
+  const bounds = contentBounds(root)
+  frame.value = { mode: 'fit', x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, zoom: 1, token: (frame.value?.token ?? 0) + 1 }
+  syncNav()
+  status.value = message
+}
+
+function newDesign(): void {
+  openInstalled(createProject('Design'), 'New project. The root sheet is empty.')
+}
+
+function loadDigital(): void {
+  openInstalled(digitalProject(), 'Digital System. Double-click Datapath, then U1, then Stage.')
+}
+
+function loadSignal(): void {
+  openInstalled(signalProject(), 'Signal Processing. Meters are SVG. Scope is a bitmap. Double-click Channel.')
+}
+
+function loadGeneral(): void {
+  openInstalled(generalProject(), 'General diagram. Flowchart, text, pictures, a group, and ink.')
+}
+
+function createAbstract(): void {
+  const name = componentName.value.trim() || 'Component'
+  applyProject(
+    (current) => addComponent(current, { name, ports: [], implementation: { kind: 'none' } }),
+    (value) => {
+      interfaceFocus.value = value.componentId
+      return `${name} has no implementation yet.`
+    },
+  )
+}
+
+function placeFocused(): void {
+  const component = focusedComponent.value
+  if (!component) return
+  const sheetId = doc.value.id
+  const count = doc.value.blocks.length
+  const at = { x: 80 + (count % 3) * 220, y: 80 + Math.floor(count / 3) * 160 }
+  applyProject(
+    (current) => instantiateComponent(current, sheetId, component.id, at, component.name),
+    () => `${component.name} placed on this sheet.`,
+  )
+}
+
+function addLogicalPort(): void {
+  const component = focusedComponent.value
+  if (!component) return
+  const name = interfaceName.value.trim()
+  const side = interfaceSide.value
+  applyProject(
+    (current) => addInterfacePort(current, component.id, name, side),
+    () => `Port ${name} was added to every instance of ${component.name}.`,
+  )
+}
+
+function renameLogical(interfacePortId: string, event: Event): void {
+  const component = focusedComponent.value
+  if (!component) return
+  const name = (event.target as HTMLInputElement).value
+  applyProject(
+    (current) => renameInterfacePort(current, component.id, interfacePortId, name),
+    () => `Port renamed to ${name}. Connections were kept.`,
+  )
+}
+
+function removeLogical(interfacePortId: string): void {
+  const component = focusedComponent.value
+  if (!component) return
+  applyProject(
+    (current) => removeInterfacePort(current, component.id, interfacePortId),
+    () => 'Logical port removed.',
+  )
+}
+
+function shiftLogical(interfacePortId: string, delta: -1 | 1): void {
+  const component = focusedComponent.value
+  if (!component) return
+  applyProject(
+    (current) => moveInterfacePort(current, component.id, interfacePortId, delta),
+    () => 'Port order updated.',
+  )
+}
+
+function bindLogical(interfacePortId: string, event: Event): void {
+  const component = focusedComponent.value
+  if (!component) return
+  const symbolPortId = (event.target as HTMLSelectElement).value
+  applyProject(
+    (current) => bindInterfacePort(current, component.id, interfacePortId, symbolPortId || null),
+    () => (symbolPortId ? 'Bound by pin id.' : 'Binding cleared. The wire was kept.'),
+  )
+}
+
+function pinLogical(interfacePortId: string): void {
+  const component = focusedComponent.value
+  if (!component) return
+  applyProject(
+    (current) => addBoundPin(current, component.id, interfacePortId, interfaceSide.value),
+    () => 'Symbol pin added and bound by id.',
+  )
+}
+
+function makeImplementation(): void {
+  const component = focusedComponent.value
+  if (!component) return
+  applyProject(
+    (current) => createImplementation(current, component.id),
+    () => `${component.name} has an empty diagram. Double-click an instance to open it.`,
+  )
+}
+
+function focusComponent(id: string): void {
+  interfaceFocus.value = id
+  const item = project.value?.components.find((component) => component.id === id)
+  if (item) componentName.value = item.name
+  extractPlan.value = null
+  expandPlan.value = null
+}
+
+function renameFocused(): void {
+  const component = focusedComponent.value
+  if (!component) return
+  const name = componentName.value.trim()
+  applyProject(
+    (current) => renameComponent(current, component.id, name),
+    () => `${name} renamed. Instances keep their own names.`,
+  )
+}
+
+function duplicateFocused(): void {
+  const component = focusedComponent.value
+  if (!component) return
+  applyProject(
+    (current) => duplicateComponent(current, component.id),
+    (value) => {
+      interfaceFocus.value = value.componentId
+      const copy = project.value?.components.find((item) => item.id === value.componentId)
+      if (copy) componentName.value = copy.name
+      return `${component.name} was copied with its diagram. Instances of the original were not moved.`
+    },
+  )
+}
+
+function deleteFocused(): void {
+  const component = focusedComponent.value
+  if (!component) return
+  applyProject(
+    (current) => removeComponent(current, component.id),
+    () => `${component.name} and its unused diagram were removed.`,
+  )
+}
+
+function proposeExtract(): void {
+  const current = project.value
+  if (!current) return
+  const preview = previewExtract(current, doc.value.id, [...selected.value])
+  extractPlan.value = preview
+  expandPlan.value = null
+  status.value = preview.ok ? `Extract would add ${preview.ports.length} ports. Nothing has changed yet.` : preview.message
+}
+
+function confirmExtract(): void {
+  const plan = extractPlan.value
+  if (!plan?.ok) return
+  const name = componentName.value.trim() || 'Block'
+  const ids = [...plan.blockIds]
+  const sheetId = doc.value.id
+  applyProject(
+    (current) => extractComponent(current, sheetId, ids, name),
+    (value) => {
+      extractPlan.value = null
+      interfaceFocus.value = value.componentId
+      selected.value = new Set([value.blockId])
+      return `${name} replaces the selection. Open it with a double-click.`
+    },
+  )
+}
+
+function proposeExpand(): void {
+  const block = expandTarget.value
+  const current = project.value
+  if (!block || !current) return
+  const preview = previewExpand(current, doc.value.id, block.id)
+  expandPlan.value = preview
+  extractPlan.value = null
+  status.value = preview.ok ? `Expand would replace ${block.name}. Other instances stay. Nothing has changed yet.` : preview.message
+}
+
+function confirmExpand(): void {
+  const plan = expandPlan.value
+  if (!plan?.ok) return
+  const sheetId = doc.value.id
+  applyProject(
+    (current) => expandComponent(current, sheetId, plan.blockId),
+    (value) => {
+      expandPlan.value = null
+      selected.value = new Set(value.blockIds)
+      return `${plan.blockName} was replaced by its diagram. The shared definition remains for the other instances.`
+    },
+  )
+}
+
+function makeUniqueSelected(): void {
+  const block = oneBlock.value
+  if (!block) return
+  const sheetId = doc.value.id
+  applyProject(
+    (current) => makeUnique(current, sheetId, block.id),
+    (value) => {
+      interfaceFocus.value = value.componentId
+      const copy = project.value?.components.find((item) => item.id === value.componentId)
+      if (copy) componentName.value = copy.name
+      return `${block.name} has its own definition. The other instances still share the original.`
+    },
+  )
+}
+
 function loadProject(): void {
   const sample = sampleProject()
   const root = documentById(sample, sample.rootDocumentId)
@@ -788,6 +1216,10 @@ function loadProject(): void {
   }
   project.value = sample
   documentSessions.discard()
+  projectSession.clear()
+  interfaceFocus.value = null
+  extractPlan.value = null
+  expandPlan.value = null
   navPast.length = 0
   navFuture.length = 0
   viewMemory.clear()
@@ -816,6 +1248,88 @@ function openInstance(blockId: string): void {
   }
   showLocation(move.location, true)
   status.value = sharedDefinitionLabel(current, navigation.value ?? move.location) ?? 'Opened the shared diagram.'
+}
+
+function closeOpenAs(): void {
+  openAsBlock.value = null
+  contextMenu.value = null
+}
+
+function dismissOpenAs(): void {
+  closeOpenAs()
+  status.value = 'Open as cancelled.'
+}
+
+function blockOpenKind(blockId: string): 'diagram' | 'choose' | 'other' | 'boundary' | 'missing' {
+  const block = doc.value.blocks.find((item) => item.id === blockId)
+  if (!block) return 'missing'
+  if (!block.componentId && block.name === 'Boundary') return 'boundary'
+  if (!project.value) return 'missing'
+  if (!block.componentId) return 'choose'
+  const component = project.value.components.find((item) => item.id === block.componentId)
+  if (!component || component.implementation.kind === 'none') return 'choose'
+  if (component.implementation.kind === 'diagram') return 'diagram'
+  return 'other'
+}
+
+function showOpenAs(blockId: string): void {
+  if (!project.value) {
+    status.value = 'Open as needs a project. Use New project.'
+    return
+  }
+  const kind = blockOpenKind(blockId)
+  if (kind === 'boundary') {
+    status.value = 'Boundary stays the interface of this diagram.'
+    return
+  }
+  if (kind !== 'choose') return
+  contextMenu.value = null
+  selected.value = new Set([blockId])
+  openAsBlock.value = blockId
+  status.value = 'Choose what this block opens. Cancel leaves the sheet unchanged.'
+}
+
+function onBlockContext(blockId: string, event: MouseEvent): void {
+  if (!project.value) {
+    status.value = 'Open as needs a project. Use New project.'
+    return
+  }
+  const kind = blockOpenKind(blockId)
+  if (kind === 'boundary' || kind === 'missing') return
+  selected.value = new Set([blockId])
+  contextMenu.value = { blockId, x: event.clientX, y: event.clientY }
+}
+
+function runContextAction(): void {
+  const menu = contextMenu.value
+  if (!menu) return
+  const kind = blockOpenKind(menu.blockId)
+  contextMenu.value = null
+  if (kind === 'diagram' || kind === 'other') {
+    openInstance(menu.blockId)
+    return
+  }
+  showOpenAs(menu.blockId)
+}
+
+function confirmOpenAs(): void {
+  const blockId = openAsBlock.value
+  const sheetId = doc.value.id
+  if (!blockId) return
+  openAsBlock.value = null
+  applyProject(
+    (current) => openAsDiagram(current, sheetId, blockId),
+    (value) => {
+      interfaceFocus.value = value.componentId
+      const current = project.value
+      const location = navigation.value
+      if (current && location) {
+        const move = descend(current, location, blockId)
+        if (move.kind === 'ok') showLocation(move.location, true)
+      }
+      return value.createdDefinition ? 'This block now opens a diagram.' : 'The implementation diagram is open.'
+    },
+  )
 }
 
 function stabilizePath(): void {
@@ -915,10 +1429,20 @@ function addFrom(template: BlockTemplate): void {
 }
 
 function onNodeDoubleClick(payload: { node: { id: string } }): void {
-  openInstance(payload.node.id)
+  if (!project.value) {
+    status.value = 'Open as needs a project. Use New project.'
+    return
+  }
+  const kind = blockOpenKind(payload.node.id)
+  if (kind === 'choose') {
+    showOpenAs(payload.node.id)
+    return
+  }
+  if (kind === 'diagram' || kind === 'other') openInstance(payload.node.id)
 }
 
 function onNodeClick(payload: { node: { id: string }; event: MouseEvent | TouchEvent }): void {
+  selectedPort.value = null
   const id = payload.node.id
   const shift = payload.event instanceof MouseEvent && payload.event.shiftKey
   if (shift) {
@@ -929,6 +1453,54 @@ function onNodeClick(payload: { node: { id: string }; event: MouseEvent | TouchE
     return
   }
   if (!selected.value.has(id)) selected.value = new Set([id])
+}
+
+function onResizeStart(blockId: string, handle: ResizeHandle, event: PointerEvent): void {
+  if (tool.value !== 'select' || event.button !== 0 || selected.value.size !== 1) return
+  const block = doc.value.blocks.find((item) => item.id === blockId)
+  if (!block) return
+  selected.value = new Set([blockId])
+  resizeDrag = {
+    blockId,
+    handle,
+    origin: { x: block.x, y: block.y, width: block.width, height: block.height },
+    cancelled: false,
+  }
+  resizing.value = true
+  edits().begin()
+  window.addEventListener('pointermove', onResizeMove)
+  window.addEventListener('pointerup', onResizeEnd)
+}
+
+function stopResizeListeners(): void {
+  window.removeEventListener('pointermove', onResizeMove)
+  window.removeEventListener('pointerup', onResizeEnd)
+}
+
+function onResizeMove(event: PointerEvent): void {
+  const current = resizeDrag
+  if (!current || current.cancelled) return
+  const world = clientToWorld(event)
+  edits().preview((draft) => {
+    const box = resizeBox(current.origin, current.handle, world, snapOn.value)
+    setBlockFields(draft, current.blockId, box)
+  })
+}
+
+function onResizeEnd(): void {
+  stopResizeListeners()
+  const current = resizeDrag
+  resizeDrag = null
+  resizing.value = false
+  if (!current || current.cancelled) return
+  const block = doc.value.blocks.find((item) => item.id === current.blockId)
+  const changed = Boolean(
+    block &&
+      (block.x !== current.origin.x || block.y !== current.origin.y || block.width !== current.origin.width || block.height !== current.origin.height),
+  )
+  edits().commit()
+  refreshHistory()
+  if (changed) status.value = 'Block resized.'
 }
 
 function onDragStart(event: NodeDragEvent): void {
@@ -1039,6 +1611,10 @@ function paste(): void {
 }
 
 function removeSelection(): void {
+  if (selected.value.size === 0 && selectedPort.value) {
+    deleteActivePort()
+    return
+  }
   const ids = [...selected.value]
   const strokeId = selectedStroke.value
   const segmentId = ids.length === 0 ? selectedSegment.value : null
@@ -1057,15 +1633,166 @@ function removeSelection(): void {
   status.value = created.length > 0 ? 'Segment removed. The disconnected piece has a new net id.' : 'Deleted.'
 }
 
-function addPortToSelection(): void {
-  const block = oneBlock.value
-  if (!block) {
-    status.value = 'Select one block to add a port.'
+function portReach(): number {
+  const zoom = viewport.value.zoom > 0 ? viewport.value.zoom : 1
+  return 16 / zoom
+}
+
+function beginAddPort(): void {
+  tool.value = tool.value === 'port' ? 'select' : 'port'
+  portPreview.value = null
+  status.value = tool.value === 'port' ? 'Click a block edge to add a port.' : 'Select.'
+}
+
+function confirmPort(hit: { blockId: string; side: PortSide; t: number }): void {
+  const block = doc.value.blocks.find((item) => item.id === hit.blockId)
+  if (!block) return
+  const owner = project.value ? componentOwningBlock(project.value, doc.value.id, block) : null
+  if (owner) {
+    const name = unusedPortName(owner.ports.map((port) => port.name))
+    const componentId = owner.id
+    const documentId = doc.value.id
+    applyProject(
+      (current) => addInterfacePort(current, componentId, name, hit.side, { documentId, blockId: block.id, t: hit.t }),
+      (value) => {
+        const sheet = project.value ? documentById(project.value, documentId) : null
+        const created = sheet?.ports.find((port) => port.blockId === block.id && port.interfacePortId === value.interfacePortId)
+        selected.value = new Set()
+        selectedPort.value = created?.id ?? null
+        return `Port ${name} was added to every instance. This block keeps the position you chose.`
+      },
+    )
     return
   }
-  edits().execute((draft) => addPort(draft, block.id))
+  let created = ''
+  edits().execute((draft) => {
+    created = addPortAt(draft, block.id, hit.side, hit.t) ?? ''
+  })
+  selected.value = new Set()
+  selectedPort.value = created || null
   refreshHistory()
   status.value = 'Port added.'
+}
+
+const activePort = computed(() => doc.value.ports.find((port) => port.id === selectedPort.value) ?? null)
+
+function commitPortName(event: Event): void {
+  const port = activePort.value
+  if (!port) return
+  const name = (event.target as HTMLInputElement).value
+  const decision = classifyPortDelete(project.value, doc.value, port.id)
+  if (decision?.kind === 'logical') {
+    const componentId = decision.componentId
+    applyProject(
+      (current) => renameInterfacePort(current, componentId, decision.interfacePortId, name),
+      () => `Port renamed to ${name}. Connections were kept.`,
+    )
+    return
+  }
+  let renamed = false
+  edits().execute((draft) => {
+    renamed = renameInstancePort(draft, port.id, name)
+  })
+  refreshHistory()
+  status.value = renamed ? 'Port renamed.' : 'That name is already used on this block.'
+}
+
+function commitPortSide(event: Event): void {
+  const port = activePort.value
+  if (!port) return
+  const side = (event.target as HTMLSelectElement).value as PortSide
+  edits().execute((draft) => placePort(draft, port.id, side, port.t ?? 0.5))
+  refreshHistory()
+  status.value = 'Port moved.'
+}
+
+function commitPortT(event: Event): void {
+  const port = activePort.value
+  if (!port) return
+  const t = Number((event.target as HTMLInputElement).value)
+  if (!Number.isFinite(t)) return
+  edits().execute((draft) => placePort(draft, port.id, port.side, t))
+  refreshHistory()
+  status.value = 'Port moved.'
+}
+
+function deleteActivePort(): void {
+  const port = activePort.value
+  if (!port) return
+  const decision = classifyPortDelete(project.value, doc.value, port.id)
+  if (!decision) return
+  if (decision.kind === 'logical') {
+    const componentId = decision.componentId
+    applyProject(
+      (current) => removeInterfacePort(current, componentId, decision.interfacePortId),
+      () => 'Logical port removed.',
+    )
+    return
+  }
+  if (decision.kind === 'dangling') {
+    if (decision.wired) {
+      status.value = 'This port cites a logical port that is not on the component. The port and the wire were kept.'
+      return
+    }
+    edits().execute((draft) => {
+      removeUnwiredPort(draft, port.id)
+    })
+    selectedPort.value = null
+    refreshHistory()
+    status.value = 'This port cited a logical port that is not on the component. It was removed from this instance.'
+    return
+  }
+  if (decision.kind === 'wired') {
+    status.value = 'This port has a wire. The port and the wire were kept.'
+    return
+  }
+  edits().execute((draft) => {
+    removeUnwiredPort(draft, port.id)
+  })
+  selectedPort.value = null
+  refreshHistory()
+  status.value = 'Port removed.'
+}
+
+function stopPortListeners(): void {
+  window.removeEventListener('pointermove', onPortMove)
+  window.removeEventListener('pointerup', onPortEnd)
+}
+
+function onPortDown(blockId: string, portId: string, event: PointerEvent): void {
+  if (tool.value !== 'select' || event.button !== 0 || resizing.value) return
+  const port = doc.value.ports.find((item) => item.id === portId && item.blockId === blockId)
+  if (!port) return
+  selected.value = new Set()
+  selectedPort.value = portId
+  portDrag = { portId, side: port.side, t: port.t ?? 0.5, placed: Boolean(port.placed), cancelled: false }
+  edits().begin()
+  window.addEventListener('pointermove', onPortMove)
+  window.addEventListener('pointerup', onPortEnd)
+}
+
+function onPortMove(event: PointerEvent): void {
+  const current = portDrag
+  if (!current || current.cancelled) return
+  const port = doc.value.ports.find((item) => item.id === current.portId)
+  const block = port ? doc.value.blocks.find((item) => item.id === port.blockId) : undefined
+  if (!block) return
+  const place = borderPlacement(block, clientToWorld(event), snapOn.value)
+  edits().preview((draft) => placePort(draft, current.portId, place.side, place.t))
+}
+
+function onPortEnd(): void {
+  stopPortListeners()
+  const current = portDrag
+  portDrag = null
+  if (!current || current.cancelled) return
+  const port = doc.value.ports.find((item) => item.id === current.portId)
+  const changed = Boolean(
+    port && (port.side !== current.side || Math.abs((port.t ?? 0) - current.t) > 1e-6 || Boolean(port.placed) !== current.placed),
+  )
+  edits().commit()
+  refreshHistory()
+  if (changed) status.value = 'Port moved.'
 }
 
 function commitName(event: Event): void {
@@ -1145,6 +1872,16 @@ function acceptWire(commit: { points: Point[]; start: Parameters<typeof commitWi
 
 function onPointerDown(event: PointerEvent): void {
   if (event.button !== 0) return
+  if (tool.value === 'port') {
+    const hit = nearestBlockBorder(doc.value.blocks, clientToWorld(event), snapOn.value, portReach())
+    portPreview.value = hit
+    if (!hit) {
+      status.value = 'Choose a point on a block edge.'
+      return
+    }
+    confirmPort(hit)
+    return
+  }
   if (tool.value === 'wire') {
     const hit = snapTarget(doc.value, clientToWorld(event))
     const step = wireClick(wireDraft.value, hit)
@@ -1164,6 +1901,10 @@ function onPointerDown(event: PointerEvent): void {
 
 function onPointerMove(event: PointerEvent): void {
   const point = clientToWorld(event)
+  if (tool.value === 'port') {
+    portPreview.value = nearestBlockBorder(doc.value.blocks, point, snapOn.value, portReach())
+    return
+  }
   if (tool.value === 'wire') wireHover.value = point
   if (drawing.value) {
     drawing.value = [...drawing.value, { ...point, pressure: event.pressure || 0.5 }]
@@ -1417,6 +2158,9 @@ async function reloadSaved(): Promise<void> {
       const steps = navigation.value?.steps ?? []
       project.value = next
       documentSessions.discard()
+      projectSession.clear()
+      extractPlan.value = null
+      expandPlan.value = null
       showLocation(resolveLocation(next, steps).location, false, false)
       const resolved = resolveLocation(next, navigation.value?.steps ?? [])
       status.value = resolved.message ?? `Reloaded project ${next.name}.`
@@ -1449,6 +2193,7 @@ async function onFile(event: Event): Promise<void> {
       const nextProject = parseProject(text)
       project.value = nextProject
       documentSessions.discard()
+      projectSession.clear()
       navPast.length = 0
       navFuture.length = 0
       showLocation(rootLocation(nextProject), false, false)
@@ -1491,6 +2236,10 @@ function typingTarget(target: EventTarget | null): boolean {
 function onKey(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     event.preventDefault()
+    if (openAsBlock.value || contextMenu.value) {
+      dismissOpenAs()
+      return
+    }
     if (symbolEditor.value?.cancelDraft()) {
       status.value = 'Polygon cancelled.'
       return
@@ -1507,16 +2256,32 @@ function onKey(event: KeyboardEvent): void {
     }
     if (edits().isGesturing) {
       symbolEditor.value?.abandonGesture()
+      const wasResize = resizeDrag !== null
+      const wasPort = portDrag !== null
+      stopResizeListeners()
+      stopPortListeners()
+      if (resizeDrag) resizeDrag.cancelled = true
+      if (portDrag) portDrag.cancelled = true
+      resizing.value = false
       edits().cancel()
+      resizeDrag = null
+      portDrag = null
       if (drag) drag.cancelled = true
       bendDrag = null
       spanDrag = null
       junctionDrag = null
       refreshHistory()
-      status.value = 'Cancelled.'
+      status.value = wasPort ? 'Port move cancelled.' : wasResize ? 'Resize cancelled.' : 'Cancelled.'
+      return
+    }
+    if (tool.value === 'port') {
+      tool.value = 'select'
+      portPreview.value = null
+      status.value = 'Port cancelled.'
       return
     }
     selected.value = new Set()
+    selectedPort.value = null
     selectedSegment.value = null
     return
   }
@@ -1617,6 +2382,10 @@ defineExpose({ roundTrip, doc })
       <button @click="loadAcceptance">Acceptance</button>
       <button @click="loadBench">Bench</button>
       <button @click="loadProject">Project</button>
+      <button @click="newDesign">New project</button>
+      <button data-reference="digital" @click="loadDigital">Digital</button>
+      <button data-reference="signal" @click="loadSignal">Signal</button>
+      <button data-reference="general" @click="loadGeneral">General</button>
       <button @click="createSymbol">New symbol</button>
       <button @click="shiftSymbolPin">Shift pin</button>
       <button @click="dropSymbolPin">Drop pin</button>
@@ -1624,16 +2393,18 @@ defineExpose({ roundTrip, doc })
       <button :class="{ on: tool === 'pan' }" @click="tool = 'pan'">Pan</button>
       <button :class="{ on: tool === 'wire' }" @click="tool = 'wire'">Wire</button>
       <button :class="{ on: tool === 'freehand' }" @click="tool = 'freehand'">Freehand</button>
-      <button @click="addPortToSelection">Add port</button>
+      <button :class="{ on: tool === 'port' }" @click="beginAddPort">Add port</button>
       <button :disabled="selected.size < 2" @click="groupSelection">Group</button>
       <button @click="ungroupSelection">Ungroup</button>
       <button :disabled="selected.size === 0" @click="duplicateSelection">Duplicate</button>
-      <button :disabled="selected.size === 0 && !selectedStroke && !selectedSegment" @click="removeSelection">Delete</button>
+      <button :disabled="selected.size === 0 && !selectedPort && !selectedStroke && !selectedSegment" @click="removeSelection">Delete</button>
       <button :class="{ on: snapOn }" @click="snapOn = !snapOn">Snap</button>
       <button @click="convertSelected">Convert</button>
       <button :disabled="!preview" @click="confirmPreview">Confirm wire</button>
-      <button :disabled="!canUndo" @click="undo">Undo</button>
+      <button :disabled="!canUndo" title="Sheet undo. A project change clears this list." @click="undo">Undo</button>
       <button :disabled="!canRedo" @click="redo">Redo</button>
+      <button :disabled="!canProjectUndo" @click="undoProject">Project undo</button>
+      <button :disabled="!canProjectRedo" @click="redoProject">Project redo</button>
       <button @click="save">Save</button>
       <button @click="reloadSaved">Reload</button>
       <button @click="fileEl?.click()">Load file</button>
@@ -1712,6 +2483,7 @@ defineExpose({ roundTrip, doc })
       :data-revisions="doc.symbols.map((symbol) => `${symbol.id}:${symbol.revision ?? ''}`).join('|')"
       :data-project="project?.id ?? ''"
       :data-path-ids="pathKey"
+      :data-interface-ports="interfacePortIds"
       :data-component-refs="doc.blocks.filter((block) => block.componentId).map((block) => `${block.name}:${block.componentId}`).join('|')"
       :data-bindings="bindings"
       :data-anchors="anchors"
@@ -1752,12 +2524,23 @@ defineExpose({ roundTrip, doc })
             :labels="nodeProps.data.labels"
             :assets="nodeProps.data.assets"
             :selected="nodeProps.data.selected"
+            :handles="nodeProps.data.handles"
+            :zoom="viewport.zoom"
+            :symbol-width="nodeProps.data.symbolWidth"
+            :symbol-height="nodeProps.data.symbolHeight"
+            :ports-live="nodeProps.data.portsLive"
+            :selected-port="nodeProps.data.selectedPort"
             @nudge="onNudge"
+            @context="onBlockContext"
+            @resize-start="onResizeStart"
+            @resize-move="onResizeMove"
+            @resize-end="onResizeEnd"
+            @port-down="onPortDown"
           />
         </template>
         <FlowBridge :port-count="doc.ports.length" :ids="doc.blocks.map((block) => block.id)" :fit-token="fitToken" :pin-key="pinKey" :zoom-token="zoomToken" :frame="frame" @viewport="onViewport" />
       </VueFlow>
-      <svg class="world" :class="{ drawing: tool === 'freehand' || tool === 'wire' }" :style="worldStyle" @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp">
+      <svg class="world" :class="{ drawing: tool === 'freehand' || tool === 'wire' || tool === 'port' }" :style="worldStyle" @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp">
         <g v-if="snapOn" class="grid">
           <line v-for="value in gridLines" :key="`x-${value}`" :x1="value" y1="0" :x2="value" y2="1600" />
           <line v-for="value in gridLines" :key="`y-${value}`" x1="0" :y1="value" x2="1600" :y2="value" />
@@ -1770,6 +2553,7 @@ defineExpose({ roundTrip, doc })
           @pointerdown="onSpanDown(wire.id, $event)"
         />
         <polyline v-for="wire in wires" :key="wire.id" :points="pointsAttr(wire.points)" class="wire" :class="{ selected: wire.id === selectedSegment }" />
+        <circle v-if="portPreview" class="port-preview" :cx="portPreview.x" :cy="portPreview.y" r="5" />
         <polyline v-if="wirePreview" :points="pointsAttr(wirePreview)" class="preview" />
         <polyline v-if="preview" :points="pointsAttr(preview)" class="preview" />
         <circle
@@ -1808,8 +2592,90 @@ defineExpose({ roundTrip, doc })
     </div>
     <aside class="props">
       <p>Properties</p>
+      <section v-if="project" class="components" data-interface-editor>
+        <p>Components</p>
+        <p class="hint" data-undo-rule>A project change clears sheet undo. Project undo restores every document.</p>
+        <label>Component <input v-model="componentName" data-component-name /></label>
+        <button type="button" data-new-component @click="createAbstract">New component</button>
+        <button
+          v-for="item in project.components"
+          :key="item.id"
+          type="button"
+          :data-component-id="item.id"
+          :data-component-kind="item.implementation.kind"
+          :class="{ on: item.id === interfaceFocus }"
+          @click="focusComponent(item.id)"
+        >{{ item.name }} <span v-if="instancesOf(project, item.id).length">({{ instancesOf(project, item.id).length }})</span></button>
+        <template v-if="focusedComponent">
+          <button type="button" data-rename-component @click="renameFocused">Rename</button>
+          <button type="button" data-place-component @click="placeFocused">Place on sheet</button>
+          <button type="button" data-duplicate-component @click="duplicateFocused">Duplicate definition</button>
+          <button type="button" data-delete-component @click="deleteFocused">Delete</button>
+          <p v-if="componentUses.length === 0" class="hint" data-component-unused>Not used.</p>
+          <p v-for="use in componentUses" :key="`${use.documentId}:${use.blockId}`" class="hint" :data-component-use="use.blockId">{{ use.name }}</p>
+          <button type="button" data-create-impl :disabled="focusedComponent.implementation.kind !== 'none'" @click="makeImplementation">Create implementation</button>
+          <label>Port <input v-model="interfaceName" data-port-name /></label>
+          <label>Side
+            <select v-model="interfaceSide" data-port-side>
+              <option value="left">left</option>
+              <option value="right">right</option>
+              <option value="top">top</option>
+              <option value="bottom">bottom</option>
+            </select>
+          </label>
+          <button type="button" data-add-port @click="addLogicalPort">Add port</button>
+          <div v-for="port in focusedComponent.ports" :key="port.id" class="port-row" :data-interface-port="port.id">
+            <input :value="port.name" @change="renameLogical(port.id, $event)" />
+            <button type="button" @click="shiftLogical(port.id, -1)">Up</button>
+            <button type="button" @click="shiftLogical(port.id, 1)">Down</button>
+            <button type="button" data-remove-port @click="removeLogical(port.id)">Remove</button>
+            <button type="button" data-add-pin @click="pinLogical(port.id)">Add pin</button>
+            <select :value="focusedComponent.bindings.find((item) => item.interfacePortId === port.id)?.symbolPortId ?? ''" @change="bindLogical(port.id, $event)">
+              <option value="">Unbound</option>
+              <option v-for="pin in symbolPins" :key="pin.id" :value="pin.id">{{ pin.name }}</option>
+            </select>
+          </div>
+          <p v-for="note in interfaceNotes" :key="note.message" class="hint" data-interface-note>{{ note.message }}</p>
+        </template>
+        <button type="button" data-extract :disabled="selected.size < 2" @click="proposeExtract">Extract component</button>
+        <div v-if="extractPlan" class="extract-plan" data-extract-preview :data-extract-ok="extractPlan.ok">
+          <p v-if="!extractPlan.ok">{{ extractPlan.message }}</p>
+          <template v-else>
+            <p v-for="port in extractPlan.ports" :key="port.netId" class="hint" :data-extract-port="port.name">{{ port.name }} on the {{ port.side }}, from net {{ port.netName || port.netId }}</p>
+            <p v-if="extractPlan.ports.length === 0" class="hint">No nets leave the selection.</p>
+            <p v-for="(note, index) in extractPlan.notes" :key="index" class="hint">{{ note }}</p>
+            <button type="button" data-extract-confirm @click="confirmExtract">Create component</button>
+          </template>
+          <button type="button" data-extract-cancel @click="extractPlan = null">Cancel</button>
+        </div>
+        <button type="button" data-expand :disabled="!expandTarget" @click="proposeExpand">Expand component</button>
+        <div v-if="expandPlan" class="extract-plan" data-expand-preview :data-expand-ok="expandPlan.ok">
+          <p v-if="!expandPlan.ok">{{ expandPlan.message }}</p>
+          <template v-else>
+            <p class="hint">{{ expandPlan.moving.join(', ') || 'No inner blocks' }}</p>
+            <p v-for="(note, index) in expandPlan.notes" :key="index" class="hint">{{ note }}</p>
+            <button type="button" data-expand-confirm @click="confirmExpand">Replace instance</button>
+          </template>
+          <button type="button" data-expand-cancel @click="expandPlan = null">Cancel</button>
+        </div>
+        <button type="button" data-make-unique :disabled="!canMakeUnique" @click="makeUniqueSelected">Make unique</button>
+      </section>
       <p v-if="sharedLabel" class="hint">{{ sharedLabel }}</p>
-      <template v-if="oneBlock">
+      <template v-if="activePort">
+        <label>Port <input :value="activePort.name" data-port-instance-name @change="commitPortName" /></label>
+        <label>Side
+          <select :value="activePort.side" data-port-instance-side @change="commitPortSide">
+            <option value="left">left</option>
+            <option value="right">right</option>
+            <option value="top">top</option>
+            <option value="bottom">bottom</option>
+          </select>
+        </label>
+        <label>Position <input :value="activePort.t ?? 0.5" data-port-instance-t type="number" min="0" max="1" step="0.05" @change="commitPortT" /></label>
+        <button type="button" data-delete-port @click="deleteActivePort">Delete port</button>
+        <p class="hint">{{ activePort.placed ? 'This instance keeps its own position.' : 'The symbol pin supplies the position.' }}</p>
+      </template>
+      <template v-else-if="oneBlock">
         <label>Name <input :value="oneBlock.name" @change="commitName" /></label>
         <label>X <input :value="oneBlock.x" type="number" @change="commitNumber('x', $event)" /></label>
         <label>Y <input :value="oneBlock.y" type="number" @change="commitNumber('y', $event)" /></label>
@@ -1873,5 +2739,20 @@ defineExpose({ roundTrip, doc })
     <footer>
       <p class="status">{{ status }}</p>
     </footer>
+    <div v-if="contextMenu" class="menu-back" @pointerdown="contextMenu = null">
+      <div class="context-menu" data-context-menu :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @pointerdown.stop>
+        <button type="button" data-context-action @click="runContextAction">{{ blockOpenKind(contextMenu.blockId) === 'diagram' ? 'Open implementation' : 'Open as…' }}</button>
+      </div>
+    </div>
+    <div v-if="openAsBlock" class="menu-back" data-open-as @pointerdown.self="dismissOpenAs">
+      <div class="open-as" role="dialog" aria-label="Open as">
+        <p>Open as</p>
+        <button type="button" data-open-as-diagram @click="confirmOpenAs">Block diagram</button>
+        <button type="button" data-open-as-fsm disabled>State machine (FSM)</button>
+        <button type="button" data-open-as-vhdl disabled>VHDL text</button>
+        <button type="button" data-open-as-sv disabled>SystemVerilog text</button>
+        <button type="button" data-open-as-cancel @click="dismissOpenAs">Cancel</button>
+      </div>
+    </div>
   </div>
 </template>

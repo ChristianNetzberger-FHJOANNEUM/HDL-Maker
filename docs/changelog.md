@@ -125,6 +125,42 @@
 - The open-source chain is a backend build for VHDL-93: GHDL Verilog, Yosys, nextpnr-xilinx, fasm2frames, and xc7frames2bit. Tool paths are `workspace/opensource-tools.json`. The process `PATH` is unchanged, and Vivado is not called.
 - Build `osb_574eb1ad8c3b4ac8a36b359745d3534d` repeats the Z7-20 counter. The nextpnr counts match the O1 log, and the bitstream is 4,045,674 bytes. It was not programmed. Details: `docs/o2a-open-source-build.md`.
 
+### D5a.3c lab
+
+- The Boundary reuses the same flush-rectangle face as a functional block, so port names from the logical interface are visible inside the outline. A component instance no longer recreates unbound symbol pins after a logical port is deleted. A plain generic block of the same symbol still shows the original pins. Wired orphans are not deleted silently. Details: `docs/d5a3-interactive-port-authoring.md`.
+
+### D5a.3b lab
+
+- A logical port stays the same interface on every instance and on the Boundary. Adding one on the Boundary updates the instances. Deleting an unwired one from either side removes it everywhere, including a child diagram that was already open. If any copy is wired, the whole delete is refused, nothing changes, and no undo step is added. The user functionally accepted that synchronization. Details: `docs/d5a3-interactive-port-authoring.md`.
+
+### D5a.3a lab
+
+- A port is deleted according to what it actually cites. A generic port, including a bound symbol pin, leaves that instance only. A logical port still updates every instance and the Boundary, and a wired copy is kept. A stale interface id is reported instead of being sent to the component command. A later instance shows the logical name. Automatic names stay unique. A functional rectangle is drawn on the instance outline, with a small mark and the name inside. Details: `docs/d5a3-interactive-port-authoring.md`.
+
+### D5a.3 lab
+
+- A port can be added on any side of a block from the sheet, and an existing port can be dragged along that edge or onto another edge. The graphic position is `side` and `t` on that instance when `placed` is set. A bound symbol pin and the other instances stay where they are. A logical port is still one project command. One drag is one sheet undo step. Details: `docs/d5a3-interactive-port-authoring.md`.
+
+### D5a.2 lab
+
+- A selected block can be scaled from eight handles, and a numeric width or height uses the same box. The symbol stroke is mapped into that box when it is drawn. Text is not stretched. A locked picture keeps its aspect. One gesture is one sheet undo step. The symbol definition and other instances stay as they are. Details: `docs/d5a2-interactive-block-resizing.md`.
+
+### D5a.1 lab
+
+- A block on the sheet can become a component without placing a second block. Double-click on a generic block opens **Open as**. **Block diagram** is the only active choice. State machine, VHDL text, and SystemVerilog text are shown disabled. The drawn size, ports, and wires stay. Sheet undo is still cleared by the project command. Details: `docs/d5a1-interactive-top-down-authoring.md`.
+
+### D5a lab
+
+- The diagram lab opens three reference projects from **Digital**, **Signal**, and **General**: a hierarchy, a signal chain with SVG and a bitmap, and a flowchart with text, pictures, a group, and ink. No new editing command was added. The undo loss is written down for D5b and is not rebuilt. Details: `docs/d5a-editor-acceptance.md`.
+
+### D4d lab
+
+- A selection of blocks can become one component, and one instance of that component can be expanded again. Outside and inside nets stay connected, including junctions. Same-named nets are not merged. Make unique copies one instance's definition. Sheet undo is still cleared by the project command, and that is stated in the panel. Details: `docs/d4d-hierarchical-authoring.md`.
+
+### D4c lab
+
+- A component can gain, rename, reorder, and lose logical ports. Every instance and the implementation boundary are updated in the same project command, each with its own port id. A symbol pin is bound by id, not by name. A wired port stays when its logical port is removed, and a diagnosis names it. Sheet undo does not cross that command. Details: `docs/d4c-component-interface-authoring.md`.
+
 ### D4b lab
 
 - The diagram lab can open a child sheet by double-click, from the project tree, or from a breadcrumb. All three use one path of block ids. U1 and U2 open the same diagram and the same undo history, and the path stays different. Zoom and pan return with that path. A component without a diagram stays on the current sheet. A sheet can still be opened without a project. Details: `docs/d4b-hierarchy-navigation.md`.

@@ -1,7 +1,7 @@
 import { adoptLibrarySymbol } from './library'
 import { createId, type DiagramDocument, type Point } from './document'
 import { emptyDocument } from './edit'
-import { instantiateSymbol } from './symbols'
+import { instantiateSymbol, pruneAssets, releaseUnboundSymbolPorts } from './symbols'
 
 /** A logical port. It has no position. */
 export type ComponentPort = {
@@ -330,11 +330,31 @@ function symbolSource(project: DiagramProject, symbolId: string): { document: Di
   return null
 }
 
-function applyBindings(document: DiagramDocument, blockId: string, bindings: InterfaceBinding[]): void {
+/** Give every logical port an instance port. An existing port that already cites the id is left alone. */
+function coverLogicalPorts(document: DiagramDocument, blockId: string, ports: ComponentPort[]): void {
+  for (const [index, pin] of ports.entries()) {
+    if (document.ports.some((port) => port.blockId === blockId && port.interfacePortId === pin.id)) continue
+    const side = index % 2 === 0 ? 'left' : 'right'
+    const mates = document.ports.filter((port) => port.blockId === blockId && port.side === side).length
+    document.ports.push({
+      id: createId('prt'),
+      blockId,
+      name: pin.name,
+      side,
+      t: (mates + 1) / (mates + 2),
+      interfacePortId: pin.id,
+    })
+  }
+}
+
+function applyBindings(document: DiagramDocument, blockId: string, bindings: InterfaceBinding[], logicalPorts: ComponentPort[]): void {
   for (const port of document.ports) {
     if (port.blockId !== blockId || !port.symbolPortId) continue
     const binding = bindings.find((item) => item.symbolPortId === port.symbolPortId)
-    if (binding) port.interfacePortId = binding.interfacePortId
+    if (!binding) continue
+    port.interfacePortId = binding.interfacePortId
+    const logical = logicalPorts.find((item) => item.id === binding.interfacePortId)
+    if (logical) port.name = logical.name
   }
 }
 
@@ -370,7 +390,7 @@ export function instantiateComponent(
     }
     blockId = instantiateSymbol(document, defined.symbolId, at, name ?? defined.name)
     if (!blockId) return fail(project, 'The symbol could not be placed. The project was not changed.')
-    applyBindings(document, blockId, defined.bindings)
+    applyBindings(document, blockId, defined.bindings, defined.ports)
   } else {
     blockId = createId('blk')
     document.blocks.push({
@@ -397,6 +417,8 @@ export function instantiateComponent(
   }
   const block = document.blocks.find((item) => item.id === blockId)
   if (block) block.componentId = componentId
+  coverLogicalPorts(document, blockId, defined.ports)
+  releaseUnboundSymbolPorts(document, blockId)
   const cycle = acyclic(project, next)
   if (cycle) return cycle
   return { ok: true, project: next, value: { blockId: blockId! } }
@@ -417,12 +439,28 @@ export function documentsReferencing(project: DiagramProject, componentId: strin
 }
 
 export function removeComponent(project: DiagramProject, componentId: string): ProjectResult<{ componentId: string }> {
-  if (!componentById(project, componentId)) return fail(project, 'That component is not in the project. The project was not changed.')
-  if (instancesOf(project, componentId).length > 0) {
-    return fail(project, 'That component is still used. The project was not changed.')
+  const component = componentById(project, componentId)
+  if (!component) return fail(project, 'That component is not in the project. The project was not changed.')
+  const used = instancesOf(project, componentId)
+  if (used.length > 0) {
+    const names = used.map((instance) => instance.name).join(', ')
+    return fail(project, `${component.name} is used by ${names}. Remove those instances first. The project was not changed.`)
   }
   const next = cloneProject(project)
-  next.components = next.components.filter((component) => component.id !== componentId)
+  const target = componentById(next, componentId)
+  if (!target) return fail(project, 'That component is not in the project. The project was not changed.')
+  const symbolId = target.symbolId
+  const documentId = target.implementation.kind === 'diagram' ? target.implementation.documentId : undefined
+  next.components = next.components.filter((item) => item.id !== componentId)
+  if (symbolId && !next.components.some((item) => item.symbolId === symbolId) && !next.documents.some((document) => document.blocks.some((block) => block.symbolId === symbolId))) {
+    for (const document of next.documents) {
+      document.symbols = document.symbols.filter((symbol) => symbol.id !== symbolId)
+      pruneAssets(document)
+    }
+  }
+  if (documentId && documentId !== next.rootDocumentId && !next.components.some((item) => item.implementation.documentId === documentId)) {
+    next.documents = next.documents.filter((document) => document.id !== documentId)
+  }
   return { ok: true, project: next, value: { componentId } }
 }
 
