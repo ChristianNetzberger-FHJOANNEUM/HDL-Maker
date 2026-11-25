@@ -65,7 +65,8 @@ import {
   type ExpandPreview,
   type ExtractPreview,
 } from '../core/hierarchy'
-import { JsonProjectStorage, parseProject, ProjectSession, sampleProject, serializeProject } from '../core/project'
+import { JsonProjectStorage, parseProject, sampleProject, serializeProject } from '../core/project'
+import { TransactionManager } from '../core/transaction'
 import { digitalProject, generalProject, signalProject } from '../core/references'
 import {
   addBoundPin,
@@ -104,13 +105,13 @@ import {
   breadcrumbs,
   contentBounds,
   descend,
-  DocumentSessions,
   parentLocation,
   resolveLocation,
   rootLocation,
   sharedDefinitionLabel,
   type HierarchyLocation,
 } from '../core/navigate'
+import { GestureCloseLatch, actionForRedoWhileGesturing } from './gestureGuard'
 import HierarchyTree from './HierarchyTree.vue'
 import { JsonRecordStorage, jsonFileName } from '../core/storage'
 import BlockNode from './BlockNode.vue'
@@ -147,8 +148,6 @@ const stageEl = ref<HTMLElement | null>(null)
 const fileEl = ref<HTMLInputElement | null>(null)
 const canUndo = ref(false)
 const canRedo = ref(false)
-const canProjectUndo = ref(false)
-const canProjectRedo = ref(false)
 const interfaceFocus = ref<string | null>(null)
 const openAsBlock = ref<string | null>(null)
 const contextMenu = ref<{ blockId: string; x: number; y: number } | null>(null)
@@ -186,7 +185,10 @@ let portDrag: { portId: string; side: PortSide; t: number; placed: boolean; canc
 let bendDrag: BendDrag | null = null
 let spanDrag: SpanDrag | null = null
 let junctionDrag: { id: string; originX: number; originY: number; pointer: Point } | null = null
+/** Prevents double commit/cancel from late pointerup / lostpointercapture (D5b.4). */
+const gestureLatch = new GestureCloseLatch()
 
+/** Sheet-only history when no project is open (Example, Symbols, …). */
 const sheetSession = new EditSession(
   () => doc.value,
   (next) => {
@@ -194,34 +196,108 @@ const sheetSession = new EditSession(
   },
 )
 
-const documentSessions = new DocumentSessions(
-  (id) => (project.value ? documentById(project.value, id) : null),
-  (next) => {
-    const current = project.value
-    if (!current) {
-      doc.value = next
-      return
-    }
-    const index = current.documents.findIndex((item) => item.id === next.id)
-    if (index >= 0) current.documents[index] = next
-    if (doc.value.id === next.id) doc.value = next
-  },
-)
+/**
+ * One TransactionManager per open project (D5b.3).
+ * Sheet edits and project commands share this history. No DocumentSessions / ProjectSession.
+ */
+let transactions: TransactionManager | null = null
 
-function edits(): EditSession {
-  if (project.value) return documentSessions.get(doc.value.id)
-  return sheetSession
+function bindTransactions(created: DiagramProject): void {
+  project.value = created
+  transactions = new TransactionManager({
+    get: () => {
+      const current = project.value
+      if (!current) throw new Error('The project is not open.')
+      return current
+    },
+    set: (next) => {
+      project.value = next
+    },
+  })
 }
 
-const projectSession = new ProjectSession(
-  () => project.value ?? createFallbackProject(),
-  (next) => {
-    project.value = next
-  },
-)
+function clearTransactions(): void {
+  transactions = null
+}
 
-function createFallbackProject(): DiagramProject {
-  return project.value ?? { schemaVersion: 1, id: '', name: '', rootDocumentId: '', documents: [], components: [], extra: {} }
+/** Duck-typed EditSession that records full project snapshots while a project is open. */
+const projectSheetAdapter = {
+  get canUndo(): boolean {
+    return transactions?.canUndo ?? false
+  },
+  get canRedo(): boolean {
+    return transactions?.canRedo ?? false
+  },
+  get isGesturing(): boolean {
+    return transactions?.isGesturing ?? false
+  },
+  execute(apply: (draft: DiagramDocument) => void): void {
+    const manager = transactions
+    const sheetId = doc.value.id
+    if (!manager) return
+    // Concurrent command during a gesture: cancel first, then one new transaction.
+    if (manager.isGesturing) {
+      manager.cancel()
+      rebindAfterProject()
+    }
+    const result = manager.transact('Edit', (proj) => {
+      const sheet = documentById(proj, sheetId)
+      if (!sheet) return { ok: false as const, message: 'The sheet is not in the project.' }
+      apply(sheet)
+      return proj
+    })
+    if (result.ok) rebindAfterProject()
+  },
+  begin(): void {
+    gestureLatch.reset()
+    transactions?.begin('Gesture')
+  },
+  preview(apply: (draft: DiagramDocument) => void): void {
+    const manager = transactions
+    const sheetId = doc.value.id
+    if (!manager || gestureLatch.isClosing) return
+    manager.preview((proj) => {
+      const sheet = documentById(proj, sheetId)
+      if (sheet) apply(sheet)
+    })
+  },
+  commit(finalize?: (draft: DiagramDocument) => void): boolean {
+    if (!transactions?.isGesturing) return false
+    if (finalize) finalize(doc.value)
+    const recorded = transactions.commit()
+    rebindAfterProject()
+    return recorded
+  },
+  cancel(): void {
+    if (!transactions?.isGesturing) return
+    transactions.cancel()
+    rebindAfterProject()
+  },
+  undo(): void {
+    const manager = transactions
+    if (!manager) return
+    if (manager.isGesturing) {
+      manager.cancel()
+      rebindAfterProject()
+      return
+    }
+    if (manager.undo().ok) rebindAfterProject()
+  },
+  redo(): void {
+    const manager = transactions
+    if (!manager) return
+    // D5b.4: redo refuses while gesturing — does not cancel and does not touch redo.
+    if (manager.isGesturing) return
+    if (manager.redo().ok) rebindAfterProject()
+  },
+  load(next: DiagramDocument): void {
+    sheetSession.load(next)
+  },
+}
+
+function edits(): EditSession {
+  if (project.value && transactions) return projectSheetAdapter as unknown as EditSession
+  return sheetSession
 }
 
 const flowNodes = computed(() =>
@@ -405,8 +481,6 @@ const worldStyle = computed(() => ({
 function refreshHistory(): void {
   canUndo.value = edits().canUndo
   canRedo.value = edits().canRedo
-  canProjectUndo.value = project.value ? projectSession.canUndo : false
-  canProjectRedo.value = project.value ? projectSession.canRedo : false
 }
 
 function onViewport(next: ViewportTransform): void {
@@ -416,13 +490,12 @@ function onViewport(next: ViewportTransform): void {
 function openDocument(next: DiagramDocument, message: string): void {
   project.value = null
   navigation.value = null
-  documentSessions.discard()
-  projectSession.clear()
+  clearTransactions()
   navPast.length = 0
   navFuture.length = 0
   viewMemory.clear()
   expanded.value = []
-  edits().load(next)
+  sheetSession.load(next)
   selected.value = new Set()
   selectedStroke.value = null
   selectedSegment.value = null
@@ -814,7 +887,7 @@ function loadBench(): void {
   openDocument(sheet, `Bench sheet loaded in ${Math.round(performance.now() - started)} ms.`)
 }
 
-function releaseGesture(): void {
+function clearUiGestureState(): void {
   symbolEditor.value?.cancelDraft()
   symbolEditor.value?.abandonGesture()
   if (wireDraft.value) wireDraft.value = null
@@ -826,18 +899,58 @@ function releaseGesture(): void {
   stopPortListeners()
   if (resizeDrag) resizeDrag.cancelled = true
   if (portDrag) portDrag.cancelled = true
+  if (drag) drag.cancelled = true
   portPreview.value = null
   resizing.value = false
-  if (edits().isGesturing) {
-    edits().cancel()
-    if (drag) drag.cancelled = true
-  }
   resizeDrag = null
   portDrag = null
   drag = null
   bendDrag = null
   spanDrag = null
   junctionDrag = null
+}
+
+/**
+ * Cancel an open document gesture and clear UI drag state (D5b.4).
+ * Idempotent against late pointer events after the first close.
+ */
+function cancelActiveDocumentGesture(message?: string): boolean {
+  const wasGesturing = edits().isGesturing
+  const hadUi =
+    Boolean(resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag || wireDraft.value || drawing.value)
+  if (!wasGesturing && !hadUi && !gestureLatch.isClosing) {
+    clearUiGestureState()
+    return false
+  }
+  gestureLatch.tryBeginClose()
+  if (wasGesturing) edits().cancel()
+  clearUiGestureState()
+  refreshHistory()
+  if (message) status.value = message
+  return wasGesturing || hadUi
+}
+
+/** @deprecated name kept for call sites — cancels without a status message. */
+function releaseGesture(): void {
+  cancelActiveDocumentGesture()
+}
+
+function beginDocumentGesture(): void {
+  gestureLatch.reset()
+  edits().begin()
+}
+
+/** Closes the open gesture once. Returns whether a history entry was recorded (project mode). */
+function commitDocumentGesture(finalize?: (draft: DiagramDocument) => void): boolean {
+  if (gestureLatch.isClosing || !edits().isGesturing) {
+    clearUiGestureState()
+    return false
+  }
+  gestureLatch.tryBeginClose()
+  const out = (edits() as EditSession & { commit: (fn?: (draft: DiagramDocument) => void) => boolean | void }).commit(finalize)
+  clearUiGestureState()
+  refreshHistory()
+  return typeof out === 'boolean' ? out : true
 }
 
 function viewKey(location: HierarchyLocation): string {
@@ -899,7 +1012,6 @@ function showLocation(next: HierarchyLocation, record: boolean, remember = true)
 }
 
 function rebindAfterProject(): void {
-  documentSessions.discard()
   const current = project.value
   const location = navigation.value
   if (!current || !location) {
@@ -913,57 +1025,29 @@ function rebindAfterProject(): void {
   if (sheet) doc.value = sheet
   if (interfaceFocus.value && !current.components.some((item) => item.id === interfaceFocus.value)) interfaceFocus.value = null
   selected.value = new Set([...selected.value].filter((id) => sheet?.blocks.some((block) => block.id === id)))
+  selectedPort.value = selectedPort.value && sheet?.ports.some((port) => port.id === selectedPort.value) ? selectedPort.value : null
+  selectedSegment.value = selectedSegment.value && sheet?.segments.some((segment) => segment.id === selectedSegment.value) ? selectedSegment.value : null
   refreshHistory()
   syncNav()
+  if (resolved.message) status.value = resolved.message
 }
 
-function applyProject<T>(make: (current: DiagramProject) => ProjectResult<T>, done: (value: T) => string): void {
-  const open = project.value
-  if (!open) return
+function applyProject<T>(make: (current: DiagramProject) => ProjectResult<T>, done: (value: T) => string, label = 'Project change'): void {
+  const manager = transactions
+  if (!project.value || !manager) return
   releaseGesture()
-  const outcome: { value: T | null; message: string } = { value: null, message: 'The project was not changed.' }
-  const changed = projectSession.transact((current) => {
-    const result = make(current)
-    if (!result.ok) {
-      outcome.message = result.message
-      return current
-    }
-    outcome.value = result.value
-    return result.project
+  const result = manager.transact(label, (current) => {
+    const outcome = make(current)
+    if (!outcome.ok) return { ok: false as const, message: outcome.message }
+    return { ok: true as const, project: outcome.project, value: outcome.value }
   })
-  if (!changed || outcome.value === null) {
-    status.value = outcome.message
+  if (!result.ok) {
+    status.value = result.message
     refreshHistory()
     return
   }
-  const lostSheetHistory = documentSessions.anyPending()
   rebindAfterProject()
-  const doneText = done(outcome.value)
-  status.value = lostSheetHistory ? `${doneText} Sheet undo was cleared. Project undo reverses this change.` : doneText
-}
-
-function undoProject(): void {
-  if (!project.value || !projectSession.canUndo) return
-  releaseGesture()
-  const lostSheetHistory = documentSessions.anyPending()
-  projectSession.undo()
-  rebindAfterProject()
-  extractPlan.value = null
-  expandPlan.value = null
-  closeOpenAs()
-  status.value = lostSheetHistory ? 'Project undone. Sheet undo was cleared.' : 'Project undone.'
-}
-
-function redoProject(): void {
-  if (!project.value || !projectSession.canRedo) return
-  releaseGesture()
-  const lostSheetHistory = documentSessions.anyPending()
-  projectSession.redo()
-  rebindAfterProject()
-  extractPlan.value = null
-  expandPlan.value = null
-  closeOpenAs()
-  status.value = lostSheetHistory ? 'Project redone. Sheet undo was cleared.' : 'Project redone.'
+  status.value = done(result.value)
 }
 
 function openInstalled(created: DiagramProject, message: string): void {
@@ -972,9 +1056,7 @@ function openInstalled(created: DiagramProject, message: string): void {
     status.value = 'The project has no root diagram.'
     return
   }
-  project.value = created
-  documentSessions.discard()
-  projectSession.clear()
+  bindTransactions(created)
   navPast.length = 0
   navFuture.length = 0
   viewMemory.clear()
@@ -1214,9 +1296,7 @@ function loadProject(): void {
     status.value = 'The sample project has no root diagram.'
     return
   }
-  project.value = sample
-  documentSessions.discard()
-  projectSession.clear()
+  bindTransactions(sample)
   interfaceFocus.value = null
   extractPlan.value = null
   expandPlan.value = null
@@ -1457,6 +1537,7 @@ function onNodeClick(payload: { node: { id: string }; event: MouseEvent | TouchE
 
 function onResizeStart(blockId: string, handle: ResizeHandle, event: PointerEvent): void {
   if (tool.value !== 'select' || event.button !== 0 || selected.value.size !== 1) return
+  if (edits().isGesturing) cancelActiveDocumentGesture()
   const block = doc.value.blocks.find((item) => item.id === blockId)
   if (!block) return
   selected.value = new Set([blockId])
@@ -1467,19 +1548,21 @@ function onResizeStart(blockId: string, handle: ResizeHandle, event: PointerEven
     cancelled: false,
   }
   resizing.value = true
-  edits().begin()
+  beginDocumentGesture()
   window.addEventListener('pointermove', onResizeMove)
   window.addEventListener('pointerup', onResizeEnd)
+  window.addEventListener('pointercancel', onResizeCancel)
 }
 
 function stopResizeListeners(): void {
   window.removeEventListener('pointermove', onResizeMove)
   window.removeEventListener('pointerup', onResizeEnd)
+  window.removeEventListener('pointercancel', onResizeCancel)
 }
 
 function onResizeMove(event: PointerEvent): void {
   const current = resizeDrag
-  if (!current || current.cancelled) return
+  if (!current || current.cancelled || gestureLatch.isClosing) return
   const world = clientToWorld(event)
   edits().preview((draft) => {
     const box = resizeBox(current.origin, current.handle, world, snapOn.value)
@@ -1490,21 +1573,30 @@ function onResizeMove(event: PointerEvent): void {
 function onResizeEnd(): void {
   stopResizeListeners()
   const current = resizeDrag
-  resizeDrag = null
-  resizing.value = false
-  if (!current || current.cancelled) return
+  if (!current || current.cancelled || gestureLatch.isClosing) {
+    resizeDrag = null
+    resizing.value = false
+    return
+  }
   const block = doc.value.blocks.find((item) => item.id === current.blockId)
   const changed = Boolean(
     block &&
       (block.x !== current.origin.x || block.y !== current.origin.y || block.width !== current.origin.width || block.height !== current.origin.height),
   )
-  edits().commit()
-  refreshHistory()
+  resizeDrag = null
+  resizing.value = false
+  commitDocumentGesture()
   if (changed) status.value = 'Block resized.'
+}
+
+function onResizeCancel(): void {
+  if (!resizeDrag || gestureLatch.isClosing) return
+  cancelActiveDocumentGesture('Resize cancelled.')
 }
 
 function onDragStart(event: NodeDragEvent): void {
   if (tool.value !== 'select') return
+  if (edits().isGesturing) cancelActiveDocumentGesture()
   const id = event.node.id
   if (!selected.value.has(id)) selected.value = new Set([id])
   const origin = new Map<string, Point>()
@@ -1515,11 +1607,11 @@ function onDragStart(event: NodeDragEvent): void {
   const base = origin.get(id)
   if (!base) return
   drag = { origin, baseX: base.x, baseY: base.y, cancelled: false }
-  edits().begin()
+  beginDocumentGesture()
 }
 
 function onDrag(event: NodeDragEvent): void {
-  if (!drag || drag.cancelled) return
+  if (!drag || drag.cancelled || gestureLatch.isClosing) return
   const dx = event.node.position.x - drag.baseX
   const dy = event.node.position.y - drag.baseY
   const origin = drag.origin
@@ -1530,12 +1622,14 @@ function onDrag(event: NodeDragEvent): void {
 
 function onDragStop(): void {
   const current = drag
-  drag = null
-  if (!current || current.cancelled) return
+  if (!current || current.cancelled || gestureLatch.isClosing) {
+    drag = null
+    return
+  }
   const ids = [...current.origin.keys()]
-  edits().commit((draft) => snapBlocks(draft, ids, snapOn.value))
-  refreshHistory()
-  status.value = 'Block moved.'
+  drag = null
+  const recorded = commitDocumentGesture((draft) => snapBlocks(draft, ids, snapOn.value))
+  if (recorded) status.value = 'Block moved.'
 }
 
 function onNudge(id: string, dx: number, dy: number): void {
@@ -1757,23 +1851,31 @@ function deleteActivePort(): void {
 function stopPortListeners(): void {
   window.removeEventListener('pointermove', onPortMove)
   window.removeEventListener('pointerup', onPortEnd)
+  window.removeEventListener('pointercancel', onPortCancel)
 }
 
 function onPortDown(blockId: string, portId: string, event: PointerEvent): void {
   if (tool.value !== 'select' || event.button !== 0 || resizing.value) return
+  if (edits().isGesturing) cancelActiveDocumentGesture()
   const port = doc.value.ports.find((item) => item.id === portId && item.blockId === blockId)
   if (!port) return
   selected.value = new Set()
   selectedPort.value = portId
   portDrag = { portId, side: port.side, t: port.t ?? 0.5, placed: Boolean(port.placed), cancelled: false }
-  edits().begin()
+  beginDocumentGesture()
   window.addEventListener('pointermove', onPortMove)
   window.addEventListener('pointerup', onPortEnd)
+  window.addEventListener('pointercancel', onPortCancel)
+  try {
+    ;(event.currentTarget as Element | null)?.setPointerCapture?.(event.pointerId)
+  } catch {
+    // Window listeners still drive the drag when capture is unavailable.
+  }
 }
 
 function onPortMove(event: PointerEvent): void {
   const current = portDrag
-  if (!current || current.cancelled) return
+  if (!current || current.cancelled || gestureLatch.isClosing) return
   const port = doc.value.ports.find((item) => item.id === current.portId)
   const block = port ? doc.value.blocks.find((item) => item.id === port.blockId) : undefined
   if (!block) return
@@ -1784,15 +1886,22 @@ function onPortMove(event: PointerEvent): void {
 function onPortEnd(): void {
   stopPortListeners()
   const current = portDrag
-  portDrag = null
-  if (!current || current.cancelled) return
+  if (!current || current.cancelled || gestureLatch.isClosing) {
+    portDrag = null
+    return
+  }
   const port = doc.value.ports.find((item) => item.id === current.portId)
   const changed = Boolean(
     port && (port.side !== current.side || Math.abs((port.t ?? 0) - current.t) > 1e-6 || Boolean(port.placed) !== current.placed),
   )
-  edits().commit()
-  refreshHistory()
+  portDrag = null
+  commitDocumentGesture()
   if (changed) status.value = 'Port moved.'
+}
+
+function onPortCancel(): void {
+  if (!portDrag || gestureLatch.isClosing) return
+  cancelActiveDocumentGesture('Port move cancelled.')
 }
 
 function commitName(event: Event): void {
@@ -1910,6 +2019,7 @@ function onPointerMove(event: PointerEvent): void {
     drawing.value = [...drawing.value, { ...point, pressure: event.pressure || 0.5 }]
     return
   }
+  if (gestureLatch.isClosing) return
   if (junctionDrag) {
     const dragState = junctionDrag
     edits().preview((draft) =>
@@ -1950,16 +2060,23 @@ function onPointerUp(): void {
     return
   }
   if (junctionDrag) {
+    if (gestureLatch.isClosing) {
+      junctionDrag = null
+      return
+    }
     junctionDrag = null
-    edits().commit()
-    refreshHistory()
+    commitDocumentGesture()
     status.value = 'Junction moved.'
     return
   }
   if (spanDrag) {
+    if (gestureLatch.isClosing) {
+      spanDrag = null
+      return
+    }
     const dragState = spanDrag
     spanDrag = null
-    edits().commit((draft) => {
+    commitDocumentGesture((draft) => {
       if (!snapOn.value) return
       const segment = draft.segments.find((item) => item.id === dragState.segmentId)
       const point = segment?.points[dragState.edge]
@@ -1967,15 +2084,36 @@ function onPointerUp(): void {
       const coord = dragState.horizontal ? snapValue(point.y, true) : snapValue(point.x, true)
       placeSpan(draft, dragState.segmentId, dragState.edge, coord)
     })
-    refreshHistory()
     status.value = 'Segment moved.'
     return
   }
   if (!bendDrag) return
+  if (gestureLatch.isClosing) {
+    bendDrag = null
+    return
+  }
   bendDrag = null
-  edits().commit()
-  refreshHistory()
+  commitDocumentGesture()
   status.value = 'Bend moved.'
+}
+
+function onPointerCancel(): void {
+  if (drawing.value) {
+    drawing.value = null
+    status.value = 'Stroke cancelled.'
+    return
+  }
+  if (bendDrag || spanDrag || junctionDrag || edits().isGesturing) {
+    cancelActiveDocumentGesture('Gesture cancelled.')
+  }
+}
+
+function onLostPointerCapture(): void {
+  // Expected after a normal commit that released capture — latch ignores duplicates.
+  if (gestureLatch.isClosing) return
+  if (bendDrag || spanDrag || junctionDrag || resizeDrag || portDrag || edits().isGesturing) {
+    cancelActiveDocumentGesture('Gesture cancelled.')
+  }
 }
 
 function startBend(segmentId: string, pointIndex: number, event: PointerEvent): void {
@@ -1994,7 +2132,8 @@ function startBend(segmentId: string, pointIndex: number, event: PointerEvent): 
     axis: null,
   }
   selectedSegment.value = segmentId
-  edits().begin()
+  if (edits().isGesturing) cancelActiveDocumentGesture()
+  beginDocumentGesture()
   ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
 }
 
@@ -2029,7 +2168,8 @@ function onSpanDown(segmentId: string, event: PointerEvent): void {
   selectedSegment.value = segmentId
   selectedEdge.value = edge
   spanDrag = { segmentId, edge, horizontal, origin: horizontal ? from.y : from.x, pointer: world }
-  edits().begin()
+  if (edits().isGesturing) cancelActiveDocumentGesture()
+  beginDocumentGesture()
   ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
 }
 
@@ -2038,7 +2178,8 @@ function onJunctionDown(junctionId: string, event: PointerEvent): void {
   const junction = doc.value.junctions.find((item) => item.id === junctionId)
   if (!junction) return
   junctionDrag = { id: junctionId, originX: junction.x, originY: junction.y, pointer: clientToWorld(event) }
-  edits().begin()
+  if (edits().isGesturing) cancelActiveDocumentGesture()
+  beginDocumentGesture()
   ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
 }
 
@@ -2110,8 +2251,18 @@ function confirmPreview(): void {
 
 function undo(): void {
   symbolEditor.value?.abandonGesture()
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
+    // First Undo during a gesture only cancels — no history step.
+    cancelActiveDocumentGesture('Gesture cancelled.')
+    preview.value = null
+    return
+  }
+  releaseGesture()
   edits().undo()
   preview.value = null
+  extractPlan.value = null
+  expandPlan.value = null
+  closeOpenAs()
   stabilizePath()
   refreshHistory()
   status.value = 'Undone.'
@@ -2119,8 +2270,18 @@ function undo(): void {
 
 function redo(): void {
   symbolEditor.value?.abandonGesture()
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
+    // D5b.4: redo refuses while gesturing; history and gesture stay as they are.
+    void actionForRedoWhileGesturing()
+    status.value = 'Finish or cancel the drag before redo.'
+    return
+  }
+  releaseGesture()
   edits().redo()
   preview.value = null
+  extractPlan.value = null
+  expandPlan.value = null
+  closeOpenAs()
   stabilizePath()
   refreshHistory()
   status.value = 'Redone.'
@@ -2136,12 +2297,24 @@ function download(filename: string, text: string): void {
 }
 
 async function save(): Promise<void> {
+  // D5b.4: cancel any open gesture so a preview is never marked saved.
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
+    cancelActiveDocumentGesture()
+  }
   const current = project.value
-  if (current) {
-    await projectStorage.save(current)
-    download(`${current.id}.json`, serializeProject(current))
+  if (current && transactions) {
+    const snapshot = serializeProject(current)
+    const savedProject = parseProject(snapshot)
+    await projectStorage.save(savedProject)
+    download(`${savedProject.id}.json`, snapshot)
+    const live = project.value
+    if (live && serializeProject(live) === snapshot) {
+      transactions.markSaved()
+      status.value = `Saved project ${savedProject.name}.`
+    } else {
+      status.value = `Saved project ${savedProject.name}. Later edits are still unsaved.`
+    }
     refreshHistory()
-    status.value = `Saved project ${current.name}.`
     return
   }
   await storage.save(doc.value)
@@ -2156,13 +2329,11 @@ async function reloadSaved(): Promise<void> {
     try {
       const next = await projectStorage.load(current.id)
       const steps = navigation.value?.steps ?? []
-      project.value = next
-      documentSessions.discard()
-      projectSession.clear()
+      bindTransactions(next)
       extractPlan.value = null
       expandPlan.value = null
       showLocation(resolveLocation(next, steps).location, false, false)
-      const resolved = resolveLocation(next, navigation.value?.steps ?? [])
+      const resolved = resolveLocation(project.value ?? next, navigation.value?.steps ?? [])
       status.value = resolved.message ?? `Reloaded project ${next.name}.`
     } catch {
       status.value = 'This project is not saved yet.'
@@ -2191,11 +2362,14 @@ async function onFile(event: Event): Promise<void> {
     const text = await file.text()
     if (text.includes('"rootDocumentId"')) {
       const nextProject = parseProject(text)
-      project.value = nextProject
-      documentSessions.discard()
-      projectSession.clear()
+      bindTransactions(nextProject)
       navPast.length = 0
       navFuture.length = 0
+      viewMemory.clear()
+      expanded.value = []
+      extractPlan.value = null
+      expandPlan.value = null
+      closeOpenAs()
       showLocation(rootLocation(nextProject), false, false)
       status.value = `Loaded project ${nextProject.name}.`
       return
@@ -2254,24 +2428,12 @@ function onKey(event: KeyboardEvent): void {
       status.value = 'Merge cancelled.'
       return
     }
-    if (edits().isGesturing) {
-      symbolEditor.value?.abandonGesture()
+    if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
       const wasResize = resizeDrag !== null
       const wasPort = portDrag !== null
-      stopResizeListeners()
-      stopPortListeners()
-      if (resizeDrag) resizeDrag.cancelled = true
-      if (portDrag) portDrag.cancelled = true
-      resizing.value = false
-      edits().cancel()
-      resizeDrag = null
-      portDrag = null
-      if (drag) drag.cancelled = true
-      bendDrag = null
-      spanDrag = null
-      junctionDrag = null
-      refreshHistory()
-      status.value = wasPort ? 'Port move cancelled.' : wasResize ? 'Resize cancelled.' : 'Cancelled.'
+      cancelActiveDocumentGesture(
+        wasPort ? 'Port move cancelled.' : wasResize ? 'Resize cancelled.' : 'Cancelled.',
+      )
       return
     }
     if (tool.value === 'port') {
@@ -2366,8 +2528,27 @@ function bends(points: Point[]): Point[] {
   return points.slice(1, -1)
 }
 
-onMounted(() => window.addEventListener('keydown', onKey))
-onUnmounted(() => window.removeEventListener('keydown', onKey))
+function onWindowBlur(): void {
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
+    cancelActiveDocumentGesture('Gesture cancelled.')
+  }
+}
+
+function onVisibilityChange(): void {
+  if (document.visibilityState === 'hidden') onWindowBlur()
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  window.addEventListener('blur', onWindowBlur)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+})
+onUnmounted(() => {
+  cancelActiveDocumentGesture()
+  window.removeEventListener('keydown', onKey)
+  window.removeEventListener('blur', onWindowBlur)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+})
 
 defineExpose({ roundTrip, doc })
 </script>
@@ -2401,10 +2582,8 @@ defineExpose({ roundTrip, doc })
       <button :class="{ on: snapOn }" @click="snapOn = !snapOn">Snap</button>
       <button @click="convertSelected">Convert</button>
       <button :disabled="!preview" @click="confirmPreview">Confirm wire</button>
-      <button :disabled="!canUndo" title="Sheet undo. A project change clears this list." @click="undo">Undo</button>
-      <button :disabled="!canRedo" @click="redo">Redo</button>
-      <button :disabled="!canProjectUndo" @click="undoProject">Project undo</button>
-      <button :disabled="!canProjectRedo" @click="redoProject">Project redo</button>
+      <button :disabled="!canUndo" :title="project ? 'Undo the last project change.' : 'Sheet undo.'" @click="undo">Undo</button>
+      <button :disabled="!canRedo" :title="project ? 'Redo the last undone project change.' : 'Sheet redo.'" @click="redo">Redo</button>
       <button @click="save">Save</button>
       <button @click="reloadSaved">Reload</button>
       <button @click="fileEl?.click()">Load file</button>
@@ -2535,12 +2714,22 @@ defineExpose({ roundTrip, doc })
             @resize-start="onResizeStart"
             @resize-move="onResizeMove"
             @resize-end="onResizeEnd"
+            @resize-cancel="onResizeCancel"
             @port-down="onPortDown"
           />
         </template>
         <FlowBridge :port-count="doc.ports.length" :ids="doc.blocks.map((block) => block.id)" :fit-token="fitToken" :pin-key="pinKey" :zoom-token="zoomToken" :frame="frame" @viewport="onViewport" />
       </VueFlow>
-      <svg class="world" :class="{ drawing: tool === 'freehand' || tool === 'wire' || tool === 'port' }" :style="worldStyle" @pointerdown="onPointerDown" @pointermove="onPointerMove" @pointerup="onPointerUp">
+      <svg
+        class="world"
+        :class="{ drawing: tool === 'freehand' || tool === 'wire' || tool === 'port' }"
+        :style="worldStyle"
+        @pointerdown="onPointerDown"
+        @pointermove="onPointerMove"
+        @pointerup="onPointerUp"
+        @pointercancel="onPointerCancel"
+        @lostpointercapture="onLostPointerCapture"
+      >
         <g v-if="snapOn" class="grid">
           <line v-for="value in gridLines" :key="`x-${value}`" :x1="value" y1="0" :x2="value" y2="1600" />
           <line v-for="value in gridLines" :key="`y-${value}`" x1="0" :y1="value" x2="1600" :y2="value" />
@@ -2594,7 +2783,7 @@ defineExpose({ roundTrip, doc })
       <p>Properties</p>
       <section v-if="project" class="components" data-interface-editor>
         <p>Components</p>
-        <p class="hint" data-undo-rule>A project change clears sheet undo. Project undo restores every document.</p>
+        <p class="hint" data-undo-rule>One undo history for this project. Sheet and component edits share it.</p>
         <label>Component <input v-model="componentName" data-component-name /></label>
         <button type="button" data-new-component @click="createAbstract">New component</button>
         <button

@@ -66,7 +66,7 @@ A second Open as on a block that already has a diagram returns the same project 
 
 The conversion is one `ProjectSession` transaction. A refused command returns the same project and adds no step. **Project undo** restores the generic block, including its size, ports, and wires. **Project redo** restores the definition and the diagram.
 
-A project command still discards the sheet undo history. The status line says so. That split stays until D5b. D5b is not released.
+A project command still discards the sheet undo history. The status line says so. That split stays until D5b is implemented. D5b is released; see [d5b-transactional-undo-architecture.md](d5b-transactional-undo-architecture.md).
 
 ## Automated tests
 
@@ -120,4 +120,4 @@ The same note is in [d5a-status-open-as.md](d5a-status-open-as.md).
 
 On 25 Nov 2026 the user closed D5a.1. The user had already verified the parent-sheet return and two hierarchy levels. The user then accepted the remaining lab checks: cancel, the drawn size and existing wires, a second instance, save and load, project undo and redo, a block with no ports, and a component that already exists with no implementation.
 
-D5b stays locked. The size defect found in the same acceptance is D5a.2 and is not part of this acceptance. The user accepted D5a.2 later the same day. Routing, signal-name placement, the toolbar, the FSM editor, text editors, HDL generation, FPGA tools, and the HDL-Maker studio are unchanged.
+D5b is released for architecture work after D5a. The size defect found in the same acceptance is D5a.2 and is not part of this acceptance. The user accepted D5a.2 later the same day. Routing, signal-name placement, the toolbar, the FSM editor, text editors, HDL generation, FPGA tools, and the HDL-Maker studio are unchanged.

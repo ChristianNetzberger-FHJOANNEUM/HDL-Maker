@@ -125,9 +125,29 @@
 - The open-source chain is a backend build for VHDL-93: GHDL Verilog, Yosys, nextpnr-xilinx, fasm2frames, and xc7frames2bit. Tool paths are `workspace/opensource-tools.json`. The process `PATH` is unchanged, and Vivado is not called.
 - Build `osb_574eb1ad8c3b4ac8a36b359745d3534d` repeats the Z7-20 counter. The nextpnr counts match the O1 log, and the bitstream is 4,045,674 bytes. It was not programmed. Details: `docs/o2a-open-source-build.md`.
 
+### Strategic planning — CL / EDU streams
+
+- Architecture-only docs for a long-term Component Library System and Educational Web Applications. Planning IDs **CL0–CL7** and **EDU0–EDU6** avoid collisions with existing Learning Mode **L0** and Studio **E0–E6**. No productive library/education code. Details: `docs/component-library-system-architecture.md`, `docs/educational-web-editor-architecture.md`.
+
+### D5b.4 lab
+
+- Hardens interactive document gestures on the shared manager: unified cancel/commit latch, Escape/blur/visibility/pointercancel/lostcapture, Undo-cancels-only, Redo-refuses-while-gesturing, Save cancels before markSaved. Policy helper `gestureGuard.ts`. Details: `docs/d5b4-interactive-gesture-transactions.md`.
+
+### D5b.3 lab
+
+- Migrates productive sheet and project mutations onto one `TransactionManager` per open project via a ProjectStore adapter in `DiagramStage.vue`. Variant A cutover with minimal gesture binding; no dual history; Project undo/redo buttons removed; shared Undo/Redo hint. Accepted by the user (tests A–C). Details: `docs/d5b3-transaction-migration.md`.
+
+### D5b.2 lab
+
+- Adds `TransactionManager` in `diagram-lab/src/core/transaction.ts`: framework-free project snapshots, content-based no-ops, gesture begin/preview/commit/cancel, fingerprint dirty state, nested-transact refusal, and core selfchecks including a hierarchy round-trip. Accepted; wired in D5b.3. Details: `docs/d5b2-project-transaction-manager.md`.
+
+### D5b.1 lab
+
+- D5a.3 and D5a are accepted and complete. D5b is released. D5b.1 inventories the two existing undo stacks, measures project snapshot cost, compares snapshot / patch / command strategies, and specifies a single project-snapshot transaction manager and migration plan. Architecture accepted; Variant A is binding. Details: `docs/d5b-transactional-undo-architecture.md`.
+
 ### D5a.3c lab
 
-- The Boundary reuses the same flush-rectangle face as a functional block, so port names from the logical interface are visible inside the outline. A component instance no longer recreates unbound symbol pins after a logical port is deleted. A plain generic block of the same symbol still shows the original pins. Wired orphans are not deleted silently. Details: `docs/d5a3-interactive-port-authoring.md`.
+- The Boundary reuses the same flush-rectangle face as a functional block, so port names from the logical interface are visible inside the outline. A component instance no longer recreates unbound symbol pins after a logical port is deleted. A plain generic block of the same symbol still shows the original pins. Wired orphans are not deleted silently. Accepted by the user. Details: `docs/d5a3-interactive-port-authoring.md`.
 
 ### D5a.3b lab
 

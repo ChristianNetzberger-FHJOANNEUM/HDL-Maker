@@ -29,6 +29,7 @@ const emit = defineEmits<{
   resizeStart: [id: string, handle: ResizeHandle, event: PointerEvent]
   resizeMove: [event: PointerEvent]
   resizeEnd: []
+  resizeCancel: []
   portDown: [blockId: string, portId: string, event: PointerEvent]
 }>()
 
@@ -114,6 +115,16 @@ function onHandleUp(event: PointerEvent): void {
   emit('resizeEnd')
 }
 
+function onHandleCancel(event: PointerEvent): void {
+  event.stopPropagation()
+  emit('resizeCancel')
+}
+
+function onHandleLostCapture(): void {
+  // Parent ignores this when the gesture already committed or cancelled (close latch).
+  emit('resizeCancel')
+}
+
 function onPortDown(portId: string, event: PointerEvent): void {
   event.stopPropagation()
   event.preventDefault()
@@ -170,6 +181,8 @@ function onKey(event: KeyboardEvent): void {
       @pointerdown="onHandleDown(handle, $event)"
       @pointermove="onHandleMove"
       @pointerup="onHandleUp"
+      @pointercancel="onHandleCancel"
+      @lostpointercapture="onHandleLostCapture"
       @dblclick.stop
       @click.stop
     />

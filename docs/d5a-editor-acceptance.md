@@ -2,7 +2,7 @@
 
 D0 through D4d stay as they are. D5a does not add an editing feature. It puts three projects in the diagram lab, records how the editor behaves on those projects, and leaves the judgement to a session at the keyboard. The selfcheck only proves that the three projects are valid. It does not accept the editor.
 
-D5b through D5f are specified and are not started. The proposal for one undo history is [diagram-transaction-architecture.md](diagram-transaction-architecture.md). The prioritized gaps are [diagram-editor-usability-backlog.md](diagram-editor-usability-backlog.md).
+D5a is complete. D5b is released; D5b.1 is the architecture specification in [d5b-transactional-undo-architecture.md](d5b-transactional-undo-architecture.md). D5c through D5f are not started. The prioritized gaps are [diagram-editor-usability-backlog.md](diagram-editor-usability-backlog.md).
 
 ## Open the references
 
@@ -86,4 +86,4 @@ Write the three or four things that most got in the way. Those lines set the ord
 
 ## Not in D5a
 
-No HDL-Maker integration, no change under `libs/` or to an EditableDiagram file, no HDL generator, no FPGA programming, no Vue Flow upgrade, and no implementation of D5b through D5f. The later Open-as finding is D5a.1 and is recorded in [d5a1-interactive-top-down-authoring.md](d5a1-interactive-top-down-authoring.md). The user accepted D5a.1 on 25 Nov 2026. The block-size defect from that acceptance is D5a.2, recorded in [d5a2-interactive-block-resizing.md](d5a2-interactive-block-resizing.md). The user accepted D5a.2 the same day. Port authoring is D5a.3, recorded in [d5a3-interactive-port-authoring.md](d5a3-interactive-port-authoring.md). D5a.3a corrects the delete error and the port picture from the first check. D5a.3b synchronizes the logical interface with the Boundary and refuses a wired delete; the user functionally accepted that sync. D5a.3c shows Boundary port names from the logical interface and stops unbound symbol pins on new component instances. D5a.3 waits for the user's acceptance of D5a.3c.
+No HDL-Maker integration, no change under `libs/` or to an EditableDiagram file, no HDL generator, no FPGA programming, no Vue Flow upgrade, and no implementation of D5c through D5f in this note. The later Open-as finding is D5a.1 and is recorded in [d5a1-interactive-top-down-authoring.md](d5a1-interactive-top-down-authoring.md). The user accepted D5a.1 on 25 Nov 2026. The block-size defect from that acceptance is D5a.2, recorded in [d5a2-interactive-block-resizing.md](d5a2-interactive-block-resizing.md). The user accepted D5a.2 the same day. Port authoring is D5a.3, recorded in [d5a3-interactive-port-authoring.md](d5a3-interactive-port-authoring.md). D5a.3a–D5a.3c are accepted; D5a.3 and D5a are complete. D5b is released; the architecture specification is [d5b-transactional-undo-architecture.md](d5b-transactional-undo-architecture.md).

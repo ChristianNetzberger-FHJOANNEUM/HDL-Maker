@@ -2,7 +2,7 @@
 
 Status for the external agent. D5a is in the user's own acceptance session. This file records one finding so the next work order can be written. It is not that work order.
 
-D5a.1 implements this finding in the lab. The record is [d5a1-interactive-top-down-authoring.md](d5a1-interactive-top-down-authoring.md). On 25 Nov 2026 the user closed the functional acceptance of D5a.1. The block-size defect found in that acceptance is D5a.2 and is recorded in [d5a2-interactive-block-resizing.md](d5a2-interactive-block-resizing.md). The user accepted D5a.2 on 25 Nov 2026. Port authoring is D5a.3, recorded in [d5a3-interactive-port-authoring.md](d5a3-interactive-port-authoring.md). D5a.3a corrects the delete error and the port picture from the first check. D5a.3b keeps the logical interface and the Boundary together, and refuses a delete when the port is wired anywhere; the user functionally accepted that sync. D5a.3c shows Boundary port names and stops unbound symbol pins on new component instances. D5a.3 waits for the user's acceptance of D5a.3c. D5b is not released.
+D5a.1 implements this finding in the lab. The record is [d5a1-interactive-top-down-authoring.md](d5a1-interactive-top-down-authoring.md). On 25 Nov 2026 the user closed the functional acceptance of D5a.1. The block-size defect found in that acceptance is D5a.2 and is recorded in [d5a2-interactive-block-resizing.md](d5a2-interactive-block-resizing.md). The user accepted D5a.2 on 25 Nov 2026. Port authoring is D5a.3, recorded in [d5a3-interactive-port-authoring.md](d5a3-interactive-port-authoring.md). D5a.3a–D5a.3c are accepted; D5a.3 and D5a are complete. D5b is released; see [d5b-transactional-undo-architecture.md](d5b-transactional-undo-architecture.md).
 
 ## What the user already tried
 
@@ -69,7 +69,7 @@ On 25 Nov 2026 the user closed the rest of the D5a.1 acceptance. The user accept
 
 The same session showed that a numeric width and height change the node box without moving the symbol stroke, and that a selected block has no resize handles. That defect is D5a.2. It is not part of the closed D5a.1 acceptance.
 
-D5b stays locked. No further phase starts from this note.
+D5b is released. Implementation waits for architecture acceptance of D5b.1. No further phase beyond that specification starts from this note.
 
 ## Separate findings, not this order
 

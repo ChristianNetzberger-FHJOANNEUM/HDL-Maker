@@ -1,6 +1,8 @@
 # Diagram transaction architecture
 
-D4c and D4d keep two histories. That was a deliberate choice so a sheet undo could not write an old document over the other instances of a component. It is also the reason a later sheet edit can disappear. D5a records the rule and the cases. D5b is the replacement. D5b is not implemented.
+D4c and D4d keep two histories. That was a deliberate choice so a sheet undo could not write an old document over the other instances of a component. It is also the reason a later sheet edit can disappear. D5a records the rule and the cases. D5b is the replacement.
+
+D5a is complete. D5b is released. The binding D5b.1 specification is [d5b-transactional-undo-architecture.md](d5b-transactional-undo-architecture.md). This file remains as the record of the two-stack rule and the loss cases that D5b must remove. D5b is not implemented yet; D5b.1 is architecture only.
 
 ## The rule that is in the lab today
 

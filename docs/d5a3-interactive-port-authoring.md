@@ -2,7 +2,7 @@
 
 D5a.3 places and moves ports on the sheet. A port can sit on the left, right, top, or bottom of a block. Dragging it changes that graphic position. It does not change the port id, the net, or the symbol definition.
 
-D5a.1 and D5a.2 are accepted. The user closed D5a.2 on 25 Nov 2026 after their own session. The first D5a.3 check found a delete error and a port picture that did not match the intended drawing. D5a.3a corrects both. The next check found that a logical port and the Boundary did not stay the same interface. D5a.3b is that correction. The user functionally accepted D5a.3b for bidirectional interface synchronization. D5a.3c corrects Boundary port labels and stops unbound symbol pins from returning on new component instances. D5a.3 stays open until the user accepts D5a.3c. D5b is not released.
+D5a.1 and D5a.2 are accepted. The user closed D5a.2 on 25 Nov 2026 after their own session. The first D5a.3 check found a delete error and a port picture that did not match the intended drawing. D5a.3a corrects both. The next check found that a logical port and the Boundary did not stay the same interface. D5a.3b is that correction. The user accepted D5a.3b for bidirectional interface synchronization. D5a.3c corrects Boundary port labels and stops unbound symbol pins from returning on new component instances. The user accepted D5a.3c. D5a.3 is complete. D5a is complete. D5b is released; its specification starts at [d5b-transactional-undo-architecture.md](d5b-transactional-undo-architecture.md).
 
 ## Three positions
 
@@ -117,7 +117,7 @@ On `http://localhost:5174/`, **New project**, Snap on, zoom 2.5 unless a check s
 - An automatic wire may be recomputed. A manual wire follows its ends. There is no new router and no obstacle avoidance.
 - A project command still discards sheet undo.
 - Before D5a.3c, a new component instance could show an unbound symbol pin that was no longer on the logical interface. D5a.3c drops those unbound pins on component instances. A plain generic block of the same symbol still shows the original pins. Wired or legacy orphans are not deleted silently.
-- D5a.3a left a wired copy in place after removing its logical port. D5a.3b refuses that delete instead. The record of the D5a.3a pass is kept below. The user accepted D5a.3b for sync. D5a.3c is waiting for the user's own check. D5b is not released.
+- D5a.3a left a wired copy in place after removing its logical port. D5a.3b refuses that delete instead. The record of the D5a.3a pass is kept below. The user accepted D5a.3b for sync and D5a.3c for presentation. D5a.3 is complete. D5b is released.
 
 ## D5a.3a — corrections after the first check
 
@@ -210,4 +210,4 @@ The lab check at `http://localhost:5174/` started from **New project** after the
 
 Not clicked in this pass: a freehand drag of a Boundary port onto another side with the pointer (side and position were set from the properties), Duplicate instance and Make unique in the browser (covered by the selfcheck), and a wired-orphan repair path. Cursor glyphs were not photographed.
 
-D5a.3c waits for the user's own acceptance. D5a.3 stays open until then. D5b is not released.
+The user accepted D5a.3c after their own practical test of Boundary names and of new instances without deleted logical ports. D5a.3 is complete. D5a is complete. D5b is released.

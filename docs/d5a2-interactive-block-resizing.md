@@ -2,7 +2,7 @@
 
 D5a.2 makes the size of one block instance the geometry of its picture. A selected block can be scaled from eight handles. The same size is written when Width or Height changes in the properties. The symbol definition is not rewritten.
 
-D5a.1 is accepted. On 25 Nov 2026 the user closed that acceptance. The user's own session had already checked the return to the parent sheet and two hierarchy levels. The user accepted the remaining checks from the lab session as well. On the same day the user accepted D5a.2 after their own practical test. D5b is not released.
+D5a.1 is accepted. On 25 Nov 2026 the user closed that acceptance. The user's own session had already checked the return to the parent sheet and two hierarchy levels. The user accepted the remaining checks from the lab session as well. On the same day the user accepted D5a.2 after their own practical test. D5a is later complete; D5b is released for architecture work.
 
 ## Cause
 
@@ -108,4 +108,4 @@ The pass used `http://localhost:5174/`, a new project named Design, Snap on, and
 - The symbol editor still draws the definition at its native size. An instance resize does not change that drawing.
 - A symbol created with **New symbol** was not placed in this browser pass. A rectangle, a diamond, an SVG, and a PNG were.
 - The cursor glyphs were not recorded. The handles set the resize cursors in the element style.
-- The user accepted D5a.2 on 25 Nov 2026. D5b is not released.
+- The user accepted D5a.2 on 25 Nov 2026. D5b is released after D5a; see [d5b-transactional-undo-architecture.md](d5b-transactional-undo-architecture.md).

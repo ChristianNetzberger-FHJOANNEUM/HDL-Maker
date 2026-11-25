@@ -20,6 +20,8 @@ import { duplicateComponent, expandComponent, extractComponent, makeUnique, prev
 import { addBoundPin, addInterfacePort, bindInterfacePort, classifyPortDelete, createImplementation, interfaceDiagnostics, logicalPortName, openAsDiagram, removeInterfacePort, renameInterfacePort } from './interface'
 import { breadcrumbs, contentBounds, descend, DocumentSessions, parentLocation, resolveLocation, rootLocation, sharedDefinitionLabel, treeNodes } from './navigate'
 import { JsonProjectStorage, parseProject, ProjectSession, sampleProject, serializeProject } from './project'
+import { TransactionManager } from './transaction'
+import { GestureCloseLatch, actionForInterrupt, actionForRedoWhileGesturing } from '../view/gestureGuard'
 import { compareSymbols } from './compare'
 import { acceptanceSheet, benchSheet } from './acceptance'
 import { commitSymbolUpdate, detachInstance, dropPortWires, prepareSymbolUpdate, rebindPort } from './migration'
@@ -2306,6 +2308,751 @@ if (faceOpened.ok) {
     ),
     'save and load keep boundary labels, omit deleted ports, and keep existing wires',
   )
+}
+
+// --- D5b.2 unified project transaction manager (core only; not wired to the stage) ---
+{
+  const tm = TransactionManager.holding(createProject('Txn'))
+  check(!tm.canUndo && !tm.canRedo && !tm.isDirty && !tm.isGesturing, 'a fresh manager is clean with an empty history')
+  check(tm.labelUndo === null && tm.labelRedo === null, 'empty history has no labels')
+
+  const first = tm.transact('rename', (project) => {
+    project.name = 'Alpha'
+    return project
+  })
+  check(Boolean(first.ok && tm.project.name === 'Alpha' && tm.canUndo && !tm.canRedo && tm.isDirty && tm.labelUndo === 'rename'), 'a successful transact records one undo step')
+
+  const sameRefNoop = tm.transact('noop-ref', (project) => project)
+  check(Boolean(sameRefNoop.ok && !tm.canRedo && tm.undoDepth === 1 && tm.project.name === 'Alpha'), 'returning the same draft with identical content adds no history entry')
+
+  const newRefNoop = tm.transact('noop-clone', (project) => parseProject(serializeProject(project)))
+  check(Boolean(newRefNoop.ok && tm.undoDepth === 1 && tm.project.name === 'Alpha'), 'a new object reference with identical content adds no history entry')
+
+  const refused = tm.transact('refuse', () => ({ ok: false as const, message: 'no' }))
+  check(Boolean(!refused.ok && refused.message === 'no' && tm.undoDepth === 1 && tm.project.name === 'Alpha' && !tm.canRedo), 'a refused transact leaves history and redo untouched')
+
+  const exploded = tm.transact('boom', (project) => {
+    project.name = 'Broken'
+    throw new Error('partial')
+  })
+  check(Boolean(!exploded.ok && exploded.message === 'partial' && tm.project.name === 'Alpha' && tm.undoDepth === 1 && !tm.canRedo), 'an exception rolls back and adds no history entry')
+
+  tm.transact('beta', (project) => {
+    project.name = 'Beta'
+    return project
+  })
+  tm.transact('gamma', (project) => {
+    project.name = 'Gamma'
+    return project
+  })
+  check(tm.undoDepth === 3 && tm.project.name === 'Gamma' && tm.labelUndo === 'gamma', 'labels track the latest undo entry')
+
+  tm.undo()
+  check(tm.project.name === 'Beta' && tm.canRedo && tm.labelRedo === 'gamma', 'undo restores the previous project')
+  tm.undo()
+  check(tm.project.name === 'Alpha' && tm.redoDepth === 2, 'repeated undo walks the past')
+  tm.redo()
+  check(tm.project.name === 'Beta', 'redo restores the undone project')
+
+  const isolation = TransactionManager.holding(createProject('Iso'))
+  isolation.transact('one', (project) => {
+    project.name = 'One'
+    return project
+  })
+  isolation.transact('two', (project) => {
+    project.name = 'Two'
+    return project
+  })
+  const oldTwo = isolation.project
+  isolation.undo()
+  check(isolation.project.name === 'One' && isolation.project !== oldTwo, 'undo installs a fresh graph')
+  oldTwo.name = 'CorruptTwo'
+  oldTwo.documents[0]!.blocks.push({ id: 'blk_corrupt', name: 'x', x: 0, y: 0, width: 10, height: 10 })
+  isolation.redo()
+  check(
+    isolation.project.name === 'Two' &&
+      isolation.project !== oldTwo &&
+      !isolation.project.documents[0]?.blocks.some((block) => block.id === 'blk_corrupt'),
+    'history snapshots are isolated from later mutations of retired live graphs',
+  )
+
+  tm.redo()
+  check(tm.project.name === 'Gamma' && !tm.canRedo, 'main history can redo back to the tip')
+  tm.undo()
+  const branch = tm.transact('branch', (project) => {
+    project.name = 'Branch'
+    return project
+  })
+  check(Boolean(branch.ok && !tm.canRedo && tm.project.name === 'Branch'), 'a successful edit after undo drops the redo future')
+
+  tm.undo()
+  check(tm.project.name === 'Beta' && tm.canRedo, 'undo after a branch restores the pre-branch tip')
+  const idleBranch = tm.transact('idle', (project) => project)
+  check(Boolean(idleBranch.ok && tm.canRedo && tm.project.name === 'Beta'), 'a no-op after undo does not drop the redo future')
+  const failBranch = tm.transact('fail', () => ({ ok: false as const, message: 'nope' }))
+  check(Boolean(!failBranch.ok && tm.canRedo), 'a failed transact after undo keeps the redo future')
+  tm.redo()
+  check(tm.project.name === 'Branch', 'redo still works after a no-op and a refused edit')
+
+  const beginTwice = tm.begin('drag')
+  check(beginTwice.ok && tm.isGesturing, 'begin opens a gesture')
+  const beginAgain = tm.begin('other')
+  check(Boolean(!beginAgain.ok && tm.isGesturing), 'a second begin is refused')
+  tm.preview((project) => {
+    project.name = 'Preview1'
+  })
+  tm.preview((project) => {
+    project.name = 'Preview2'
+  })
+  const depthBeforePreviews = tm.undoDepth
+  check(tm.project.name === 'Preview2' && tm.undoDepth === depthBeforePreviews, 'previews mutate live state without adding history yet')
+  const committed = tm.commit()
+  check(committed && tm.project.name === 'Preview2' && tm.undoDepth === depthBeforePreviews + 1 && !tm.isGesturing, 'commit records exactly one history entry')
+
+  tm.begin('cancel-me')
+  tm.preview((project) => {
+    project.name = 'Temp'
+  })
+  const redoBeforeCancel = tm.canRedo
+  tm.cancel()
+  check(tm.project.name === 'Preview2' && !tm.isGesturing && tm.canRedo === redoBeforeCancel, 'cancel restores the baseline and does not touch redo')
+
+  tm.begin('noop-gesture')
+  const noopCommit = tm.commit()
+  check(!noopCommit && tm.undoDepth === depthBeforePreviews + 1, 'a no-op gesture commit adds no history entry')
+
+  tm.begin('preview-boom')
+  const previewFail = tm.preview(() => {
+    throw new Error('preview broke')
+  })
+  check(Boolean(!previewFail.ok && !tm.isGesturing && tm.project.name === 'Preview2'), 'a preview error restores the baseline and closes the gesture')
+
+  check(!tm.commit() && tm.preview(() => undefined).ok === false, 'commit and preview without begin are refused')
+
+  tm.begin('block-undo')
+  const undoDuring = tm.undo()
+  check(Boolean(!undoDuring.ok && tm.isGesturing), 'undo during a gesture is refused')
+  tm.cancel()
+
+  const nested = tm.transact('outer', (project) => {
+    project.name = 'Outer'
+    const inner = tm.transact('inner', (child) => {
+      child.name = 'Inner'
+      return child
+    })
+    check(!inner.ok, 'nested transact is refused')
+    return project
+  })
+  check(Boolean(nested.ok && tm.project.name === 'Outer'), 'the outer transact still commits when a nested call is refused')
+
+  tm.markSaved()
+  check(!tm.isDirty && tm.canUndo, 'markSaved clears dirty without clearing history')
+  tm.transact('after-save', (project) => {
+    project.name = 'DirtyAgain'
+    return project
+  })
+  check(tm.isDirty, 'an edit after save is dirty')
+  tm.undo()
+  check(!tm.isDirty && tm.project.name === 'Outer', 'undo back to the saved fingerprint is clean')
+  tm.redo()
+  check(tm.isDirty && tm.project.name === 'DirtyAgain', 'redo away from the saved fingerprint is dirty')
+
+  tm.markSaved()
+  tm.undo()
+  tm.transact('fork', (project) => {
+    project.name = 'Fork'
+    return project
+  })
+  check(tm.isDirty && !tm.canRedo, 'a branch after undo of a saved state is dirty and has no redo')
+
+  const capped = TransactionManager.holding(createProject('Cap'), { limit: 2 })
+  capped.transact('a', (project) => {
+    project.name = 'A'
+    return project
+  })
+  capped.transact('b', (project) => {
+    project.name = 'B'
+    return project
+  })
+  capped.transact('c', (project) => {
+    project.name = 'C'
+    return project
+  })
+  check(capped.undoDepth === 2 && capped.project.name === 'C', 'the history limit keeps only the newest undo entries')
+  capped.undo()
+  capped.undo()
+  check(capped.project.name === 'A' && !capped.canUndo, 'evicted oldest entries cannot be undone past the cap')
+  capped.markSaved()
+  capped.redo()
+  capped.redo()
+  check(capped.isDirty && capped.project.name === 'C', 'eviction does not break dirty detection against the saved fingerprint')
+
+  capped.resetHistory()
+  check(!capped.canUndo && !capped.canRedo && capped.project.name === 'C', 'resetHistory clears stacks and keeps the live project')
+
+  capped.reset(createProject('Fresh'))
+  check(capped.project.name === 'Fresh' && !capped.canUndo && !capped.isDirty, 'reset loads a project, clears history, and marks saved')
+
+  // Hierarchy-spanning round-trip through the same manager instance.
+  const face = createProject('FaceTxn')
+  const faceRoot = documentById(face, face.rootDocumentId)
+  let faceSymbol = ''
+  let faceBlock = ''
+  if (faceRoot) {
+    faceSymbol = defineSymbol(faceRoot, {
+      name: 'Generic block',
+      width: 88,
+      height: 64,
+      ports: [
+        { id: 'pin_txn_in', name: 'in', side: 'left', t: 0.5 },
+        { id: 'pin_txn_out', name: 'out', side: 'right', t: 0.5 },
+      ],
+    })
+    faceBlock = instantiateSymbol(faceRoot, faceSymbol, { x: 80, y: 80 }, 'Generic block') ?? ''
+    addPortAt(faceRoot, faceBlock, 'top', 0.3)
+  }
+  const hierarchy = TransactionManager.holding(face)
+  hierarchy.markSaved()
+
+  const opened = hierarchy.transact('open-as', (project) => openAsDiagram(project, project.rootDocumentId, faceBlock))
+  check(opened.ok, 'open as runs through the transaction manager')
+  const componentId = opened.ok ? opened.value.componentId : ''
+  const childId = opened.ok ? opened.value.documentId : ''
+
+  const sheetEdit = hierarchy.transact('sheet-name', (project) => {
+    const root = documentById(project, project.rootDocumentId)
+    const block = root?.blocks.find((item) => item.id === faceBlock)
+    if (block) block.name = 'Unit'
+    return project
+  })
+  check(Boolean(sheetEdit.ok && documentById(hierarchy.project, hierarchy.project.rootDocumentId)?.blocks.some((block) => block.id === faceBlock && block.name === 'Unit')), 'a sheet field change is one transaction')
+
+  const portAdd = hierarchy.transact('add-clk', (project) => addInterfacePort(project, componentId, 'clk', 'top'))
+  const clkId = portAdd.ok ? portAdd.value.interfacePortId : ''
+  check(Boolean(portAdd.ok && clkId), 'adding a logical port is one transaction')
+
+  const second = hierarchy.transact('place-second', (project) =>
+    instantiateComponent(project, project.rootDocumentId, componentId, { x: 320, y: 80 }, 'Unit 2'),
+  )
+  check(second.ok, 'place on sheet is one transaction')
+
+  const renamed = hierarchy.transact('rename-clk', (project) => renameInterfacePort(project, componentId, clkId, 'clock'))
+  check(renamed.ok, 'renaming a logical port is one transaction')
+
+  const rootDoc = documentById(hierarchy.project, hierarchy.project.rootDocumentId)
+  const childDoc = documentById(hierarchy.project, childId)
+  const boundary = childDoc?.blocks.find((block) => block.name === 'Boundary' && !block.componentId)
+  const instances = rootDoc?.blocks.filter((block) => block.componentId === componentId) ?? []
+  check(
+    Boolean(
+      boundary &&
+        childDoc?.ports.some((port) => port.blockId === boundary.id && port.interfacePortId === clkId && port.name === 'clock') &&
+        instances.length === 2 &&
+        instances.every((block) => rootDoc?.ports.some((port) => port.blockId === block.id && port.interfacePortId === clkId && port.name === 'clock')),
+    ),
+    'one manager history keeps boundary and every instance synchronized',
+  )
+
+  const mate = rootDoc && placeTemplate(rootDoc, BLOCK_TEMPLATES[0], false)
+  const matePort = rootDoc && mate ? addPortAt(rootDoc, mate, 'left', 0.5) : null
+  // Direct mutation outside the manager is only for building a wire fixture; capture via a tracked transact next.
+  const wired = hierarchy.transact('wire-out', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)
+    if (!sheet || !mate || !matePort) return { ok: false as const, message: 'missing sheet' }
+    const out = sheet.ports.find((port) => port.blockId === faceBlock && port.name === 'out')
+    if (!out) return { ok: false as const, message: 'missing out' }
+    const segmentId = linkPorts(sheet, out.id, matePort, 'out')
+    return segmentId ? project : { ok: false as const, message: 'wire failed' }
+  })
+  check(wired.ok, 'drawing a wire is one transaction')
+
+  const refusedDelete = hierarchy.transact('delete-out', (project) => {
+    const out = documentById(project, project.rootDocumentId)?.ports.find((port) => port.blockId === faceBlock && port.name === 'out')
+    const decision = out ? classifyPortDelete(project, documentById(project, project.rootDocumentId)!, out.id) : null
+    if (!decision || decision.kind !== 'logical') return { ok: false as const, message: 'expected logical out' }
+    return removeInterfacePort(project, decision.componentId, decision.interfacePortId)
+  })
+  check(Boolean(!refusedDelete.ok && documentById(hierarchy.project, hierarchy.project.rootDocumentId)?.segments.length), 'a wired logical delete is refused with no history entry from that attempt')
+
+  const expected = serializeProject(hierarchy.project)
+  const steps = hierarchy.undoDepth
+  for (let index = 0; index < steps; index += 1) hierarchy.undo()
+  check(!hierarchy.canUndo && hierarchy.project.name === 'FaceTxn', 'full undo returns to the initial project')
+  for (let index = 0; index < steps; index += 1) hierarchy.redo()
+  check(serializeProject(hierarchy.project) === expected, 'full redo restores the canonical project byte-for-byte')
+  const restoredChild = documentById(hierarchy.project, childId)
+  const restoredBoundary = restoredChild?.blocks.find((block) => block.name === 'Boundary' && !block.componentId)
+  check(
+    Boolean(
+      restoredBoundary &&
+        restoredChild?.ports.some((port) => port.blockId === restoredBoundary.id && port.interfacePortId === clkId && port.name === 'clock') &&
+        documentById(hierarchy.project, hierarchy.project.rootDocumentId)?.segments.length,
+    ),
+    'redo keeps interface ids, boundary ports, and wires',
+  )
+
+  // Performance samples for the status report (Variant A snapshots).
+  const perfProjects = [
+    { label: 'empty', project: createProject('Empty') },
+    { label: 'sample', project: sampleProject() },
+    { label: 'digital', project: digitalProject() },
+    { label: 'signal', project: signalProject() },
+    { label: 'general', project: generalProject() },
+  ]
+  const grown = digitalProject()
+  const grownRoot = documentById(grown, grown.rootDocumentId)
+  if (grownRoot) {
+    for (let i = 0; i < 200; i += 1) {
+      grownRoot.blocks.push({
+        id: `blk_perf_${i}`,
+        name: `B${i}`,
+        x: (i % 20) * 100,
+        y: Math.floor(i / 20) * 80,
+        width: 88,
+        height: 64,
+      })
+    }
+  }
+  perfProjects.push({ label: 'digital+200', project: grown })
+
+  const perfLines: string[] = []
+  for (const entry of perfProjects) {
+    const manager = TransactionManager.holding(parseProject(serializeProject(entry.project)))
+    const bytes = manager.snapshotByteLength()
+    const times = { transact: 0, undo: 0, redo: 0 }
+    const rounds = 20
+    for (let i = 0; i < rounds; i += 1) {
+      const t0 = performance.now()
+      manager.transact(`step-${i}`, (project) => {
+        project.extra = { ...(project.extra ?? {}), n: String(i) }
+        return project
+      })
+      times.transact += performance.now() - t0
+    }
+    for (let i = 0; i < rounds; i += 1) {
+      const t0 = performance.now()
+      manager.undo()
+      times.undo += performance.now() - t0
+    }
+    for (let i = 0; i < rounds; i += 1) {
+      const t0 = performance.now()
+      manager.redo()
+      times.redo += performance.now() - t0
+    }
+    // Fill toward the default 40-entry cap.
+    manager.reset(parseProject(serializeProject(entry.project)))
+    for (let i = 0; i < 40; i += 1) {
+      manager.transact(`fill-${i}`, (project) => {
+        project.extra = { ...(project.extra ?? {}), fill: String(i) }
+        return project
+      })
+    }
+    perfLines.push(
+      `${entry.label} bytes=${bytes} hist40≈${(bytes * 40 / 1e6).toFixed(3)}MB ` +
+        `transactMs=${(times.transact / rounds).toFixed(3)} undoMs=${(times.undo / rounds).toFixed(3)} redoMs=${(times.redo / rounds).toFixed(3)} depth=${manager.undoDepth}`,
+    )
+    check(manager.undoDepth === 40, `${entry.label} reaches forty undo entries`)
+  }
+  console.log(`d5b2-perf\n${perfLines.join('\n')}`)
+}
+
+// --- D5b.3 migration: one history for sheet + project ops (adapter pattern used by DiagramStage) ---
+{
+  type Editor = {
+    box: { project: ReturnType<typeof createProject>; sheetId: string }
+    tm: TransactionManager
+    execute: (label: string, apply: (sheet: import('./document').DiagramDocument) => void) => void
+    projectOp: <T>(label: string, make: (project: ReturnType<typeof createProject>) => import('./component').ProjectResult<T>) => import('./component').ProjectResult<T>
+  }
+
+  function openEditor(seed: ReturnType<typeof createProject>): Editor {
+    const box = { project: seed, sheetId: seed.rootDocumentId }
+    const tm = new TransactionManager({
+      get: () => box.project,
+      set: (next) => {
+        box.project = next
+      },
+    })
+    return {
+      box,
+      tm,
+      execute(label, apply) {
+        const sheetId = box.sheetId
+        tm.transact(label, (proj) => {
+          const sheet = documentById(proj, sheetId)
+          if (!sheet) return { ok: false as const, message: 'missing sheet' }
+          apply(sheet)
+          return proj
+        })
+      },
+      projectOp(label, make) {
+        const result = tm.transact(label, (proj) => {
+          const outcome = make(proj)
+          if (!outcome.ok) return { ok: false as const, message: outcome.message }
+          return { ok: true as const, project: outcome.project, value: outcome.value }
+        })
+        if (!result.ok) return { ok: false, project: box.project, message: result.message }
+        return { ok: true, project: box.project, value: result.value }
+      },
+    }
+  }
+
+  const editor = openEditor(createProject('Migrate'))
+  const snapshots: string[] = [serializeProject(editor.box.project)]
+
+  let blockId = ''
+  editor.execute('place', (sheet) => {
+    const symbolId = defineSymbol(sheet, {
+      name: 'Generic block',
+      width: 88,
+      height: 64,
+      ports: [
+        { id: 'pin_mig_in', name: 'in', side: 'left', t: 0.5 },
+        { id: 'pin_mig_out', name: 'out', side: 'right', t: 0.5 },
+      ],
+    })
+    blockId = instantiateSymbol(sheet, symbolId, { x: 80, y: 80 }, 'Generic block') ?? ''
+  })
+  snapshots.push(serializeProject(editor.box.project))
+
+  editor.execute('resize', (sheet) => {
+    setBlockFields(sheet, blockId, { width: 200, height: 120 })
+  })
+  snapshots.push(serializeProject(editor.box.project))
+
+  editor.execute('add-port', (sheet) => {
+    addPortAt(sheet, blockId, 'top', 0.4)
+  })
+  snapshots.push(serializeProject(editor.box.project))
+
+  const opened = editor.projectOp('open-as', (project) => openAsDiagram(project, project.rootDocumentId, blockId))
+  check(opened.ok, 'D5b.3 open as through the shared manager')
+  const componentId = opened.ok ? opened.value.componentId : ''
+  const childId = opened.ok ? opened.value.documentId : ''
+  snapshots.push(serializeProject(editor.box.project))
+
+  editor.box.sheetId = childId
+  let childBlock = ''
+  editor.execute('child-place', (sheet) => {
+    childBlock = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+  })
+  snapshots.push(serializeProject(editor.box.project))
+
+  const boundaryId = documentById(editor.box.project, childId)?.blocks.find((block) => block.name === 'Boundary')?.id ?? ''
+  const boundaryPort = editor.projectOp('boundary-port', (project) =>
+    addInterfacePort(project, componentId, 'aux', 'left', { documentId: childId, blockId: boundaryId, t: 0.5 }),
+  )
+  check(boundaryPort.ok, 'D5b.3 boundary port through the shared manager')
+  snapshots.push(serializeProject(editor.box.project))
+
+  editor.box.sheetId = editor.box.project.rootDocumentId
+  const second = editor.projectOp('place-second', (project) =>
+    instantiateComponent(project, project.rootDocumentId, componentId, { x: 320, y: 80 }, 'Copy'),
+  )
+  check(second.ok, 'D5b.3 second instance through the shared manager')
+  snapshots.push(serializeProject(editor.box.project))
+
+  editor.execute('wire', (sheet) => {
+    const out = sheet.ports.find((port) => port.blockId === blockId && (port.name === 'out' || port.side === 'right'))
+    const mate = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    const matePort = addPortAt(sheet, mate, 'left', 0.5)
+    if (out && matePort) linkPorts(sheet, out.id, matePort, 'out')
+  })
+  snapshots.push(serializeProject(editor.box.project))
+
+  const renamed = editor.projectOp('rename-aux', (project) => {
+    const aux = componentById(project, componentId)?.ports.find((port) => port.name === 'aux')
+    if (!aux) return { ok: false, project, message: 'missing aux' }
+    return renameInterfacePort(project, componentId, aux.id, 'enable')
+  })
+  check(renamed.ok, 'D5b.3 rename through the shared manager')
+  snapshots.push(serializeProject(editor.box.project))
+
+  const depth = editor.tm.undoDepth
+  check(depth === snapshots.length - 1, 'D5b.3 records one history entry per document change')
+
+  // Navigation does not touch history.
+  const beforeNav = editor.tm.undoDepth
+  editor.box.sheetId = childId
+  editor.box.sheetId = editor.box.project.rootDocumentId
+  check(editor.tm.undoDepth === beforeNav, 'D5b.3 navigation does not add history entries')
+
+  for (let index = snapshots.length - 2; index >= 0; index -= 1) {
+    editor.tm.undo()
+    check(serializeProject(editor.box.project) === snapshots[index], `D5b.3 undo step ${snapshots.length - 2 - index} matches the reference snapshot`)
+  }
+  check(!editor.tm.canUndo, 'D5b.3 full undo reaches the initial project')
+
+  for (let index = 1; index < snapshots.length; index += 1) {
+    editor.tm.redo()
+    check(serializeProject(editor.box.project) === snapshots[index], `D5b.3 redo step ${index} matches the reference snapshot`)
+  }
+
+  editor.tm.undo()
+  const keptRedo = editor.tm.canRedo
+  editor.tm.transact('noop-after-undo', (project) => project)
+  check(editor.tm.canRedo === keptRedo, 'D5b.3 no-op after undo keeps redo')
+  editor.tm.transact('branch-after-undo', (project) => {
+    project.name = 'Branched'
+    return project
+  })
+  check(!editor.tm.canRedo && editor.box.project.name === 'Branched', 'D5b.3 successful edit after undo drops redo')
+
+  editor.tm.markSaved()
+  check(!editor.tm.isDirty, 'D5b.3 markSaved clears dirty')
+  editor.execute('dirty-edit', (sheet) => {
+    const block = sheet.blocks[0]
+    if (block) block.name = 'Dirty'
+  })
+  check(editor.tm.isDirty, 'D5b.3 sheet edit after save is dirty')
+  editor.tm.undo()
+  check(!editor.tm.isDirty, 'D5b.3 undo to saved fingerprint is clean')
+
+  // Mixed sheet then project then sheet on one stack.
+  const mixed = openEditor(createProject('Mixed'))
+  mixed.execute('sheet-first', (sheet) => {
+    placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+  })
+  mixed.projectOp('new-component', (project) => addComponent(project, { name: 'Part', ports: [], implementation: { kind: 'none' } }))
+  mixed.execute('sheet-again', (sheet) => {
+    const block = sheet.blocks[0]
+    if (block) setBlockFields(sheet, block.id, { x: 40, y: 40 })
+  })
+  check(mixed.tm.undoDepth === 3, 'D5b.3 sheet and project ops share one chronological stack')
+  mixed.tm.undo()
+  check(documentById(mixed.box.project, mixed.box.project.rootDocumentId)?.blocks[0]?.x !== 40, 'D5b.3 undoing the later sheet edit leaves the project command')
+  mixed.tm.undo()
+  check(mixed.box.project.components.length === 0, 'D5b.3 undoing the project command removes the component')
+  mixed.tm.undo()
+  check(documentById(mixed.box.project, mixed.box.project.rootDocumentId)?.blocks.length === 0, 'D5b.3 undoing the first sheet edit clears the sheet')
+
+  // Wired delete refusal adds no entry.
+  const wired = openEditor(createProject('Wired'))
+  let wiredBlock = ''
+  wired.execute('place', (sheet) => {
+    const symbolId = defineSymbol(sheet, {
+      name: 'Generic block',
+      width: 88,
+      height: 64,
+      ports: [
+        { id: 'pin_w_in', name: 'in', side: 'left', t: 0.5 },
+        { id: 'pin_w_out', name: 'out', side: 'right', t: 0.5 },
+      ],
+    })
+    wiredBlock = instantiateSymbol(sheet, symbolId, { x: 80, y: 80 }, 'Generic block') ?? ''
+  })
+  const wiredOpen = wired.projectOp('open-as', (project) => openAsDiagram(project, project.rootDocumentId, wiredBlock))
+  const wiredComponent = wiredOpen.ok ? wiredOpen.value.componentId : ''
+  wired.execute('wire', (sheet) => {
+    const out = sheet.ports.find((port) => port.blockId === wiredBlock && port.name === 'out')
+    const mate = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    const matePort = addPortAt(sheet, mate, 'left', 0.5)
+    if (out && matePort) linkPorts(sheet, out.id, matePort, 'out')
+  })
+  const beforeRefuse = wired.tm.undoDepth
+  const refused = wired.projectOp('delete-out', (project) => {
+    const out = documentById(project, project.rootDocumentId)?.ports.find((port) => port.blockId === wiredBlock && port.name === 'out')
+    const decision = out ? classifyPortDelete(project, documentById(project, project.rootDocumentId)!, out.id) : null
+    if (!decision || decision.kind !== 'logical') return { ok: false, project, message: 'expected logical' }
+    return removeInterfacePort(project, decision.componentId, decision.interfacePortId)
+  })
+  check(Boolean(!refused.ok && wired.tm.undoDepth === beforeRefuse), 'D5b.3 refused wired delete adds no history entry')
+  check(Boolean(wiredComponent && documentById(wired.box.project, wired.box.project.rootDocumentId)?.segments.length), 'D5b.3 refused delete keeps the wire')
+
+  // Digital+200 size note: D5b.1 counted blocks+ports (~81KB); D5b.2/D5b.3 blocks-only (~49KB).
+  const grownPorts = digitalProject()
+  const grownRootPorts = documentById(grownPorts, grownPorts.rootDocumentId)
+  if (grownRootPorts) {
+    for (let i = 0; i < 200; i += 1) {
+      const id = `blk_d5b3_${i}`
+      grownRootPorts.blocks.push({ id, name: `B${i}`, x: (i % 20) * 100, y: Math.floor(i / 20) * 80, width: 88, height: 64 })
+      grownRootPorts.ports.push({ id: `prt_${i}_a`, blockId: id, name: 'in', side: 'left', t: 0.5 })
+      grownRootPorts.ports.push({ id: `prt_${i}_b`, blockId: id, name: 'out', side: 'right', t: 0.5 })
+    }
+  }
+  const withPorts = new TextEncoder().encode(serializeProject(grownPorts)).length
+  const blocksOnly = digitalProject()
+  const grownRootBlocks = documentById(blocksOnly, blocksOnly.rootDocumentId)
+  if (grownRootBlocks) {
+    for (let i = 0; i < 200; i += 1) {
+      grownRootBlocks.blocks.push({
+        id: `blk_only_${i}`,
+        name: `B${i}`,
+        x: (i % 20) * 100,
+        y: Math.floor(i / 20) * 80,
+        width: 88,
+        height: 64,
+      })
+    }
+  }
+  const withoutPorts = new TextEncoder().encode(serializeProject(blocksOnly)).length
+  console.log(`d5b3-size digital+200 blocks+ports=${withPorts} blocks-only=${withoutPorts}`)
+  check(withPorts > withoutPorts, 'D5b.3 documents the Digital+200 size gap between D5b.1 and D5b.2 fixtures')
+}
+
+// --- D5b.4 interactive gesture robustness ---
+{
+  check(actionForInterrupt('escape') === 'cancel', 'D5b.4 Escape cancels')
+  check(actionForInterrupt('pointercancel') === 'cancel', 'D5b.4 pointercancel cancels')
+  check(actionForInterrupt('lostcapture') === 'cancel', 'D5b.4 lost capture cancels')
+  check(actionForInterrupt('blur') === 'cancel', 'D5b.4 blur cancels')
+  check(actionForInterrupt('hidden') === 'cancel', 'D5b.4 visibility hidden cancels')
+  check(actionForInterrupt('undo') === 'cancel', 'D5b.4 undo-during-gesture cancels')
+  check(actionForInterrupt('navigation') === 'cancel', 'D5b.4 navigation cancels')
+  check(actionForInterrupt('save') === 'cancel', 'D5b.4 save cancels')
+  check(actionForRedoWhileGesturing() === 'refuse', 'D5b.4 redo-during-gesture refuses')
+
+  const latch = new GestureCloseLatch()
+  check(latch.tryBeginClose() && latch.isClosing, 'D5b.4 first close succeeds')
+  check(!latch.tryBeginClose() && latch.isClosing, 'D5b.4 second close is refused')
+  latch.reset()
+  check(latch.tryBeginClose(), 'D5b.4 latch resets for the next gesture')
+
+  const box = { project: createProject('GestureRob') }
+  const tm = new TransactionManager({
+    get: () => box.project,
+    set: (next) => {
+      box.project = next
+    },
+  })
+  let blockId = ''
+  tm.transact('place', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    blockId = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    return project
+  })
+  tm.markSaved()
+  check(!tm.isDirty, 'D5b.4 saved fingerprint is clean')
+
+  // Many previews then commit → one history entry.
+  tm.begin('drag')
+  for (let i = 1; i <= 12; i += 1) {
+    tm.preview((project) => {
+      const sheet = documentById(project, project.rootDocumentId)!
+      moveBlock(sheet, blockId, 80 + i, 80)
+    })
+  }
+  check(tm.isDirty, 'D5b.4 live preview may look dirty')
+  check(tm.undoDepth === 1, 'D5b.4 previews add no history entries')
+  const committed = tm.commit()
+  check(Boolean(committed && tm.undoDepth === 2 && !tm.isGesturing), 'D5b.4 commit records one entry after many previews')
+
+  // Cancel restores baseline of the gesture and keeps redo from prior undo.
+  tm.undo()
+  check(tm.canRedo, 'D5b.4 redo available after undo')
+  const beforeCancel = serializeProject(box.project)
+  const redoDepth = tm.redoDepth
+  tm.begin('cancel-drag')
+  tm.preview((project) => {
+    moveBlock(documentById(project, project.rootDocumentId)!, blockId, 400, 400)
+  })
+  tm.cancel()
+  check(serializeProject(box.project) === beforeCancel && tm.redoDepth === redoDepth && !tm.isGesturing, 'D5b.4 cancel restores and keeps redo')
+
+  // No-op return to baseline (field-level revert; content fingerprint matches begin).
+  const nameBefore = box.project.name
+  tm.begin('noop-return')
+  tm.preview((project) => {
+    project.name = 'Temporary'
+  })
+  tm.preview((project) => {
+    project.name = nameBefore
+  })
+  const depthBeforeNoop = tm.undoDepth
+  check(!tm.commit() && tm.undoDepth === depthBeforeNoop && box.project.name === nameBefore, 'D5b.4 return-to-baseline commit is a no-op')
+
+  // Successful commit drops the redo that cancel preserved.
+  check(tm.canRedo, 'D5b.4 redo present before branching commit')
+  tm.begin('branch')
+  tm.preview((project) => {
+    project.name = 'Branched'
+  })
+  check(tm.commit() && box.project.name === 'Branched' && !tm.canRedo, 'D5b.4 successful gesture commit drops redo')
+
+  // Double close: second commit/cancel are no-ops.
+  tm.begin('once')
+  tm.preview((project) => {
+    project.name = 'Once'
+  })
+  check(tm.commit() && !tm.commit() && !tm.isGesturing && box.project.name === 'Once', 'D5b.4 double commit is safe')
+  tm.begin('once-cancel')
+  tm.preview((project) => {
+    project.name = 'CancelMe'
+  })
+  tm.cancel()
+  tm.cancel()
+  check(!tm.isGesturing && box.project.name === 'Once', 'D5b.4 double cancel is safe')
+
+  // Late preview after close refused.
+  check(!tm.preview(() => undefined).ok, 'D5b.4 late preview without gesture is refused')
+
+  // UI-layer undo-during-gesture: cancel only (adapter pattern).
+  const beforeUiUndo = serializeProject(box.project)
+  const depthUi = tm.undoDepth
+  tm.begin('ui-undo')
+  tm.preview((project) => {
+    project.name = 'UiUndoPreview'
+  })
+  check(box.project.name === 'UiUndoPreview', 'D5b.4 preview applied before UI undo')
+  // Simulate DiagramStage undo: cancel gesture, do not call tm.undo().
+  tm.cancel()
+  check(
+    tm.undoDepth === depthUi && serializeProject(box.project) === beforeUiUndo && !tm.isGesturing,
+    'D5b.4 UI undo cancels without consuming history',
+  )
+
+  // Redo while gesturing: refuse (manager keeps gesture; UI leaves it open).
+  tm.begin('ui-redo')
+  const redoWhile = tm.redo()
+  check(Boolean(!redoWhile.ok && tm.isGesturing), 'D5b.4 manager redo refuses while gesturing')
+  tm.cancel()
+
+  // Navigation / save semantics: cancel then operate — fingerprint.
+  tm.markSaved()
+  const clean = serializeProject(box.project)
+  tm.begin('save-preview')
+  tm.preview((project) => {
+    project.name = 'UnsavedPreview'
+  })
+  check(tm.isDirty, 'D5b.4 preview is dirty before save cancel')
+  tm.cancel()
+  check(serializeProject(box.project) === clean && !tm.isDirty, 'D5b.4 cancel before save restores clean')
+
+  // Edit after abort works.
+  tm.begin('again')
+  tm.preview((project) => {
+    project.name = 'AfterAbort'
+  })
+  check(tm.commit() && box.project.name === 'AfterAbort', 'D5b.4 edit after abort succeeds')
+
+  // Topology unchanged across gesture cancel (ports/nets ids).
+  const wired = createProject('WireGesture')
+  const wiredBox = { project: wired }
+  const wiredTm = new TransactionManager({
+    get: () => wiredBox.project,
+    set: (next) => {
+      wiredBox.project = next
+    },
+  })
+  let a = ''
+  let b = ''
+  wiredTm.transact('wire-setup', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    a = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    b = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    const out = addPortAt(sheet, a, 'right', 0.5)
+    const inn = addPortAt(sheet, b, 'left', 0.5)
+    if (out && inn) linkPorts(sheet, out, inn, 'sig')
+    return project
+  })
+  const netBefore = serializeProject(wiredBox.project)
+  const firstBlock = documentById(wiredBox.project, wiredBox.project.rootDocumentId)!.blocks[0].id
+  wiredTm.begin('move-wired')
+  wiredTm.preview((project) => {
+    moveBlock(documentById(project, project.rootDocumentId)!, firstBlock, 200, 200)
+  })
+  wiredTm.cancel()
+  check(serializeProject(wiredBox.project) === netBefore, 'D5b.4 cancel restores full canonical project including nets')
 }
 
 if (failures.length) {

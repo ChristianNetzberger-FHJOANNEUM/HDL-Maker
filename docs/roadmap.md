@@ -62,12 +62,14 @@ The committed baseline is `bd5defa` (`vivado integration step1`). It contains th
 | D5a | Functional acceptance of the diagram lab | Prepared in `diagram-lab`. Three reference projects and a checklist. The user's session is the acceptance. No HDL. |
 | D5a.1 | Interactive top-down authoring | Built in `diagram-lab`. Accepted by the user on 25 Nov 2026. No HDL. |
 | D5a.2 | Interactive block resizing | Built in `diagram-lab`. Accepted by the user on 25 Nov 2026. No HDL. |
-| D5a.3 | Interactive port authoring | Built in `diagram-lab`. D5a.3a corrects the delete error and the port picture. D5a.3b synchronizes the logical interface with the Boundary (functionally accepted for sync). D5a.3c shows Boundary names and keeps component instances on the logical interface. Waiting for user acceptance of D5a.3c. No HDL. |
-| D5b | One undo history | Planned. Not released. |
+| D5a.3 | Interactive port authoring | Accepted. D5a.3a–D5a.3c closed. D5a complete. No HDL. |
+| D5b | One undo history | Released. D5b.1–D5b.3 accepted. D5b.4 gesture robustness waiting for acceptance. [d5b4-interactive-gesture-transactions.md](d5b4-interactive-gesture-transactions.md). |
 | D5c | Drawing tools and interaction | Planned. Not started. |
 | D5d | Large diagrams | Planned. Not started. |
 | D5e | Diagram export and documentation | Planned. Not started. |
 | D5f | Vue 3 component library | Planned. Not started. |
+| CL0–CL7 | Component Library System | **Proposed** architecture only. Not accepted. Not started. [component-library-system-architecture.md](component-library-system-architecture.md). IDs avoid clash with Learning Mode L0. |
+| EDU0–EDU6 | Educational Web Applications | **Proposed** architecture only. Not accepted. Not started. [educational-web-editor-architecture.md](educational-web-editor-architecture.md). IDs avoid clash with Studio E0–E6. |
 | E2 | Hierarchy navigation | Planned. Covered by D4. Not a separate implementation. |
 | E3 | FSM property model | Planned. A later HDL step after D5. No second property schema. M3b stays until a comparison. |
 | E4 | Graphical FSM editing | Planned. A later use of the diagram engine, after D5. |
@@ -78,7 +80,7 @@ The committed baseline is `bd5defa` (`vivado integration step1`). It contains th
 
 ## Active sequence
 
-**D0** is a standalone diagram lab, recorded in [d0-feasibility.md](d0-feasibility.md). **D1** is the general block editor in that same lab. **D2** is the net editor. **D3a** is the symbol definition and the instance. **D3b** draws that symbol and updates every instance. **D3c** copies a library symbol into the document and places it from a palette. **D3d** embeds SVG and bitmap pictures in that symbol. **D3e** compares a library symbol with the document copy and updates every instance only after confirmation. **D4a** adds a component definition and a project container. **D4b** opens a child sheet from a double-click, the project tree, or a breadcrumb. **D4c** edits logical ports and creates an implementation only by an explicit command. **D4d** extracts a selection into a component and can expand one instance. **D5a** prepares three reference projects and a checklist; the acceptance is a session in the lab. **D5a.1** lets a drawn block become a component from the sheet. The user accepted that flow on 25 Nov 2026. **D5a.2** scales one instance from eight handles and draws the symbol in that box. The user accepted that step on 25 Nov 2026. **D5a.3** adds and moves ports on any side of one instance. D5a.3a corrects the delete dispatch, the logical names, and the port picture. D5a.3b synchronizes the logical interface with the Boundary; the user functionally accepted that sync. D5a.3c shows Boundary port names from the logical interface and stops unbound symbol pins on new component instances. D5a.3 waits for the user's acceptance of D5a.3c. D4f, D4g, and D5b through D5f have not started. D5b is not released. M5b is **Tested on hardware**. The record is below and in [m5b-jtag.md](m5b-jtag.md). **O1** is investigated in [o1-open-source-toolchain.md](o1-open-source-toolchain.md). **O2a** is in the backend, recorded in [o2a-open-source-build.md](o2a-open-source-build.md), and does not program the FPGA. **O2b** is **Tested on hardware**. The open-source bitstream was loaded into SRAM, the DONE LED was green, and LED0 blinked about once per second. The record is [o2b-open-source-hardware.md](o2b-open-source-hardware.md). **O5** is planned and does not move ahead of O2b. **V1** is prepared and is not started. The `Labtoolstcl 44-560` Tcl warning is a later cleanup. **M5c** stays a later Vivado report view. **M4b** stays planned. **U** and **R** are later optional branches. **M6** does not block them.
+**D0** is a standalone diagram lab, recorded in [d0-feasibility.md](d0-feasibility.md). **D1** is the general block editor in that same lab. **D2** is the net editor. **D3a** is the symbol definition and the instance. **D3b** draws that symbol and updates every instance. **D3c** copies a library symbol into the document and places it from a palette. **D3d** embeds SVG and bitmap pictures in that symbol. **D3e** compares a library symbol with the document copy and updates every instance only after confirmation. **D4a** adds a component definition and a project container. **D4b** opens a child sheet from a double-click, the project tree, or a breadcrumb. **D4c** edits logical ports and creates an implementation only by an explicit command. **D4d** extracts a selection into a component and can expand one instance. **D5a** prepares three reference projects and a checklist; the acceptance is a session in the lab. **D5a.1** lets a drawn block become a component from the sheet. The user accepted that flow on 25 Nov 2026. **D5a.2** scales one instance from eight handles and draws the symbol in that box. The user accepted that step on 25 Nov 2026. **D5a.3** adds and moves ports on any side of one instance. D5a.3a–D5a.3c are accepted; D5a.3 and D5a are complete. **D5b** is released. D5b.1–D5b.3 are accepted. D5b.4 hardens interactive gestures and waits for acceptance; D5b.5–D5b.6 stay locked. D4f, D4g, and D5c through D5f have not started. M5b is **Tested on hardware**. The record is below and in [m5b-jtag.md](m5b-jtag.md). **O1** is investigated in [o1-open-source-toolchain.md](o1-open-source-toolchain.md). **O2a** is in the backend, recorded in [o2a-open-source-build.md](o2a-open-source-build.md), and does not program the FPGA. **O2b** is **Tested on hardware**. The open-source bitstream was loaded into SRAM, the DONE LED was green, and LED0 blinked about once per second. The record is [o2b-open-source-hardware.md](o2b-open-source-hardware.md). **O5** is planned and does not move ahead of O2b. **V1** is prepared and is not started. The `Labtoolstcl 44-560` Tcl warning is a later cleanup. **M5c** stays a later Vivado report view. **M4b** stays planned. **U** and **R** are later optional branches. **M6** does not block them.
 
 P1, M2c, and M2d are finished and committed. An earlier note suggested packaging only after M5. Packaging was done first so each later milestone can be shipped with `packaging/build_release.ps1`. That decision stands. A later milestone does not start a second packaging project. The existing student ZIP was built before M2c and before the MIT `LICENSE` file.
 
@@ -319,6 +321,19 @@ Planned. Lattice iCE40, Lattice ECP5, Gowin, further AMD/Xilinx devices, and Int
 
 Planned, optional, and not implemented. The student runs HDL-Maker locally. An authorized server runs synthesis and implementation. Still open: the server license, authentication, isolation of student projects, the queue, resource limits, and which reports and bitstreams come back.
 
+## CL / EDU — proposed library and education streams (not accepted)
+
+Planning only. See [component-library-system-architecture.md](component-library-system-architecture.md) and [educational-web-editor-architecture.md](educational-web-editor-architecture.md).
+
+| Stream | IDs | Intent |
+| --- | --- | --- |
+| Component libraries | CL0–CL7 | Domain-neutral libraries, manager, parameters, assets |
+| Educational web apps | EDU0–EDU6 | Assignment packs, browser editor, student JSON, viewer/checker |
+
+These do **not** replace Learning Mode **L0** or Studio **E0–E6**. Active priority remains finishing **D5b**, then D5c–D5f as released.
+
+Dependency sketch (proposal): `D5b → CL0 → CL1/CL2 → EDU1–EDU3` for an MVP course exercise; `D5f` packages the UI; `D5d` before large bitmap libraries; `CL7` / `EDU5` / `EDU6` after MVP.
+
 ## D — Diagram engine
 
 D0 is a standalone Vue 3 lab in `diagram-lab`. Vue Flow draws blocks. An SVG layer draws wires, labels, and freehand ink in the same viewport. The document model is not a Vue Flow graph and not `EditableDiagram`. Nets have no coordinates. A label is anchored to one edge of a segment. The lab does not open the Python API and does not rewrite `edg_*.json`.
@@ -345,9 +360,9 @@ Port names are drawn on the component. Their font follows the pin pitch. A missi
 
 ## Priority
 
-1. E0 and E1 are implemented and tested in software. D0 through D4d are in the diagram lab. D5a prepares the acceptance review. D5a.1 and D5a.2 are accepted by the user. D5a.3 is in the lab. D5a.3a corrects the first check. D5a.3b synchronizes the logical interface with the Boundary and is functionally accepted for that sync. D5a.3c shows Boundary names and keeps component instances on the logical interface; D5a.3 waits for the user's acceptance of D5a.3c. D4f, D4g, and D5b through D5f are specified and are not started. D5b is not released.
+1. E0 and E1 are implemented and tested in software. D0 through D4d are in the diagram lab. D5a is complete. D5b is released; D5b.1–D5b.3 are accepted; D5b.4 gesture robustness waits for acceptance. D4f, D4g, and D5c through D5f are specified and are not started.
 2. E2 is D4. The FSM work in E3 and E4 stays after D5. M3b changes only after a comparison against the machines it already generates. E5 is D1 and D2.
-3. L0 and SV0 stay architecture studies and do not interrupt branch D. L0 is [learning-mode.md](learning-mode.md). SV0 has no importer and no generator.
+3. L0 and SV0 stay architecture studies and do not interrupt branch D. L0 is [learning-mode.md](learning-mode.md). SV0 has no importer and no generator. Proposed streams **CL** (component libraries) and **EDU** (educational web editor) are documented and likewise do not interrupt D5b; they are not released for implementation.
 4. O4, O5, and E6 wait until a design can be drawn in the engine. M5b remains **Tested on hardware**. O3b did not program the FPGA again.
 
 ## Later, not scheduled
