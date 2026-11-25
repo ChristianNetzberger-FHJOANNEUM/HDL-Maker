@@ -2,7 +2,7 @@
 
 This is the reference for HDL-Maker milestone order and scope. Later work follows this file. A change of order or scope is recorded here in the same change that introduces it.
 
-The teaching milestones M0–M6 are one development line. An FPGA toolchain is an optional backend of that same HDL-Maker, under the same MIT license. Branch D is design authoring: the model that makes a component, its ports, its nets, and the generated VHDL the same facts. Branch E is the studio surface on that model. Branch V is Vivado. Branch O is an open-source flow. Branch U is other vendors and families. Branch R is a remote build server. The branches are parallel, and any of them may stay unused. The FPGA boundary is specified in [fpga-toolchain-architecture.md](fpga-toolchain-architecture.md). Branches D and E do not depend on a toolchain. Branch O has a local Windows feasibility run, recorded in [o1-open-source-toolchain.md](o1-open-source-toolchain.md). That run is not a product backend. **O5** is a long-term distribution study in [international-open-source-distribution.md](international-open-source-distribution.md). It does not block O2, O3, or O4, and it does not block branches D or E. Branches U and R are not installed and have no implementation. Learning Mode and SystemVerilog stay later studies on the design model and are not part of D.
+The teaching milestones M0–M6 are one development line. An FPGA toolchain is an optional backend of that same HDL-Maker, under the same MIT license. Branch D is the reusable diagram engine. HDL-Maker and a later course site are adapters on that engine. The engine does not include VHDL generation or an FPGA backend. Details are in [diagram-engine-architecture.md](diagram-engine-architecture.md). Branch V is Vivado. Branch O is an open-source flow. Branch U is other vendors and families. Branch R is a remote build server. The branches are parallel, and any of them may stay unused. The FPGA boundary is specified in [fpga-toolchain-architecture.md](fpga-toolchain-architecture.md). Branches D and E do not depend on a toolchain. Branch O has a local Windows feasibility run, recorded in [o1-open-source-toolchain.md](o1-open-source-toolchain.md). That run is not a product backend. **O5** is a long-term distribution study in [international-open-source-distribution.md](international-open-source-distribution.md). It does not block O2, O3, or O4, and it does not block branches D or E. Branches U and R are not installed and have no implementation. Learning Mode and SystemVerilog stay later studies on the design model and are not part of D.
 
 Status words:
 
@@ -47,27 +47,28 @@ The committed baseline is `bd5defa` (`vivado integration step1`). It contains th
 | O5 | International open-source distribution | Planned. License unresolved. Does not block O2, O3, O4, or branch E. |
 | E0 | One diagram editor | Implemented. Tested in software. Opening a block or state diagram edits the workspace model. The HDL Designer file is not written. |
 | E1 | Readable block diagrams | Implemented. Tested in software on `hds/top_rtc_app/struct.bd`. Port names and signal names use recorded fields only. |
-| D0 | Design-authoring architecture | Recorded in [design-authoring-architecture.md](design-authoring-architecture.md). No editor code and no migration. |
-| D1 | New projects, design units, empty diagrams | Planned. Not started. |
-| D2 | Instantiate, move, and scale | Planned. Not started. |
-| D3 | Net editor and labels bound to segments | Planned. Not started. Optional binding on the existing wire. Opening a file does not rewrite it. |
-| D4 | Edit ports, signals, generics, and interfaces | Planned. Not started. |
-| D5 | Symbol and reusable component | Planned. Not started. |
-| D6 | Hierarchy, refactoring, libraries | Planned. Not started. |
-| D7 | FSM editor on the same design unit | Planned. Not started. M3b stays unchanged until a recorded comparison. |
-| D8 | Design-rule checks and generator integration | Planned. Not started. |
-| D9 | Routing, layout, copy and paste, multi-select | Planned. Not started. |
-| E2 | Hierarchy navigation | Planned. The surface of D5 and D6, not a separate implementation. |
-| E3 | FSM property model | Planned. Covered by D7. No second property schema. |
-| E4 | Graphical FSM editing | Planned. Covered by D7. |
-| E5 | Full block-diagram editing | Planned. Covered by D2 through D5. |
-| E6 | Editor comfort functions | Planned. Covered by D9. |
+| D0 | Diagram engine prototype | Built in `diagram-lab`. No HDL-Maker migration. [d0-feasibility.md](d0-feasibility.md). |
+| D1 | General block editor | Built in `diagram-lab`. Commands, selection, JSON storage, palette. No HDL integration. Scale, z-order, and SVG export remain open. |
+| D2 | Nets and wires | Built in `diagram-lab`. Branches, junctions, labels, manual routes. No HDL integration. |
+| D3a | Symbol definition and instance | Built in `diagram-lab`. Stable port ids. No symbol editor and no HDL integration. |
+| D3b | Graphical symbol editor | Built in `diagram-lab`. Shapes, text, and four-sided pins. No SVG import and no HDL fields. |
+| D3c | Symbol library and palette | Built in `diagram-lab`. Built-in catalogs, a user library, and copy-on-place. No HDL and no SVG import. |
+| D3d | SVG and bitmap assets | Built in `diagram-lab`. Embedded pictures, free pins, and one copy per checksum. No HDL. |
+| D3e | Symbol migration UI | Built in `diagram-lab`. Explicit update, pin-id compare, no automatic refresh. No HDL. |
+| D4a | Component and project model | Built in `diagram-lab`. Shared definitions, interface ids, no HDL. |
+| D4b | Hierarchical navigation | Built in `diagram-lab`. Double-click, tree, breadcrumbs, shared undo. No HDL. |
+| D5 | Whiteboard, stroke conversion, sample exercise | Planned. Not started. |
+| E2 | Hierarchy navigation | Planned. Covered by D4. Not a separate implementation. |
+| E3 | FSM property model | Planned. A later HDL step after D5. No second property schema. M3b stays until a comparison. |
+| E4 | Graphical FSM editing | Planned. A later use of the diagram engine, after D5. |
+| E5 | Full block-diagram editing | Planned. Covered by D1 and D2. |
+| E6 | Editor comfort functions | Planned. After D5. elkjs is not approved. |
 | U | Further FPGA families | Planned. |
 | R | Remote FPGA build | Planned. Optional. Not implemented. |
 
 ## Active sequence
 
-**D0** is the current design step. It is architecture only, in [design-authoring-architecture.md](design-authoring-architecture.md). D1 has not started. M5b is **Tested on hardware**. The record is below and in [m5b-jtag.md](m5b-jtag.md). **O1** is investigated in [o1-open-source-toolchain.md](o1-open-source-toolchain.md). **O2a** is in the backend, recorded in [o2a-open-source-build.md](o2a-open-source-build.md), and does not program the FPGA. **O2b** is **Tested on hardware**. The open-source bitstream was loaded into SRAM, the DONE LED was green, and LED0 blinked about once per second. The record is [o2b-open-source-hardware.md](o2b-open-source-hardware.md). **O5** is planned and does not move ahead of O2b. **V1** is prepared and is not started. The `Labtoolstcl 44-560` Tcl warning is a later cleanup. **M5c** stays a later Vivado report view. **M4b** stays planned. **U** and **R** are later optional branches. **M6** does not block them.
+**D0** is a standalone diagram lab, recorded in [d0-feasibility.md](d0-feasibility.md). **D1** is the general block editor in that same lab. **D2** is the net editor. **D3a** is the symbol definition and the instance. **D3b** draws that symbol and updates every instance. **D3c** copies a library symbol into the document and places it from a palette. **D3d** embeds SVG and bitmap pictures in that symbol. **D3e** compares a library symbol with the document copy and updates every instance only after confirmation. **D4a** adds a component definition and a project container. **D4b** opens a child sheet from a double-click, the project tree, or a breadcrumb. D4c has not started. M5b is **Tested on hardware**. The record is below and in [m5b-jtag.md](m5b-jtag.md). **O1** is investigated in [o1-open-source-toolchain.md](o1-open-source-toolchain.md). **O2a** is in the backend, recorded in [o2a-open-source-build.md](o2a-open-source-build.md), and does not program the FPGA. **O2b** is **Tested on hardware**. The open-source bitstream was loaded into SRAM, the DONE LED was green, and LED0 blinked about once per second. The record is [o2b-open-source-hardware.md](o2b-open-source-hardware.md). **O5** is planned and does not move ahead of O2b. **V1** is prepared and is not started. The `Labtoolstcl 44-560` Tcl warning is a later cleanup. **M5c** stays a later Vivado report view. **M4b** stays planned. **U** and **R** are later optional branches. **M6** does not block them.
 
 P1, M2c, and M2d are finished and committed. An earlier note suggested packaging only after M5. Packaging was done first so each later milestone can be shipped with `packaging/build_release.ps1`. That decision stands. A later milestone does not start a second packaging project. The existing student ZIP was built before M2c and before the MIT `LICENSE` file.
 
@@ -308,30 +309,13 @@ Planned. Lattice iCE40, Lattice ECP5, Gowin, further AMD/Xilinx devices, and Int
 
 Planned, optional, and not implemented. The student runs HDL-Maker locally. An authorized server runs synthesis and implementation. Still open: the server license, authentication, isolation of student projects, the queue, resource limits, and which reports and bitstreams come back.
 
-## D — Design authoring
+## D — Diagram engine
 
-Branch D extends `EditableDiagram`. It does not add a second design document. The decision, the label binding, and the D1 scope are in [design-authoring-architecture.md](design-authoring-architecture.md). D0 is that document. No editor command, generator change, or `edg_*.json` rewrite was made with it.
+D0 is a standalone Vue 3 lab in `diagram-lab`. Vue Flow draws blocks. An SVG layer draws wires, labels, and freehand ink in the same viewport. The document model is not a Vue Flow graph and not `EditableDiagram`. Nets have no coordinates. A label is anchored to one edge of a segment. The lab does not open the Python API and does not rewrite `edg_*.json`.
 
-E0 is implemented and tested in software. One click opens the shared editor. `find_by_source` reuses the work file. `top_rtc_app` stays `edg_b8c5a1b43a0640589c9fc9362e96566f` (347 wires, 310 visible labels, 37 hidden). `morse_transmitter` stays `edg_e78a939e14fb42599794f2c73c3afe55` (7 states, 14 transitions, 20 text boxes). Reopening does not create a second file and does not replace saved edits. The `.bd` and `.sm` files stay the import source.
+D1 adds commands, selection, a block palette, grid snap, and `DiagramStorage` with JSON as the first store. A drag is one undo step. Escape restores the gesture. D2 adds orthogonal wires, junctions, net merge and split, and name labels. A net still has no coordinates. D3a adds a symbol definition and instances that cite it. A wire keeps the instance port id when the symbol pin moves. A removed pin stays visible as a diagnosis. D3b draws the symbol with shapes, text, and pins on all four sides, and the instances use that same picture. D3c adds built-in and user libraries. A placement copies the definition into the document, so the sheet still opens when the library is absent. A conflicting id is reported and is not overwritten. D3d adds image assets and free pins. The same picture is stored once. An SVG is drawn as a picture and is refused when it contains a script, a handler, or an external link. D3e adds an explicit library update. Pins are compared by id, a removed pin keeps its wire, and a matching name does not retarget that wire. The same asset checks run when a document or a library is loaded. D4a adds components, a project file, and a cycle check. The block stays the instance. D4b opens that hierarchy without copying the child diagram. D4c through D5 are specified in [diagram-editor-roadmap.md](diagram-editor-roadmap.md) and are not started. A synthetic sheet of 50 blocks and 350 segments was timed in Node; the HDL file `top_rtc_app` was not opened. The HDL-Maker editor remains the studio. The architecture is [diagram-engine-architecture.md](diagram-engine-architecture.md). The file format is [diagram-document-model.md](diagram-document-model.md). The D0 test record is [d0-feasibility.md](d0-feasibility.md). Drawing a sheet the size of `top_rtc_app` was not measured. Scale, z-order, and SVG export remain open from D1.
 
-A design unit is that same document. Its ports and generics are the interface. Its sheet is either a structural implementation or an FSM. A symbol is a view of the interface. An instance stores its own name, generic values, and a binding snapshot, and it refers to that document.
-
-Schema version 1 stays. Absolute label boxes keep their meaning. D3 stores an optional binding to the net and the wire. A move derives the box from that binding. It does not add the instance delta to the label. A file without a binding is left unchanged on open. An unbound label is not given a guessed wire.
-
-| Step | Content | Depends on | Status |
-| --- | --- | --- | --- |
-| D0 | Canonical model, net and label binding, design-unit lifecycle, undo, migration, D1 scope | — | Recorded. Not implemented. |
-| D1 | Workspace library, empty design units, ports and generics the user states | D0 | Planned |
-| D2 | Instantiate a unit or a library entity. Move and scale. Net ids stay. | D1 | Planned |
-| D3 | Draw, connect, disconnect, delete, branches. A bound label follows its wire by offset. | D2 | Planned |
-| D4 | Edit ports, signals, generics, and slices without inventing a missing type | D3 | Planned |
-| D5 | Symbol from the interface. Two instances, one implementation. | D4 | Planned |
-| D6 | Double-click hierarchy, explicit instance update, library operations | D5 | Planned |
-| D7 | FSM properties and graphical FSM editing. M3b unchanged until compared. | D5 | Planned |
-| D8 | Checks, then the existing VHDL generators. The vertical test ends here. | D5 | Planned |
-| D9 | Auto-routing, auto-layout, copy and paste, multi-select | D3 | Planned |
-
-The vertical test creates `counter`, `comparator`, `pulse_generator`, and `system_top`, instantiates the first two inside `pulse_generator`, instantiates `pulse_generator` twice in `system_top`, generates VHDL-93, and runs GHDL. It is the D5 and D8 checkpoint. D0 does not create those designs. Port types are stated by the test, not by this roadmap.
+E0 and E1 stay implemented and tested in software. `top_rtc_app` remains `edg_b8c5a1b43a0640589c9fc9362e96566f`. `morse_transmitter` remains `edg_e78a939e14fb42599794f2c73c3afe55`.
 
 ## E — Studio editor
 
@@ -341,20 +325,20 @@ Branch E is the studio surface. It does not depend on Vivado, the open-source to
 | --- | --- | --- |
 | E0 | One diagram to open, edit, save, and reopen. The workspace model is created or reused. The `.bd` and `.sm` files stay untouched. | Implemented. Tested in software. |
 | E1 | Readable block diagrams: port names on the pin, recorded direction, type, and width, full instance names, signal names above the wire, scalar and bus strokes, zoom | Implemented. Tested in software. [e1-block-diagrams.md](e1-block-diagrams.md) |
-| E2 | Hierarchy: double-click, breadcrumbs, back. This is D6. A VHDL-only entity does not gain a diagram. | Planned. Not a separate implementation. |
-| E3 | FSM properties listed for D7: clock, reset, enable, interrupt, combinational or clocked signals, statements, state actions, transitions, encoding, recovery, and defaults. M3b changes only after a comparison. | Planned. Covered by D7. |
-| E4 | Draw states, transitions, interrupts, enable, and reset. | Planned. Covered by D7. |
-| E5 | Edit block diagrams: ports, generics, instances, wires, and undo. | Planned. Covered by D2 through D5. |
-| E6 | Search, auto-layout, navigation, and diagnostic overlays. | Planned. Covered by D9. |
+| E2 | Hierarchy: double-click, breadcrumbs, back. This is D4. A VHDL-only entity does not gain a diagram. | Planned. Not a separate implementation. |
+| E3 | FSM properties: clock, reset, enable, interrupt, combinational or clocked signals, statements, state actions, transitions, encoding, recovery, and defaults. M3b changes only after a comparison. | Planned. After D5. |
+| E4 | Draw states, transitions, interrupts, enable, and reset. | Planned. After D5, on the diagram engine. |
+| E5 | Edit block diagrams: ports, generics, instances, wires, and undo. | Planned. Covered by D1 and D2. |
+| E6 | Search, auto-layout, navigation, and diagnostic overlays. | Planned. After D5. elkjs is not approved. |
 
 Port names are drawn on the component. Their font follows the pin pitch. A missing direction, type, or width stays blank. Signal names sit above the wire. A scalar net is thinner than a bus. The picture does not move a wire or change an object id. Opening the diagram edits the workspace file. The HDL Designer file is not written.
 
 ## Priority
 
-1. E0 and E1 are implemented and tested in software. D0 is recorded in [design-authoring-architecture.md](design-authoring-architecture.md). Next is D1, then D2 through D5 as one phase. D3 adds the label binding on the existing wire and does not rewrite a file on open.
-2. E2 is D6 and starts with the symbol and the shared implementation from D5. D7 is the FSM editor after that. M3b changes only after a comparison against the machines it already generates. E3, E4, and E5 are not separate implementations.
+1. E0 and E1 are implemented and tested in software. D0 through D4b are in the diagram lab. D4c through D5 are specified and are not started. The next implementation, after approval, is D4c in the lab, not in the HDL-Maker studio.
+2. E2 is D4. The FSM work in E3 and E4 stays after D5. M3b changes only after a comparison against the machines it already generates. E5 is D1 and D2.
 3. L0 and SV0 stay architecture studies and do not interrupt branch D. L0 is [learning-mode.md](learning-mode.md). SV0 has no importer and no generator.
-4. O4, O5, and D9 wait until a design can be drawn and generated. M5b remains **Tested on hardware**. O3b did not program the FPGA again.
+4. O4, O5, and E6 wait until a design can be drawn in the engine. M5b remains **Tested on hardware**. O3b did not program the FPGA again.
 
 ## Later, not scheduled
 

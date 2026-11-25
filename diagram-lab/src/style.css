@@ -1,0 +1,470 @@
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  font: 14px "Segoe UI", sans-serif;
+  color: #1c2430;
+}
+
+.lab {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 220px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+}
+
+.lab.editing {
+  grid-template-columns: 340px minmax(0, 1fr) 220px;
+}
+
+.toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid #d5dbe3;
+}
+
+button {
+  border: 1px solid #c5ced8;
+  background: #fff;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+button.on {
+  background: #e7f0fb;
+  border-color: #3d6ea8;
+}
+
+.zoom {
+  margin-left: auto;
+  color: #526070;
+}
+
+.palette,
+.props {
+  min-height: 0;
+  padding: 8px;
+  overflow: auto;
+  border-right: 1px solid #d5dbe3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.props {
+  border-right: 0;
+  border-left: 1px solid #d5dbe3;
+}
+
+.palette p,
+.props p {
+  margin: 0;
+}
+
+.palette button {
+  text-align: left;
+}
+
+.props label {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.props input {
+  font: inherit;
+  padding: 4px;
+  border: 1px solid #c5ced8;
+  border-radius: 4px;
+}
+
+.hint {
+  color: #526070;
+}
+
+.file {
+  display: none;
+}
+
+.stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.stage .vue-flow {
+  width: 100%;
+  height: 100%;
+  background: #f7f8fa;
+}
+
+.world {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+
+.world.drawing {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.grid line {
+  stroke: #e1e6ec;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.wire {
+  fill: none;
+  stroke: #243140;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.wire.selected {
+  stroke: #1d6fd6;
+  stroke-width: 2.2;
+}
+
+.junction {
+  fill: #243140;
+  stroke: #fff;
+  stroke-width: 1;
+  pointer-events: auto;
+  cursor: move;
+}
+
+.preview {
+  fill: none;
+  stroke: #1d6fd6;
+  stroke-width: 1.6;
+  stroke-dasharray: 5 4;
+}
+
+.marquee {
+  fill: rgba(29, 111, 214, 0.12);
+  stroke: #1d6fd6;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.bend {
+  fill: #fff;
+  stroke: #1d6fd6;
+  stroke-width: 1.5;
+  pointer-events: auto;
+  cursor: ew-resize;
+}
+
+.ink {
+  fill: #2c3a4a;
+  stroke: none;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.ink.selected {
+  fill: #1d6fd6;
+}
+
+.ink.live {
+  pointer-events: none;
+}
+
+.label {
+  font-size: 13px;
+  fill: #1c2430;
+}
+
+.block {
+  position: relative;
+  box-sizing: border-box;
+  border: 1.5px solid #243140;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.block.symbol {
+  border: none;
+  background: transparent;
+  overflow: visible;
+}
+
+.block.symbol .block-name {
+  inset: auto;
+  top: -16px;
+  left: 0;
+  height: 16px;
+  padding: 0;
+  font-size: 12px;
+}
+
+.vue-flow__node {
+  overflow: visible;
+}
+
+.symbol-node {
+  display: block;
+  overflow: visible;
+}
+
+.sheet-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sheet-column .stage {
+  flex: 1;
+  min-height: 0;
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid #d5dbe3;
+  background: #f7f9fb;
+}
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #d5dbe3;
+}
+
+.tree-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 12px;
+}
+
+.tree-item.on {
+  background: #e7f0fb;
+  border-color: #3d6ea8;
+}
+
+.tree-twist {
+  width: 22px;
+  margin-right: 4px;
+}
+
+.preview-row {
+  display: flex;
+  gap: 8px;
+}
+
+.update-preview select,
+.props select {
+  width: 100%;
+}
+
+.symbol-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.symbol-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.symbol-canvas {
+  display: block;
+  max-width: 100%;
+  background: #fff;
+  border: 1px solid #d5dbe3;
+  touch-action: none;
+}
+
+.symbol-sheet {
+  fill: #fbfcfd;
+  stroke: #c5ced8;
+  stroke-width: 1;
+}
+
+.sym-shape {
+  fill: none;
+  stroke: #243140;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.sym-shape.selected,
+.sym-label.selected {
+  stroke: #1d6fd6;
+  fill: #1d6fd6;
+}
+
+.sym-shape.selected {
+  fill: none;
+}
+
+.sym-image {
+  pointer-events: none;
+}
+
+.sym-missing {
+  fill: #f4e4d4;
+  stroke: #a15c12;
+  stroke-dasharray: 3 2;
+}
+
+.sym-label {
+  font-size: 13px;
+  fill: #1c2430;
+}
+
+.sym-pin circle {
+  fill: #243140;
+}
+
+.sym-pin text {
+  font-size: 11px;
+  fill: #243140;
+}
+
+.sym-pin.selected circle {
+  fill: #1d6fd6;
+}
+
+.sym-pin.missing circle {
+  fill: none;
+  stroke: #a15c12;
+  stroke-width: 1.5;
+}
+
+.sym-draft {
+  fill: none;
+  stroke: #1d6fd6;
+  stroke-dasharray: 4 3;
+}
+
+.symbol-hit {
+  fill: transparent;
+}
+
+.symbol-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.palette-item {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 4px 8px;
+  align-items: center;
+  padding: 4px;
+  border: 1px solid #d5dbe3;
+  border-radius: 4px;
+  background: #fff;
+  cursor: grab;
+  text-align: left;
+}
+
+.palette-preview {
+  grid-row: span 2;
+  background: #fbfcfd;
+  pointer-events: none;
+}
+
+.palette-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.palette-actions button {
+  padding: 1px 4px;
+  font-size: 11px;
+}
+
+.palette-ghost {
+  position: fixed;
+  z-index: 20;
+  padding: 2px 6px;
+  background: #fff;
+  border: 1px solid #3d6ea8;
+  pointer-events: none;
+}
+
+.symbol-palette select,
+.symbol-editor select {
+  font: inherit;
+  padding: 4px;
+}
+
+.block.selected {
+  outline: 2px solid #1d6fd6;
+  outline-offset: 2px;
+}
+
+.block-name {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: grab;
+}
+
+.port {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #243140;
+  color: transparent;
+}
+
+footer {
+  grid-column: 1 / -1;
+  border-top: 1px solid #d5dbe3;
+}
+
+.status {
+  margin: 6px 8px;
+}
+
+textarea {
+  margin: 0 8px 8px;
+  resize: none;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.bridge {
+  display: none;
+}

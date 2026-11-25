@@ -1,10 +1,12 @@
 # D0 — Design authoring architecture
 
+> The editor architecture is now [diagram-engine-architecture.md](diagram-engine-architecture.md). This note remains the HDL-Maker work-file rules: `EditableDiagram` stays the studio file, and D0 did not migrate it. The generic engine document is a separate schema used only by `diagram-lab`.
+
 D0 records the model for a graphical hardware design system. It does not add editor commands, change the VHDL generators, write `.bd` or `.sm` files, or migrate `workspace/diagrams/`.
 
-HDL-Maker today imports HDL Designer diagrams, draws them, and edits one workspace document. Structural VHDL, FSM VHDL, GHDL, and the FPGA backends already read that document. Branch D extends this `EditableDiagram` so a component, its ports, its nets, its hierarchy, and the generated VHDL stay the same facts.
+HDL-Maker today imports HDL Designer diagrams, draws them, and edits one workspace document. Structural VHDL, FSM VHDL, GHDL, and the FPGA backends already read that document. Those studio files stay on `EditableDiagram`. The engine in `diagram-lab` was not applied to them.
 
-Branch E remains the studio surface. Branch D is the design function underneath it. M3, M4, M5, and O stay as they are. Learning Mode and SystemVerilog stay later studies on this same model.
+The studio surface remains branch E. M3, M4, M5, and O stay as they are. Learning Mode and SystemVerilog stay later studies.
 
 ## What the workspace stores today
 

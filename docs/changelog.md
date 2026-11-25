@@ -125,9 +125,49 @@
 - The open-source chain is a backend build for VHDL-93: GHDL Verilog, Yosys, nextpnr-xilinx, fasm2frames, and xc7frames2bit. Tool paths are `workspace/opensource-tools.json`. The process `PATH` is unchanged, and Vivado is not called.
 - Build `osb_574eb1ad8c3b4ac8a36b359745d3534d` repeats the Z7-20 counter. The nextpnr counts match the O1 log, and the bitstream is 4,045,674 bytes. It was not programmed. Details: `docs/o2a-open-source-build.md`.
 
+### D4b lab
+
+- The diagram lab can open a child sheet by double-click, from the project tree, or from a breadcrumb. All three use one path of block ids. U1 and U2 open the same diagram and the same undo history, and the path stays different. Zoom and pan return with that path. A component without a diagram stays on the current sheet. A sheet can still be opened without a project. Details: `docs/d4b-hierarchy-navigation.md`.
+
+### D4a lab
+
+- A project can hold several diagrams and component definitions. A block cites a component by id and keeps its own port ids. Two instances share one child diagram. The logical port id is separate from the symbol pin and from the wire. A cycle is refused and leaves the project unchanged. Opening a sheet still does not require a project. Navigation is not started.
+
+### D3e lab
+
+- A symbol definition can record a revision and a content fingerprint. Opening a diagram does not replace that definition from a library. Compare library shows both pictures and the pin changes, matched by pin id. Update all instances is one undo step. A removed pin keeps its wire, and a new pin with the same name is not connected to it. Assign and Remove wire are separate actions and use the existing net merge and split. A bad image, or a checksum that does not match its bytes, is refused before the document or the library changes. Hierarchy is not started.
+
+### D3d lab
+
+- The diagram lab can place an SVG, PNG, JPEG, or WebP picture inside a symbol, with text, shapes, and pins. The picture is stored once as an asset and travels with the document and the user library. A free pin uses fractions of the symbol box. An SVG with a script, a handler, or an external link is refused and does not change the document. Path editing and HDL are not started.
+
+### D3c lab
+
+- The diagram lab has a symbol library beside the document. Built-in catalogs cover general shapes, flowcharts, digital logic, and signal-processing blocks. They are pictures and pins. They do not simulate and they do not write HDL. Placing a symbol copies its definition into the document once. The sheet still opens when that library is gone. A repeated id with different contents is reported and is not overwritten. SVG import is not started.
+
+### D3b lab
+
+- The diagram lab draws a symbol with rectangles, ellipses, lines, polygons, text, and pins on all four sides. `t` runs along the side. The same picture is used in the editor and on each instance. Wires keep their port ids when the symbol changes. SVG import and a symbol library are not started.
+
+### D3a lab
+
+- A diagram can store a symbol definition and several instances of it. Each instance has its own port ids. A wire keeps those ids when the symbol pin moves. Removing a pin leaves the wire and shows a diagnosis. `componentId` is stored and not opened. The symbol editor, SVG import, and hierarchy are not started. HDL-Maker and `edg_*.json` are unchanged.
+
+### D2 lab
+
+- The diagram lab draws orthogonal wires, branches them at junctions, and keeps name labels on their segments. Two nets are merged only by an explicit command. A crossing is not a connection. HDL-Maker and `edg_*.json` are unchanged.
+
+### D1 lab
+
+- The diagram lab edits through one command session. A drag is one undo step, and Escape restores the document. Blocks can be added, selected, grouped, duplicated, deleted, and saved through `DiagramStorage` as JSON. HDL-Maker and `edg_*.json` are unchanged.
+
+### D0 lab
+
+- A standalone Vue 3 diagram lab draws blocks in Vue Flow and wires, labels, and ink in one SVG viewport. It does not open HDL-Maker or rewrite `edg_*.json`. elkjs and tldraw were not installed. Details: `docs/d0-feasibility.md`.
+
 ### D0
 
-- Design authoring stays on `EditableDiagram`. A second design document is not introduced. E0 and E1 are implemented and tested in software. Label binding is specified for D3 and does not rewrite existing files on open. Details: `docs/design-authoring-architecture.md`.
+- The studio work file stays `EditableDiagram`. The reusable engine is a separate lab and is not written into `edg_*.json`. Details: `docs/design-authoring-architecture.md`, `docs/d0-feasibility.md`.
 
 ### E0
 
