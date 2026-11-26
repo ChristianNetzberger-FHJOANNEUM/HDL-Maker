@@ -129,6 +129,10 @@
 
 - Architecture-only docs for a long-term Component Library System and Educational Web Applications. Planning IDs **CL0–CL7** and **EDU0–EDU6** avoid collisions with existing Learning Mode **L0** and Studio **E0–E6**. Strategic extension accepted; phases remain locked (no productive library/education code). Details: `docs/component-library-system-architecture.md`, `docs/educational-web-editor-architecture.md`.
 
+### D5b.5 lab
+
+- Docked toolbar polish: **icon-only** chrome with tooltips (original labels), functional groups, hierarchy chrome separate; toolbar stays fixed while the stage pans. Detachable bar still out of scope. Accepted by the user (26 Nov 2026). Details: `docs/d5b5-toolbar-icons-groups.md`.
+
 ### D5c.7 lab (spec only)
 
 - Decision doc for wire/segment copy: **deferred**; recommended later scope = orphan stub polyline paste with name kept (by-name join). No implementation. Details: `docs/d5c7-wire-copy-spec.md`.

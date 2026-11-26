@@ -1,6 +1,6 @@
 # Diagram editor roadmap
 
-D0 through D5 are one program. D0 through D4d are built in `diagram-lab`. D5a prepares the acceptance review and three reference projects. D5a.1, D5a.2, and D5a.3 are accepted by the user; D5a is complete. D5b is released. Through **D5b.5b** accepted (interaction defaults + wire-draft pan). Full D5b.5 toolbar polish and D5b.6 stay locked until released. **D5c.1** (wire label drag) is implemented and waits for acceptance ([d5c1-wire-label-drag.md](d5c1-wire-label-drag.md)). Remaining D5c–D5f stay planned. D4f and D4g are not started. The HDL-Maker editor, the VHDL generators, and the FPGA backends stay as they are while the lab proceeds.
+D0 through D5 are one program. D0 through D4d are built in `diagram-lab`. D5a prepares the acceptance review and three reference projects. D5a.1, D5a.2, and D5a.3 are accepted by the user; D5a is complete. **D5b** is released through **D5b.5** (incl. 5a/5b); **D5b.6** stays locked. **D5c** is accepted through **D5c.6**; **D5c.7** is wire-copy **spec only** (deferred implement). D5d–D5f and D4f–D4g are not started. The HDL-Maker editor, the VHDL generators, and the FPGA backends stay as they are while the lab proceeds.
 
 The rule for the whole program: the library is a diagram editor first. HDL is an adapter.
 
@@ -23,7 +23,7 @@ The rule for the whole program: the library is a diagram editor first. HDL is an
 | D5a.1 | Interactive top-down authoring | Built in `diagram-lab`. Accepted by the user on 25 Nov 2026. [d5a1-interactive-top-down-authoring.md](d5a1-interactive-top-down-authoring.md). |
 | D5a.2 | Interactive block resizing | Built in `diagram-lab`. Accepted by the user on 25 Nov 2026. [d5a2-interactive-block-resizing.md](d5a2-interactive-block-resizing.md). |
 | D5a.3 | Interactive port authoring | Accepted. D5a.3a–D5a.3c closed. [d5a3-interactive-port-authoring.md](d5a3-interactive-port-authoring.md). |
-| D5b | One chronological undo history | Released. Through **D5b.5b** accepted. Full D5b.5 / D5b.6 locked. [d5b5b-wire-draft-pan.md](d5b5b-wire-draft-pan.md). |
+| D5b | One chronological undo history | Through **D5b.5** accepted (incl. 5a/5b). **D5b.6** locked. [d5b5-toolbar-icons-groups.md](d5b5-toolbar-icons-groups.md). |
 | D5c | Drawing tools and interaction | Through **D5c.6** accepted; **D5c.7** wire-copy **spec only** (deferred). Rest specified. [d5c7-wire-copy-spec.md](d5c7-wire-copy-spec.md). |
 | D5d | Large diagrams | Specified. Not started. |
 | D5e | Export and documentation | Specified. Not started. |

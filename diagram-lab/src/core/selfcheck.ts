@@ -3223,6 +3223,17 @@ if (faceOpened.ok) {
   check(!allowMarquee('select', false, 2), 'D5b.5a right button does not start marquee')
 }
 
+// --- D5b.5 toolbar polish: mode ids / sticky policy unchanged ---
+{
+  const modes = ['select', 'pan', 'wire', 'freehand', 'port'] as const
+  check(modes.every((mode) => chooseTool('select', mode) === mode), 'D5b.5 toolbar modes still activate from Select')
+  check(chooseTool('wire', 'wire') === 'select', 'D5b.5 sticky Wire toggle still returns to Select')
+  check(chooseTool('freehand', 'freehand') === 'select', 'D5b.5 sticky Freehand toggle still returns to Select')
+  check(chooseTool('port', 'port') === 'select', 'D5b.5 sticky Port toggle still returns to Select')
+  check(chooseTool('pan', 'pan') === 'select', 'D5b.5 sticky Pan toggle still returns to Select')
+  check(nextEscapeAction('wire', false, false) === 'tool-select', 'D5b.5 Esc from Wire still returns to Select')
+}
+
 // --- D5b.5b wire draft survives viewport pan ---
 {
   check(shouldBeginViewPan(1, false), 'D5b.5b middle button starts view pan')

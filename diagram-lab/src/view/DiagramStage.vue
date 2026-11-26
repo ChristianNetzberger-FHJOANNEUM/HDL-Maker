@@ -3116,42 +3116,172 @@ defineExpose({ roundTrip, doc })
 
 <template>
   <div class="lab" :class="{ editing: Boolean(activeSymbol) }">
-    <header class="toolbar">
-      <button @click="newDiagram">New</button>
-      <button @click="loadExample">Example</button>
-      <button @click="loadNetTest">Net test</button>
-      <button @click="loadSymbols">Symbols</button>
-      <button @click="loadAcceptance">Acceptance</button>
-      <button @click="loadBench">Bench</button>
-      <button @click="loadProject">Project</button>
-      <button @click="newDesign">New project</button>
-      <button data-reference="digital" @click="loadDigital">Digital</button>
-      <button data-reference="signal" @click="loadSignal">Signal</button>
-      <button data-reference="general" @click="loadGeneral">General</button>
-      <button @click="createSymbol">New symbol</button>
-      <button @click="shiftSymbolPin">Shift pin</button>
-      <button @click="dropSymbolPin">Drop pin</button>
-      <button :class="{ on: tool === 'select' }" title="Select (default)" @click="chooseEditorTool('select')">Select</button>
-      <button :class="{ on: tool === 'pan' }" title="Pan tool (or middle-click / Space+drag)" @click="chooseEditorTool('pan')">Pan</button>
-      <button :class="{ on: tool === 'wire' }" title="Wire (sticky; click again for Select)" @click="chooseEditorTool('wire')">Wire</button>
-      <button :class="{ on: tool === 'freehand' }" title="Freehand (sticky; click again for Select)" @click="chooseEditorTool('freehand')">Freehand</button>
-      <button :class="{ on: tool === 'port' }" title="Add port (sticky; click again for Select)" @click="beginAddPort">Add port</button>
-      <button :disabled="selected.size < 2" @click="groupSelection">Group</button>
-      <button @click="ungroupSelection">Ungroup</button>
-      <button :disabled="selected.size === 0" @click="duplicateSelection">Duplicate</button>
-      <button :disabled="selected.size === 0 && !selectedPort && !selectedStroke && !selectedSegment" @click="removeSelection">Delete</button>
-      <button :class="{ on: snapOn }" @click="snapOn = !snapOn">Snap</button>
-      <button @click="convertSelected">Convert</button>
-      <button :disabled="!preview" @click="confirmPreview">Confirm wire</button>
-      <button :disabled="!canUndo" :title="project ? 'Undo the last project change.' : 'Sheet undo.'" @click="undo">Undo</button>
-      <button :disabled="!canRedo" :title="project ? 'Redo the last undone project change.' : 'Sheet redo.'" @click="redo">Redo</button>
-      <button @click="save">Save</button>
-      <button @click="reloadSaved">Reload</button>
-      <button @click="fileEl?.click()">Load file</button>
-      <button @click="checkRoundTrip">Check round-trip</button>
-      <button @click="zoomToken += 1">Zoom in</button>
-      <button @click="zoomToken -= 1">Zoom out</button>
-      <span class="zoom">{{ doc.blocks.length }} blocks · zoom {{ viewport.zoom.toFixed(2) }}</span>
+    <header class="toolbar" data-toolbar="docked" data-toolbar-icons="only" role="banner">
+      <div class="toolbar-group" data-group="file" role="group" aria-label="Sheets and fixtures">
+        <button type="button" class="tool-btn" title="New" aria-label="New" @click="newDiagram">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2h5l3 3v9H4V2zm5 0v3h3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 9h4M8 7v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Example" aria-label="Example" @click="loadExample">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2l1.5 3.5L13 6l-2.8 2.4L11 12 8 10.2 5 12l.8-3.6L3 6l3.5-.5z" fill="currentColor"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Net test" aria-label="Net test" @click="loadNetTest">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="3" cy="8" r="1.5" fill="currentColor"/><circle cx="13" cy="4" r="1.5" fill="currentColor"/><circle cx="13" cy="12" r="1.5" fill="currentColor"/><path d="M4.5 8H11M11.5 5v6" stroke="currentColor" stroke-width="1.3"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Symbols" aria-label="Symbols" @click="loadSymbols">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3 6h10M6 3v10" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Acceptance" aria-label="Acceptance" @click="loadAcceptance">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Bench" aria-label="Bench" @click="loadBench">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 11h12M4 11V7l4-3 4 3v4M6 11v2m4-2v2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Project" aria-label="Project" @click="loadProject">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h5l1 1.5H14v8H2V4z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="New project" aria-label="New project" @click="newDesign">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h5l1 1.5H14v8H2V4z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7v5M5.5 9.5h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" data-reference="digital" title="Digital" aria-label="Digital" @click="loadDigital">
+          <span class="tool-glyph">D</span>
+        </button>
+        <button type="button" class="tool-btn" data-reference="signal" title="Signal" aria-label="Signal" @click="loadSignal">
+          <span class="tool-glyph">S</span>
+        </button>
+        <button type="button" class="tool-btn" data-reference="general" title="General" aria-label="General" @click="loadGeneral">
+          <span class="tool-glyph">G</span>
+        </button>
+        <button type="button" class="tool-btn" title="New symbol" aria-label="New symbol" @click="createSymbol">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 5.5v5M5.5 8h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Shift pin" aria-label="Shift pin" @click="shiftSymbolPin">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="8" r="1.5" fill="currentColor"/><path d="M7 8h5M10 5.5 12.5 8 10 10.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Drop pin" aria-label="Drop pin" @click="dropSymbolPin">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5" r="1.5" fill="currentColor"/><path d="M8 7v5M5.5 10 8 12.5 10.5 10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <span class="toolbar-sep" aria-hidden="true" />
+      <div class="toolbar-group" data-group="navigate" role="toolbar" aria-label="Select and navigate">
+        <button
+          type="button"
+          class="tool-btn"
+          data-tool-id="select"
+          :class="{ on: tool === 'select' }"
+          title="Select — Esc returns here"
+          aria-label="Select"
+          :aria-pressed="tool === 'select'"
+          @click="chooseEditorTool('select')"
+        >
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2v12l3.5-3.2L9.8 14l1.4-1.4-3.2-3.2L14 6.2z" fill="currentColor"/></svg>
+        </button>
+        <button
+          type="button"
+          class="tool-btn"
+          data-tool-id="pan"
+          :class="{ on: tool === 'pan' }"
+          title="Pan — MMB drag · Space+LMB · or this tool"
+          aria-label="Pan"
+          :aria-pressed="tool === 'pan'"
+          @click="chooseEditorTool('pan')"
+        >
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 10 4H9v3h3V6l2.5 2L12 10.5V9H9v3h1l-2 2.5L6 12h1V9H4v1.5L1.5 8 4 6v1h3V4H6z" fill="currentColor"/></svg>
+        </button>
+      </div>
+      <span class="toolbar-sep" aria-hidden="true" />
+      <div class="toolbar-group" data-group="draw" role="toolbar" aria-label="Draw">
+        <button
+          type="button"
+          class="tool-btn"
+          data-tool-id="wire"
+          :class="{ on: tool === 'wire' }"
+          title="Wire — sticky; click again for Select · Enter finishes stub · Esc cancels"
+          aria-label="Wire"
+          :aria-pressed="tool === 'wire'"
+          @click="chooseEditorTool('wire')"
+        >
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 11h3v3H2zm9-9h3v3h-3zM5.2 11.5 10.5 4.8l1.1 1.1-5.3 6.7z" fill="currentColor"/></svg>
+        </button>
+        <button
+          type="button"
+          class="tool-btn"
+          data-tool-id="freehand"
+          :class="{ on: tool === 'freehand' }"
+          title="Freehand — sticky; click again for Select"
+          aria-label="Freehand"
+          :aria-pressed="tool === 'freehand'"
+          @click="chooseEditorTool('freehand')"
+        >
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12c2-3 3-5 5-5s2 3 4 3 3-2 3-2l1 1s-1 3-4 3-3-3-5-3-2 2-3 3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <button
+          type="button"
+          class="tool-btn"
+          data-tool-id="port"
+          :class="{ on: tool === 'port' }"
+          title="Add port — sticky; click again for Select"
+          aria-label="Add port"
+          :aria-pressed="tool === 'port'"
+          @click="beginAddPort"
+        >
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="13" cy="8" r="1.6" fill="currentColor"/></svg>
+        </button>
+      </div>
+      <span class="toolbar-sep" aria-hidden="true" />
+      <div class="toolbar-group" data-group="edit" role="group" aria-label="Edit">
+        <button type="button" class="tool-btn" :disabled="selected.size < 2" title="Group" aria-label="Group" @click="groupSelection">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 4.5h2.5V9" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Ungroup" aria-label="Ungroup" @click="ungroupSelection">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="5" height="5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="5" height="5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 3.5h2.5M11.5 6V8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" :disabled="selected.size === 0" title="Duplicate — Ctrl/Cmd+D · or Shift+drag" aria-label="Duplicate" @click="duplicateSelection">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3 10V3.5A1.5 1.5 0 0 1 4.5 2H11" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+        </button>
+        <button type="button" class="tool-btn" :disabled="selected.size === 0 && !selectedPort && !selectedStroke && !selectedSegment" title="Delete — Del" aria-label="Delete" @click="removeSelection">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h10M6 5V3.5h4V5m-.5 0v8h-5V5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" :class="{ on: snapOn }" title="Snap" aria-label="Snap" :aria-pressed="snapOn" @click="snapOn = !snapOn">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zm9 0h3v3h-3zM2 11h3v3H2zm9 0h3v3h-3zM5 3.5h6M3.5 5v6M12.5 5v6M5 12.5h6" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Convert" aria-label="Convert" @click="convertSelected">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5c2-3 8-3 10 0M13 3v3h-3M13 11c-2 3-8 3-10 0M3 13v-3h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" :disabled="!preview" title="Confirm wire" aria-label="Confirm wire" @click="confirmPreview">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 9c2 0 3-3 5-3s2 4 4 4 3-2 3-2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10 3.5 12.5 6 10 8.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" data-action="undo" :disabled="!canUndo" :title="project ? 'Undo — Ctrl/Cmd+Z' : 'Undo — Ctrl/Cmd+Z'" aria-label="Undo" @click="undo">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 3 3 7l4 4V8.5c3 0 5 1 6 3-.5-3.5-2.5-5-6-5V3z" fill="currentColor"/></svg>
+        </button>
+        <button type="button" class="tool-btn" data-action="redo" :disabled="!canRedo" :title="project ? 'Redo — Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y' : 'Redo — Ctrl/Cmd+Shift+Z or Y'" aria-label="Redo" @click="redo">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3d4 4-4 4V8.5c-3 0-5 1-6 3 .5-3.5 2.5-5 6-5V3z" fill="currentColor"/></svg>
+        </button>
+      </div>
+      <span class="toolbar-sep" aria-hidden="true" />
+      <div class="toolbar-group" data-group="io" role="group" aria-label="Save and load">
+        <button type="button" class="tool-btn" title="Save — Ctrl/Cmd+S" aria-label="Save" @click="save">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2h8l2 2v10H3V2zm2 0v4h5V2m-6 8h8v4H4v-4z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Reload" aria-label="Reload" @click="reloadSaved">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.2-3.3M13 3v3h-3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Load file" aria-label="Load file" @click="fileEl?.click()">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 7.5 8 12l5-4.5M8 2v10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 14h12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Check round-trip" aria-label="Check round-trip" @click="checkRoundTrip">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h7l2 2v6H3V5zm7 0v2h2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 9.5 7 11l3-3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <span class="toolbar-sep" aria-hidden="true" />
+      <div class="toolbar-group" data-group="view" role="group" aria-label="View">
+        <button type="button" class="tool-btn" data-action="zoom-in" title="Zoom in" aria-label="Zoom in" @click="zoomToken += 1">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5 14 14M5 7h4M7 5v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" data-action="zoom-out" title="Zoom out" aria-label="Zoom out" @click="zoomToken -= 1">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5 14 14M5 7h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <span class="zoom" title="Sheet status">{{ doc.blocks.length }} · {{ viewport.zoom.toFixed(2) }}×</span>
+      </div>
       <input ref="fileEl" class="file" type="file" accept="application/json,.json" @change="onFile" />
       <input ref="libraryFile" class="file" type="file" accept="application/json,.json" @change="onLibraryFile" />
     </header>
@@ -3199,12 +3329,29 @@ defineExpose({ roundTrip, doc })
       </template>
     </aside>
     <div class="sheet-column">
-      <div v-if="project && navigation" class="crumbs" :data-path-ids="pathKey" :data-shared="sharedLabel ?? ''">
-        <button v-for="(crumb, index) in crumbs" :key="`${crumb.blockId ?? 'root'}-${index}`" type="button" @click="goToSteps(crumb.steps, true)">{{ crumb.label }}</button>
-        <button type="button" @click="goRoot">Root</button>
-        <button type="button" :disabled="pathKey === ''" @click="goParent">Up</button>
-        <button type="button" :disabled="!canNavBack" @click="goBack">Back</button>
-        <button type="button" :disabled="!canNavForward" @click="goForward">Forward</button>
+      <div
+        v-if="project && navigation"
+        class="crumbs hierarchy-chrome"
+        data-chrome="hierarchy"
+        role="navigation"
+        aria-label="Hierarchy"
+        :data-path-ids="pathKey"
+        :data-shared="sharedLabel ?? ''"
+      >
+        <button v-for="(crumb, index) in crumbs" :key="`${crumb.blockId ?? 'root'}-${index}`" type="button" class="crumb-label" :title="crumb.label" @click="goToSteps(crumb.steps, true)">{{ crumb.label }}</button>
+        <span class="toolbar-sep crumbs-sep" aria-hidden="true" />
+        <button type="button" class="tool-btn" title="Root" aria-label="Root" @click="goRoot">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 2 7h2v6h3V9h2v4h3V7h2z" fill="currentColor"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Up" aria-label="Up" :disabled="pathKey === ''" @click="goParent">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3 3 8h3v5h4V8h3z" fill="currentColor"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Back" aria-label="Back" :disabled="!canNavBack" @click="goBack">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3 4 8l5 5V9.5h4v-3H9V3z" fill="currentColor"/></svg>
+        </button>
+        <button type="button" class="tool-btn" title="Forward" aria-label="Forward" :disabled="!canNavForward" @click="goForward">
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 3d5 5-5 5V9.5H3v-3h4V3z" fill="currentColor"/></svg>
+        </button>
         <span v-if="sharedLabel" class="hint">{{ sharedLabel }}</span>
       </div>
     <div

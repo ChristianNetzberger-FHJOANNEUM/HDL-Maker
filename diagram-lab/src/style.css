@@ -18,14 +18,53 @@ body,
   grid-template-columns: 340px minmax(0, 1fr) 220px;
 }
 
+/* App chrome — outside the diagram viewport; stays fixed while the stage pans (D5b.5). */
 .toolbar {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  padding: 8px;
+  padding: 6px 8px;
   border-bottom: 1px solid #d5dbe3;
+  background: #fbfcfd;
+  position: relative;
+  z-index: 5;
+}
+
+.toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 22px;
+  background: #c5ced8;
+  flex: 0 0 1px;
+}
+
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+}
+
+.tool-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.tool-glyph {
+  font: 700 11px/1 "Segoe UI", sans-serif;
+  letter-spacing: 0;
 }
 
 button {
@@ -35,14 +74,21 @@ button {
   padding: 4px 8px;
 }
 
-button.on {
+button.on,
+.tool-btn.on {
   background: #e7f0fb;
   border-color: #3d6ea8;
+  color: #1e3f66;
+}
+
+button:disabled {
+  opacity: 0.45;
 }
 
 .zoom {
-  margin-left: auto;
+  margin-left: 4px;
   color: #526070;
+  white-space: nowrap;
 }
 
 .palette,
@@ -274,14 +320,19 @@ button.on {
   min-height: 0;
 }
 
-.crumbs {
+.crumbs,
+.hierarchy-chrome {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
   padding: 6px 8px;
   border-bottom: 1px solid #d5dbe3;
-  background: #f7f9fb;
+  background: #f0f4f8;
+}
+
+.crumbs-sep {
+  min-height: 18px;
 }
 
 .tree {
