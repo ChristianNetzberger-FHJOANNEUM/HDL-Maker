@@ -42,6 +42,8 @@ D5b–D5f stay the active diagram-engine completion path. After that, two **prop
 | **CL** | Domain-neutral component libraries, manager, parameters, assets | [component-library-system-architecture.md](component-library-system-architecture.md) |
 | **EDU** | Browser assignments, packs, student JSON, viewer/checker | [educational-web-editor-architecture.md](educational-web-editor-architecture.md) |
 
+Broader product vision (general diagram host, animation, sim visualisation, open-source posture) lives in [diagram-lab-strategic-vision.md](diagram-lab-strategic-vision.md). Its F0–F11 stages are **orientation only** — they do not renumber D/CL/EDU or authorise work.
+
 **Guidance for D5c–D5f (not a schema change):** avoid hard-coding domain palettes into the core; keep host-configurable library lists in mind for D5f; treat large embedded assets as a **D5d** concern relative to project-snapshot undo (D5b Variant A stays unless a later acceptance revises it).
 
 **MVP sketch (proposal):** finish D5b → accept CL0 → load a small self-contained library → transactional place/wire/parameters → student JSON → lecturer reopen. Full Shape Editor (CL7), auto-grading (EDU5), and simulation (EDU6) are out of MVP.

@@ -51,13 +51,22 @@ import {
   setRouted,
   snapTarget,
 } from '../core/nets'
-import { finishFree, wireClick, type WireDraft } from '../core/wiretool'
+import { finishFree, undoWireStep, wireClick, type WireDraft } from '../core/wiretool'
 import { orthogonalize } from '../core/orthogonalize'
 import { sampleDocument } from '../core/sample'
 import { symbolSheet } from '../core/symbolsheet'
 import { defineSymbol, instantiateSymbol, moveSymbolPort, removeSymbolPort, symbolDiagnostics } from '../core/symbols'
 import { auditAssets } from '../core/assets'
 import { acceptanceSheet, benchSheet } from '../core/acceptance'
+import {
+  BENCHGEN_SIZES,
+  estimateBenchCounts,
+  generateBenchDocument,
+  type BenchGeometry,
+  type BenchGenSize,
+  type BenchTopology,
+  type BenchWiring,
+} from '../core/benchgen'
 import { addComponent, createProject, documentById, instancesOf, instantiateComponent, removeComponent, validateProject, type DiagramProject, type InstanceStep, type ProjectResult } from '../core/component'
 import {
   duplicateComponent,
@@ -122,11 +131,14 @@ import {
   blockDragMode,
   chooseTool as nextTool,
   duplicateDragMoved,
+  isDoublePress,
   panOnDragButtons,
   nextEscapeAction,
   shouldBeginViewPan,
   spaceReleaseAction,
+  wireDrawingShortcut,
   type EditorTool,
+  type PressStamp,
 } from './interactionPolicy'
 import HierarchyTree from './HierarchyTree.vue'
 import { JsonRecordStorage, jsonFileName } from '../core/storage'
@@ -190,6 +202,8 @@ const interfaceSide = ref<PortSide>('left')
 const fitToken = ref(0)
 const wireDraft = ref<WireDraft | null>(null)
 const wireHover = ref<Point>({ x: 0, y: 0 })
+/** Client-space stamp for free-space double-press stub finish (PointerEvent.detail is always 0). */
+let wireFreePress: PressStamp | null = null
 const selectedSegment = ref<string | null>(null)
 const selectedEdge = ref(0)
 const mergeFrom = ref<string | null>(null)
@@ -200,7 +214,10 @@ const symbolEditor = ref<{
   cancelDraft: () => boolean
   abandonGesture: () => void
 } | null>(null)
-const flowBridge = ref<{ setViewport: (next: ViewportTransform) => void } | null>(null)
+const flowBridge = ref<{
+  setViewport: (next: ViewportTransform) => void
+  applyWheelZoom: (event: WheelEvent, stageRect: DOMRect) => void
+} | null>(null)
 const storage = new JsonRecordStorage()
 const projectStorage = new JsonProjectStorage()
 const libraryStorage = new JsonLibraryStorage()
@@ -209,6 +226,22 @@ const userLibrary = ref<SymbolLibrary>(emptyUserLibrary())
 const libraryDiagnostics = ref<LibraryDiagnostic[]>([])
 const libraryFile = ref<HTMLInputElement | null>(null)
 const zoomToken = ref(0)
+/** Session-remembered Σ dialog settings (D5d.0-A-Fix2). Not persisted across reloads. */
+const benchGenOpen = ref(false)
+const benchGenTopology = ref<BenchTopology>('C')
+const benchGenBlocks = ref<BenchGenSize>(50)
+const benchGenSeed = ref(1)
+const benchGenGeometry = ref<BenchGeometry>('simple')
+const benchGenWiring = ref<BenchWiring>('stubs')
+const benchGenEstimate = computed(() =>
+  estimateBenchCounts({
+    topology: benchGenTopology.value,
+    blocks: benchGenBlocks.value,
+    seed: benchGenSeed.value,
+    geometry: benchGenGeometry.value,
+    wiring: benchGenWiring.value,
+  }),
+)
 let clip: Fragment | null = null
 /** Increments on each paste so copies do not stack on the same point (D5c.3). */
 let clipPasteCount = 0
@@ -480,6 +513,7 @@ const labels = computed(() =>
     id: label.id,
     text: labelText(doc.value, label),
     at: labelPlacement(doc.value, label.id),
+    fontSize: typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : null,
   })),
 )
 
@@ -572,7 +606,7 @@ function resetInteractionMode(): void {
   spacePanMoved = false
   viewPan = null
   portPreview.value = null
-  wireDraft.value = null
+  clearWireDraft()
   marquee.value = null
   clip = null
   clipPasteCount = 0
@@ -582,13 +616,14 @@ function chooseEditorTool(next: Tool): void {
   const previous = tool.value
   const chosen = nextTool(previous, next)
   if (chosen !== 'port') portPreview.value = null
-  if (chosen !== 'wire') wireDraft.value = null
+  if (chosen !== 'wire') clearWireDraft()
   if (chosen !== 'freehand') drawing.value = null
   if (chosen !== 'select') marquee.value = null
   tool.value = chosen
   if (chosen === 'select') status.value = 'Select.'
   else if (chosen === 'pan') status.value = 'Pan. Middle-click or Space+drag also pan in any tool.'
-  else if (chosen === 'wire') status.value = 'Wire. Middle-click or Space+drag pans without cancelling the draft.'
+  else if (chosen === 'wire')
+    status.value = 'LMB: Add point | Double-click: Finish | Esc/Backspace: Undo point | Shift+Esc: Cancel'
   else if (chosen === 'freehand') status.value = 'Freehand.'
   else if (chosen === 'port') status.value = 'Click a block edge to add a port.'
 }
@@ -601,6 +636,19 @@ function refreshHistory(): void {
 function onViewport(next: ViewportTransform): void {
   viewport.value = { x: next.x, y: next.y, zoom: next.zoom }
   refreshWireHoverFromClient()
+}
+
+/**
+ * One stage-level wheel path (D5d.0-A-Fix1). Vue Flow's own zoom-on-scroll is off so overlay
+ * hits (wires, labels, junctions) and empty pane space share the same cursor-centred zoom.
+ * Capture + stop keeps a second handler from applying the same delta.
+ */
+function onStageWheel(event: WheelEvent): void {
+  event.preventDefault()
+  event.stopPropagation()
+  const rect = stageEl.value?.getBoundingClientRect()
+  if (!rect) return
+  flowBridge.value?.applyWheelZoom(event, rect)
 }
 
 function clientPointToWorld(clientX: number, clientY: number): Point {
@@ -1058,10 +1106,55 @@ function loadBench(): void {
   openDocument(sheet, `Bench sheet loaded in ${Math.round(performance.now() - started)} ms.`)
 }
 
+/** Developer-only opener for D5d.0-A synthetic sheets. Not the Benchmark Center. */
+function openSyntheticBenchDialog(): void {
+  benchGenOpen.value = true
+}
+
+function resetSyntheticBenchForm(): void {
+  benchGenTopology.value = 'C'
+  benchGenBlocks.value = 50
+  benchGenSeed.value = 1
+  benchGenGeometry.value = 'simple'
+  benchGenWiring.value = 'stubs'
+}
+
+function dismissSyntheticBenchDialog(): void {
+  benchGenOpen.value = false
+}
+
+function generateSyntheticBench(): void {
+  const topology = benchGenTopology.value
+  const blocks = benchGenBlocks.value
+  const seed = Number(benchGenSeed.value)
+  const geometry = benchGenGeometry.value
+  const wiring = benchGenWiring.value
+  if (!BENCHGEN_SIZES.includes(blocks)) {
+    status.value = `Unsupported size. Use ${BENCHGEN_SIZES.join(', ')}.`
+    return
+  }
+  if (!Number.isInteger(seed) || seed < 0) {
+    status.value = 'Seed must be a non-negative integer.'
+    return
+  }
+  try {
+    const started = performance.now()
+    const result = generateBenchDocument({ topology, blocks, seed, geometry, wiring })
+    benchGenOpen.value = false
+    // Install as a project root so hierarchy / Open as stay available (openDocument would clear the project).
+    openInstalled(
+      createProject(`Synthetic ${topology}/${blocks}`, result.doc),
+      `Synthetic ${topology}/${blocks} seed=${seed} ${geometry} ${wiring} · seg=${result.actual.segments} nets=${result.actual.nets} · hash ${result.hash.slice(0, 12)}… · ${Math.round(performance.now() - started)} ms · project ready for Open as`,
+    )
+  } catch (error) {
+    status.value = error instanceof Error ? error.message : 'Synthetic bench failed.'
+  }
+}
+
 function clearUiGestureState(): void {
   symbolEditor.value?.cancelDraft()
   symbolEditor.value?.abandonGesture()
-  if (wireDraft.value) wireDraft.value = null
+  if (wireDraft.value) clearWireDraft()
   mergeFrom.value = null
   preview.value = null
   drawing.value = null
@@ -1490,7 +1583,7 @@ function loadProject(): void {
   navigation.value = rootLocation(sample)
   doc.value = root
   selected.value = new Set()
-  wireDraft.value = null
+  clearWireDraft()
   editingSymbol.value = null
   refreshHistory()
   const bounds = contentBounds(root)
@@ -2369,10 +2462,15 @@ function onStagePointerUp(): void {
   selected.value = box.shift ? new Set([...selected.value, ...hits]) : new Set(hits)
 }
 
+function clearWireDraft(): void {
+  wireDraft.value = null
+  wireFreePress = null
+}
+
 function acceptWire(commit: { points: Point[]; start: Parameters<typeof commitWire>[2]; end: Parameters<typeof commitWire>[3] }): void {
   const probe = probeWire(doc.value, commit.start, commit.end)
   if (!probe.ok) {
-    wireDraft.value = null
+    clearWireDraft()
     status.value = probe.reason
     return
   }
@@ -2385,12 +2483,49 @@ function acceptWire(commit: { points: Point[]; start: Parameters<typeof commitWi
       netId = result.netId
     }
   })
-  wireDraft.value = null
+  clearWireDraft()
   refreshHistory()
   const netName = doc.value.nets.find((item) => item.id === netId)?.name
   status.value = createdNet
     ? `New net${netName ? ` "${netName}"` : ''}.`
     : `Wire on net${netName ? ` "${netName}"` : ''}.`
+}
+
+/** Finish an open stub on free space (S5a). Prefer this over PointerEvent.detail. */
+function finishWireStubAt(world: Point): void {
+  const draft = wireDraft.value
+  if (!draft) return
+  acceptWire(finishFree(draft, world, { fromBeforeLastFreeBend: true }))
+}
+
+/** S5a.1: pop one drawing step, or cancel when only the start anchor remains. */
+function applyWireStepUndo(): void {
+  const draft = wireDraft.value
+  if (!draft) return
+  wireFreePress = null
+  const step = undoWireStep(draft)
+  if (step.cancelled || !step.draft) {
+    clearWireDraft()
+    status.value = 'Wire cancelled.'
+    return
+  }
+  wireDraft.value = step.draft
+  status.value = step.message
+}
+
+function cancelWireDraftEntirely(): void {
+  clearWireDraft()
+  status.value = 'Wire cancelled.'
+}
+
+/** Native dblclick backup — fires after the second click when pointerdown timing missed. */
+function onWorldDblClick(event: MouseEvent): void {
+  if (tool.value !== 'wire' || !wireDraft.value || event.button !== 0) return
+  event.preventDefault()
+  const world = clientPointToWorld(event.clientX, event.clientY)
+  const hit = snapTarget(doc.value, world)
+  if (hit.kind !== 'free') return
+  finishWireStubAt(world)
 }
 
 function onPointerDown(event: PointerEvent): void {
@@ -2414,10 +2549,18 @@ function onPointerDown(event: PointerEvent): void {
   if (tool.value === 'wire') {
     const world = clientToWorld(event)
     const hit = snapTarget(doc.value, world)
-    // D5c.5: LMB double-click on free space finishes an open stub (Port→free).
-    if (wireDraft.value && hit.kind === 'free' && event.detail >= 2) {
-      acceptWire(finishFree(wireDraft.value, world))
-      return
+    // D5c.5 / S5a: double-press on free space finishes an open stub (Port→free).
+    // PointerEvent.detail is always 0 on pointerdown — use client-space timing instead.
+    if (wireDraft.value && hit.kind === 'free') {
+      const stamp = { t: performance.now(), x: event.clientX, y: event.clientY }
+      const doubled = isDoublePress(wireFreePress, stamp) || event.detail >= 2
+      wireFreePress = stamp
+      if (doubled) {
+        finishWireStubAt(world)
+        return
+      }
+    } else {
+      wireFreePress = null
     }
     const step = wireClick(wireDraft.value, hit)
     if (step.commit) acceptWire(step.commit)
@@ -2919,9 +3062,18 @@ function onKey(event: KeyboardEvent): void {
       status.value = 'Polygon cancelled.'
       return
     }
+    // S5a.1: wire draft owns Esc / Shift+Esc before the general cancel stack.
+    const wireEsc = wireDrawingShortcut('Escape', Boolean(wireDraft.value), { shift: event.shiftKey })
+    if (wireEsc === 'cancel-all') {
+      cancelWireDraftEntirely()
+      return
+    }
+    if (wireEsc === 'undo-step') {
+      applyWireStepUndo()
+      return
+    }
     const hasTransient = Boolean(
-      wireDraft.value ||
-        mergeFrom.value ||
+      mergeFrom.value ||
         edits().isGesturing ||
         resizeDrag ||
         portDrag ||
@@ -2938,11 +3090,6 @@ function onKey(event: KeyboardEvent): void {
       Boolean(selectedStroke.value)
     const escape = nextEscapeAction(tool.value, hasTransient, hasSelection)
     if (escape === 'cancel') {
-      if (wireDraft.value) {
-        wireDraft.value = null
-        status.value = 'Wire cancelled.'
-        return
-      }
       if (mergeFrom.value) {
         mergeFrom.value = null
         status.value = 'Merge cancelled.'
@@ -2982,6 +3129,7 @@ function onKey(event: KeyboardEvent): void {
   }
   if (event.key === 'Enter' && wireDraft.value) {
     event.preventDefault()
+    wireFreePress = null
     acceptWire(finishFree(wireDraft.value, wireHover.value))
     return
   }
@@ -3000,8 +3148,15 @@ function onKey(event: KeyboardEvent): void {
   const key = event.key.toLowerCase()
   if (command && key === 'z') {
     event.preventDefault()
-    if (event.shiftKey) redo()
-    else undo()
+    if (event.shiftKey) {
+      redo()
+      return
+    }
+    if (wireDrawingShortcut('z', Boolean(wireDraft.value), { ctrlOrMeta: true }) === 'undo-step') {
+      applyWireStepUndo()
+      return
+    }
+    undo()
     return
   }
   if (command && key === 'y') {
@@ -3037,6 +3192,11 @@ function onKey(event: KeyboardEvent): void {
   if (event.key === 'Delete' || event.key === 'Backspace') {
     if (symbolEditor.value?.removeSelected()) {
       event.preventDefault()
+      return
+    }
+    if (event.key === 'Backspace' && wireDrawingShortcut('Backspace', Boolean(wireDraft.value)) === 'undo-step') {
+      event.preventDefault()
+      applyWireStepUndo()
       return
     }
     event.preventDefault()
@@ -3135,6 +3295,9 @@ defineExpose({ roundTrip, doc })
         </button>
         <button type="button" class="tool-btn" title="Bench" aria-label="Bench" @click="loadBench">
           <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 11h12M4 11V7l4-3 4 3v4M6 11v2m4-2v2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="tool-btn" data-benchgen="open" title="Synthetic bench (D5d.0-A)" aria-label="Synthetic bench" @click="openSyntheticBenchDialog">
+          <span class="tool-glyph">Σ</span>
         </button>
         <button type="button" class="tool-btn" title="Project" aria-label="Project" @click="loadProject">
           <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h5l1 1.5H14v8H2V4z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
@@ -3383,6 +3546,7 @@ defineExpose({ roundTrip, doc })
       @pointerup="onStagePointerUp"
       @mousedown="onStageAuxMouseDown"
       @contextmenu="onStageContextMenu"
+      @wheel.capture="onStageWheel"
     >
       <VueFlow
         :nodes="flowNodes"
@@ -3394,6 +3558,8 @@ defineExpose({ roundTrip, doc })
         :selection-key-code="null"
         :multi-selection-key-code="null"
         :select-nodes-on-drag="false"
+        :zoom-on-scroll="false"
+        :zoom-on-pinch="false"
         :zoom-on-double-click="false"
         :min-zoom="0.25"
         :max-zoom="2.5"
@@ -3442,6 +3608,7 @@ defineExpose({ roundTrip, doc })
         @pointerup="onPointerUp"
         @pointercancel="onPointerCancel"
         @lostpointercapture="onLostPointerCapture"
+        @dblclick="onWorldDblClick"
       >
         <g v-if="snapOn" class="grid">
           <line v-for="value in gridLines" :key="`x-${value}`" :x1="value" y1="0" :x2="value" y2="1600" />
@@ -3495,8 +3662,14 @@ defineExpose({ roundTrip, doc })
           class="label-group"
           @pointerdown="onLabelDown(label.id, $event)"
         >
-          <circle class="label-hit" :cx="label.at?.x ?? 0" :cy="label.at?.y ?? 0" r="12" />
-          <text class="label" :x="label.at?.x" :y="label.at?.y">{{ label.text }}</text>
+          <circle class="label-hit" :cx="label.at?.x ?? 0" :cy="label.at?.y ?? 0" :r="label.fontSize ? Math.max(8, label.fontSize) : 12" />
+          <text
+            class="label"
+            :class="{ compact: Boolean(label.fontSize && label.fontSize < 12) }"
+            :x="label.at?.x"
+            :y="label.at?.y"
+            :style="label.fontSize ? { fontSize: `${label.fontSize}px` } : undefined"
+          >{{ label.text }}</text>
         </g>
       </svg>
     </div>
@@ -3687,6 +3860,53 @@ defineExpose({ roundTrip, doc })
         <button type="button" data-open-as-vhdl disabled>VHDL text</button>
         <button type="button" data-open-as-sv disabled>SystemVerilog text</button>
         <button type="button" data-open-as-cancel @click="dismissOpenAs">Cancel</button>
+      </div>
+    </div>
+    <div v-if="benchGenOpen" class="menu-back" data-benchgen-dialog @pointerdown.self="dismissSyntheticBenchDialog">
+      <div class="benchgen-dialog open-as" role="dialog" aria-label="Generate benchmark diagram" @pointerdown.stop>
+        <p class="benchgen-title">Σ Generate benchmark diagram</p>
+        <label class="benchgen-field">
+          Topology
+          <select v-model="benchGenTopology" data-benchgen-topology>
+            <option value="A">A — Regular</option>
+            <option value="B">B — High Connectivity</option>
+            <option value="C">C — HDL-derived</option>
+          </select>
+        </label>
+        <label class="benchgen-field">
+          Number of blocks
+          <select v-model.number="benchGenBlocks" data-benchgen-blocks>
+            <option v-for="size in BENCHGEN_SIZES" :key="size" :value="size">{{ size }}</option>
+          </select>
+        </label>
+        <label class="benchgen-field">
+          Random seed
+          <input v-model.number="benchGenSeed" type="number" min="0" step="1" data-benchgen-seed />
+        </label>
+        <label class="benchgen-field">
+          Symbol geometry
+          <select v-model="benchGenGeometry" data-benchgen-geometry>
+            <option value="simple">Simple</option>
+            <option value="complex">Complex</option>
+          </select>
+        </label>
+        <label class="benchgen-field">
+          Wiring
+          <select v-model="benchGenWiring" data-benchgen-wiring>
+            <option value="stubs">Stubs + name labels (HDL-like)</option>
+            <option value="routed">Full routed corridors (stress)</option>
+          </select>
+        </label>
+        <p class="hint" data-benchgen-estimate>
+          Blocks {{ benchGenEstimate.blocks }} · ~{{ benchGenEstimate.segments }}
+          {{ benchGenWiring === 'stubs' ? 'stubs' : 'segments' }} · ~{{ benchGenEstimate.nets }} nets · ~{{ benchGenEstimate.ports }} ports
+          <template v-if="benchGenWiring === 'stubs'"> · no long wires</template>
+        </p>
+        <div class="benchgen-actions">
+          <button type="button" data-benchgen-reset @click="resetSyntheticBenchForm">Reset defaults</button>
+          <button type="button" data-benchgen-cancel @click="dismissSyntheticBenchDialog">Cancel</button>
+          <button type="button" class="benchgen-generate" data-benchgen-generate @click="generateSyntheticBench">Generate</button>
+        </div>
       </div>
     </div>
   </div>

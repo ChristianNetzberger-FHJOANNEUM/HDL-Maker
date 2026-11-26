@@ -1,15 +1,52 @@
 import { createId, parseDocument, serialize } from './document'
-import { autoRoute, fitSymbolShapes, labelPlacement, moveBlock, pinLocal, pinOnBorder, polylineLength, portAnchor, simplifyOrthogonal } from './geometry'
+import {
+  autoRoute,
+  capturePortAnchors,
+  fitSymbolShapes,
+  isBlockAttachedStub,
+  isPortAttachedStub,
+  labelPlacement,
+  moveBlock,
+  pinLocal,
+  pinOnBorder,
+  polylineLength,
+  portAnchor,
+  portAnchorDeltas,
+  simplifyOrthogonal,
+  translateAttachedStubsByPortDeltas,
+  translateSegmentGeometry,
+} from './geometry'
 import { netFixture } from './fixture'
 import { addNameLabel, commitWire, crossings, deleteSegment, ensureNetByName, labelText, mergeNets, mergeNetsByName, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeLabelAt, placeSpan, probeWire, renameNet, setLabelOffset, setRouted } from './nets'
-import { wireClick } from './wiretool'
+import { canUndoWireStep, finishFree, stubGeometrySane, undoWireStep, wireClick, WIRE_DRAW_HINT } from './wiretool'
 import { symbolSheet } from './symbolsheet'
 import { addImageAsset, addSymbolLabel, addSymbolPort, addSymbolShape, applySymbol, defineSymbol, instantiateSymbol, moveFreeSymbolPort, moveSymbolPort, removeSymbolPort, setComponent, setSymbolSize, symbolDiagnostics } from './symbols'
 import { auditAssets, base64ToBytes, inspectImage, sha256, sha256Sync } from './assets'
 import { PICTURE_SOURCES, pictureAssets } from './pictures'
 import { builtinLibraries } from './catalog'
 import { cloneSymbol, emptyUserLibrary, mergeLibrary, parseLibrary, placeLibrarySymbol, publishSymbolRevision, removeLibrarySymbol, saveSymbolToLibrary, serializeLibrary } from './library'
-import { emptyDocument, groupBlocks, duplicateGroup, duplicateBlocks, deleteBlocks, placeTemplate, BLOCK_TEMPLATES, linkPorts, captureFragment, pasteFragment, resizeBox, setBlockFields, addPortAt, borderPlacement, nearestBlockBorder, placePort, removeUnwiredPort, renameInstancePort, unusedPortName } from './edit'
+import {
+  attachedStubsForBlocks,
+  emptyDocument,
+  groupBlocks,
+  duplicateGroup,
+  duplicateBlocks,
+  deleteBlocks,
+  placeTemplate,
+  BLOCK_TEMPLATES,
+  linkPorts,
+  captureFragment,
+  pasteFragment,
+  resizeBox,
+  setBlockFields,
+  addPortAt,
+  borderPlacement,
+  nearestBlockBorder,
+  placePort,
+  removeUnwiredPort,
+  renameInstancePort,
+  unusedPortName,
+} from './edit'
 import { addPort } from './commands'
 import { EditSession } from './session'
 import { JsonRecordStorage } from './storage'
@@ -27,13 +64,29 @@ import {
   blockDragMode,
   chooseTool,
   duplicateDragMoved,
+  isDoublePress,
   nextEscapeAction,
   panOnDragButtons,
   shouldBeginViewPan,
   spaceReleaseAction,
+  wireDrawingShortcut,
 } from '../view/interactionPolicy'
+import { VIEWPORT_MAX_ZOOM, VIEWPORT_MIN_ZOOM, viewportAfterWheel, vueFlowWheelDelta } from '../view/viewportWheel'
 import { compareSymbols } from './compare'
 import { acceptanceSheet, benchSheet } from './acceptance'
+import {
+  BENCHGEN_RECIPE_VERSION,
+  BENCHGEN_SIZES,
+  densityWithinTolerance,
+  documentHash,
+  channelRouteHorizontal,
+  estimateBenchCounts,
+  generateBenchDocument,
+  inventoryBenchMatrix,
+  orthogonalPoints,
+  segmentIsOrthogonal,
+  validateBenchDocument,
+} from './benchgen'
 import { commitSymbolUpdate, detachInstance, dropPortWires, prepareSymbolUpdate, rebindPort } from './migration'
 import { digitalProject, generalProject, signalProject } from './references'
 
@@ -3221,6 +3274,16 @@ if (faceOpened.ok) {
   check(!allowMarquee('wire', false, 0), 'D5b.5a Wire mode has no marquee')
   check(!allowMarquee('select', false, 1), 'D5b.5a middle button does not start marquee')
   check(!allowMarquee('select', false, 2), 'D5b.5a right button does not start marquee')
+  check(!isDoublePress(null, { t: 100, x: 0, y: 0 }), 'S5a: first press is not a double')
+  check(isDoublePress({ t: 100, x: 10, y: 10 }, { t: 350, x: 12, y: 11 }), 'S5a: close second press is a double')
+  check(!isDoublePress({ t: 100, x: 10, y: 10 }, { t: 700, x: 10, y: 10 }), 'S5a: late second press is not a double')
+  check(!isDoublePress({ t: 100, x: 10, y: 10 }, { t: 200, x: 40, y: 10 }), 'S5a: distant second press is not a double')
+  check(wireDrawingShortcut('Escape', true) === 'undo-step', 'S5a.1: Esc undoes a drawing step')
+  check(wireDrawingShortcut('Escape', true, { shift: true }) === 'cancel-all', 'S5a.1: Shift+Esc cancels the draft')
+  check(wireDrawingShortcut('Backspace', true) === 'undo-step', 'S5a.1: Backspace undoes a drawing step')
+  check(wireDrawingShortcut('z', true, { ctrlOrMeta: true }) === 'undo-step', 'S5a.1: Ctrl+Z undoes a drawing step while drafting')
+  check(wireDrawingShortcut('Escape', false) === 'pass', 'S5a.1: Esc without draft passes through')
+  check(wireDrawingShortcut('z', false, { ctrlOrMeta: true }) === 'pass', 'S5a.1: Ctrl+Z without draft stays global')
 }
 
 // --- D5b.5 toolbar polish: mode ids / sticky policy unchanged ---
@@ -3610,7 +3673,1016 @@ if (faceOpened.ok) {
   check(chooseTool('wire', 'select') === 'select', 'D5c.2 choosing Select from Wire is Select')
 }
 
+// --- D5d.0-A-Fix1 unified viewport wheel zoom ---
+{
+  const delta = vueFlowWheelDelta({ deltaY: -100, deltaMode: 0, ctrlKey: false }, false)
+  check(delta > 0, 'D5d.0-A-Fix1 wheel up yields a positive zoom delta')
+  const before = { x: 40, y: 20, zoom: 1 }
+  const local = { x: 200, y: 150 }
+  const after = viewportAfterWheel(before, local, { deltaY: -100, deltaMode: 0, ctrlKey: false }, undefined, false)
+  check(after.zoom > before.zoom && after.zoom <= VIEWPORT_MAX_ZOOM, 'D5d.0-A-Fix1 wheel zooms in within max')
+  const worldBeforeX = (local.x - before.x) / before.zoom
+  const worldBeforeY = (local.y - before.y) / before.zoom
+  const worldAfterX = (local.x - after.x) / after.zoom
+  const worldAfterY = (local.y - after.y) / after.zoom
+  check(Math.abs(worldAfterX - worldBeforeX) < 1e-9 && Math.abs(worldAfterY - worldBeforeY) < 1e-9, 'D5d.0-A-Fix1 cursor world point stays anchored')
+  const floored = viewportAfterWheel({ x: 0, y: 0, zoom: VIEWPORT_MIN_ZOOM }, local, { deltaY: 500, deltaMode: 0, ctrlKey: false }, undefined, false)
+  check(floored.zoom === VIEWPORT_MIN_ZOOM, 'D5d.0-A-Fix1 respects min zoom')
+  const capped = viewportAfterWheel({ x: 0, y: 0, zoom: VIEWPORT_MAX_ZOOM }, local, { deltaY: -500, deltaMode: 0, ctrlKey: false }, undefined, false)
+  check(capped.zoom === VIEWPORT_MAX_ZOOM, 'D5d.0-A-Fix1 respects max zoom')
+}
+
+// --- D5d.0-A synthetic benchmark generator ---
+{
+  const first = generateBenchDocument({ topology: 'C', blocks: 50, seed: 1, geometry: 'simple', wiring: 'stubs' })
+  const second = generateBenchDocument({ topology: 'C', blocks: 50, seed: 1, geometry: 'simple', wiring: 'stubs' })
+  check(first.hash === second.hash, 'D5d.0-A same config+seed yields the same document hash')
+  check(serialize(first.doc) === serialize(second.doc), 'D5d.0-A same config+seed yields identical JSON')
+  check(documentHash(first.doc) === first.hash, 'D5d.0-A stamped hash matches documentHash')
+  check(first.recipeVersion === BENCHGEN_RECIPE_VERSION, 'D5d.0-A recipe version is stamped')
+  check(first.config.wiring === 'stubs', 'D5d.0-A default wiring is stubs')
+  const valid = validateBenchDocument(first.doc)
+  check(valid.ok, valid.ok ? 'D5d.0-A generated document validates' : `D5d.0-A validate: ${valid.errors.join('; ')}`)
+  check(
+    first.doc.segments.every((segment) => segmentIsOrthogonal(segment.points)),
+    'D5d.0-A topology C @50 segments are orthogonal',
+  )
+  check(first.actual.stubs === first.actual.segments, 'D5d.0-A stub mode draws only free-end stubs')
+  check(first.actual.junctions === 0, 'D5d.0-A stub mode has no junctions')
+  check(first.doc.labels.length === first.doc.segments.length, 'D5d.0-A stub mode labels every stub')
+  check(
+    first.doc.labels.every((label) => label.fontSize === 9),
+    'D5d.0-A stub mode uses compact 9px net labels',
+  )
+  const stubPitchX = (first.doc.blocks[1]?.x ?? 0) - (first.doc.blocks[0]?.x ?? 0)
+  check(stubPitchX >= 200, 'D5d.0-A stub mode keeps a wide inter-block gap')
+  const density = densityWithinTolerance(first.actual, first.targets, 0.25)
+  check(density.ok, 'D5d.0-A topology C @50 densities stay within 25% of targets')
+  const estimated = estimateBenchCounts({ topology: 'C', blocks: 50, seed: 1, wiring: 'stubs' })
+  check(estimated.segments === 750 && estimated.nets === 425, 'D5d.0-A stub estimate matches C/50 ports/nets')
+  const orthoSample = orthogonalPoints({ x: 0, y: 0 }, { x: 40, y: 30 }, 'hvh')
+  check(orthoSample.length === 4 && segmentIsOrthogonal(orthoSample), 'D5d.0-A orthogonalPoints yields HVH without diagonals')
+  const channelSample = channelRouteHorizontal({ x: 0, y: 10 }, { x: 100, y: 50 }, 80, 20, 80)
+  check(segmentIsOrthogonal(channelSample) && channelSample.some((point) => point.y === 80), 'D5d.0-A channelRoute uses exclusive track Y')
+
+  const routed = generateBenchDocument({ topology: 'C', blocks: 50, seed: 1, geometry: 'simple', wiring: 'routed' })
+  check(routed.hash !== first.hash, 'D5d.0-A stub vs routed wiring changes the hash')
+  check(routed.actual.segments > routed.actual.stubs, 'D5d.0-A routed mode keeps port–port wires')
+  check(densityWithinTolerance(routed.actual, routed.targets, 0.3).ok, 'D5d.0-A routed C @50 density tolerance')
+  let throughBlocks = 0
+  for (const segment of routed.doc.segments) {
+    for (let pointIndex = 1; pointIndex < segment.points.length - 1; pointIndex += 1) {
+      const point = segment.points[pointIndex]!
+      for (const block of routed.doc.blocks) {
+        if (point.x > block.x + 2 && point.x < block.x + block.width - 2 && point.y > block.y + 2 && point.y < block.y + block.height - 2) {
+          throughBlocks += 1
+        }
+      }
+    }
+  }
+  check(throughBlocks === 0, 'D5d.0-A topology C @50 routed paths do not pass through block interiors')
+  const estimatedRouted = estimateBenchCounts({ topology: 'C', blocks: 50, wiring: 'routed' })
+  check(estimatedRouted.segments === 750 && estimatedRouted.nets === 425, 'D5d.0-A routed estimate matches C/50 targets')
+
+  const otherSeed = generateBenchDocument({ topology: 'C', blocks: 50, seed: 2, geometry: 'simple', wiring: 'stubs' })
+  check(otherSeed.hash !== first.hash, 'D5d.0-A a different seed changes the hash')
+
+  for (const topology of ['A', 'B', 'C'] as const) {
+    const built = generateBenchDocument({ topology, blocks: 50, seed: 1, geometry: 'simple', wiring: 'stubs' })
+    const ok = validateBenchDocument(built.doc)
+    check(ok.ok, ok.ok ? `D5d.0-A topology ${topology}@50 validates` : `D5d.0-A ${topology}: ${ok.errors.join('; ')}`)
+    check(densityWithinTolerance(built.actual, built.targets, 0.3).ok, `D5d.0-A topology ${topology}@50 density tolerance`)
+    check(built.actual.stubs === built.actual.segments, `D5d.0-A topology ${topology} stub mode is all stubs`)
+    check(
+      built.doc.segments.every((segment) => built.doc.nets.some((net) => net.id === segment.netId)),
+      `D5d.0-A topology ${topology} segments cite existing nets`,
+    )
+    const names = new Set(built.doc.nets.map((net) => net.name.trim().toLowerCase()))
+    check(names.size === built.doc.nets.length, `D5d.0-A topology ${topology} keeps unique net names (D5c.5)`)
+  }
+
+  const complex = generateBenchDocument({ topology: 'A', blocks: 50, seed: 1, geometry: 'complex', wiring: 'stubs' })
+  check(complex.doc.symbols[0]!.shapes.length > 1, 'D5d.0-A complex geometry uses multiple symbol shapes')
+  check(complex.hash !== first.hash, 'D5d.0-A geometry profile affects the hash')
+
+  const roundTrip = parseDocument(serialize(first.doc))
+  check(validateBenchDocument(roundTrip).ok, 'D5d.0-A generated document survives serialize/parse')
+  check(documentHash(roundTrip) === first.hash, 'D5d.0-A hash survives serialize/parse')
+
+  // Full 15-cell matrix stays correct for the default (stubs) profile (may take a moment at 1000 blocks).
+  const matrix = inventoryBenchMatrix(1, 'simple')
+  check(matrix.length === BENCHGEN_SIZES.length * 3, 'D5d.0-A inventory covers 15 size×topology cells')
+  for (const row of matrix) {
+    const ok = validateBenchDocument(row.doc)
+    check(ok.ok, ok.ok ? `D5d.0-A matrix ${row.config.topology}/${row.config.blocks} ok` : `D5d.0-A matrix fail: ${ok.errors[0]}`)
+    check(row.config.wiring === 'stubs', `D5d.0-A matrix ${row.config.topology}/${row.config.blocks} defaults to stubs`)
+  }
+
+  // Class A fixture must remain untouched and loadable beside the generator.
+  const bench = benchSheet()
+  check(bench.id === 'doc_bench' && bench.blocks.length >= 50 && bench.segments.length >= 350, 'D5d.0-A benchSheet fixture stays intact')
+}
+
+// --- S3 stub-aware block copy (implicit Port↔Free closure) ---
+{
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }, tol = 0.5) =>
+    Math.hypot(a.x - b.x, a.y - b.y) <= tol
+  const freeOf = (segment: { start: { kind: string; x?: number; y?: number }; end: { kind: string; x?: number; y?: number } }) => {
+    if (segment.end.kind === 'free') return { x: segment.end.x!, y: segment.end.y! }
+    if (segment.start.kind === 'free') return { x: segment.start.x!, y: segment.start.y! }
+    return null
+  }
+
+  const sheet = emptyDocument()
+  const blockA = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  const blockB = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  const blockC = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  sheet.blocks.find((block) => block.id === blockA)!.x = 40
+  sheet.blocks.find((block) => block.id === blockA)!.y = 40
+  sheet.blocks.find((block) => block.id === blockB)!.x = 280
+  sheet.blocks.find((block) => block.id === blockB)!.y = 40
+  sheet.blocks.find((block) => block.id === blockC)!.x = 40
+  sheet.blocks.find((block) => block.id === blockC)!.y = 220
+  const portARight = addPortAt(sheet, blockA, 'right', 0.35) ?? ''
+  const portARight2 = addPortAt(sheet, blockA, 'right', 0.65) ?? ''
+  const portALeft = addPortAt(sheet, blockA, 'left', 0.5) ?? ''
+  const portBLeft = addPortAt(sheet, blockB, 'left', 0.5) ?? ''
+  const portCRight = addPortAt(sheet, blockC, 'right', 0.5) ?? ''
+  sheet.ports.find((port) => port.id === portARight)!.name = 'clk'
+  sheet.ports.find((port) => port.id === portARight2)!.name = 'data'
+  sheet.ports.find((port) => port.id === portALeft)!.name = 'rst'
+  sheet.ports.find((port) => port.id === portBLeft)!.name = 'clk'
+  // unnamed stub port
+  sheet.ports.find((port) => port.id === portCRight)!.name = ''
+  const aR = portAnchor(sheet, portARight)!
+  const aR2 = portAnchor(sheet, portARight2)!
+  const aL = portAnchor(sheet, portALeft)!
+  const bL = portAnchor(sheet, portBLeft)!
+  const cR = portAnchor(sheet, portCRight)!
+  commitWire(sheet, [aR, { x: aR.x + 40, y: aR.y }], { kind: 'port', portId: portARight, point: aR }, { kind: 'free', point: { x: aR.x + 40, y: aR.y } })
+  commitWire(
+    sheet,
+    [aR2, { x: aR2.x + 16, y: aR2.y }, { x: aR2.x + 16, y: aR2.y + 20 }, { x: aR2.x + 44, y: aR2.y + 20 }],
+    { kind: 'port', portId: portARight2, point: aR2 },
+    { kind: 'free', point: { x: aR2.x + 44, y: aR2.y + 20 } },
+  )
+  commitWire(sheet, [{ x: aL.x - 36, y: aL.y }, aL], { kind: 'free', point: { x: aL.x - 36, y: aL.y } }, { kind: 'port', portId: portALeft, point: aL })
+  commitWire(sheet, [bL, { x: bL.x - 40, y: bL.y }], { kind: 'port', portId: portBLeft, point: bL }, { kind: 'free', point: { x: bL.x - 40, y: bL.y } })
+  commitWire(sheet, [cR, { x: cR.x + 30, y: cR.y }], { kind: 'port', portId: portCRight, point: cR }, { kind: 'free', point: { x: cR.x + 30, y: cR.y } })
+  // External Port↔Port from A to B — must not copy when only A is duplicated.
+  const portAExt = addPortAt(sheet, blockA, 'right', 0.5) ?? ''
+  const portBExt = addPortAt(sheet, blockB, 'left', 0.35) ?? ''
+  linkPorts(sheet, portAExt, portBExt, 'ext')
+  const stubsA = attachedStubsForBlocks(sheet, [blockA])
+  check(stubsA.length === 3, 'S3: block A has three attached stubs')
+  check(
+    stubsA.every((segment) => sheet.labels.some((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === segment.id)),
+    'S3: commitWire already labelled each stub',
+  )
+  const clkNetBefore = sheet.nets.find((net) => net.name === 'clk')!.id
+  const segsBefore = sheet.segments.length
+  const labelsBefore = sheet.labels.length
+  const freeBBefore = freeOf(sheet.segments.find((segment) => isBlockAttachedStub(sheet, segment, blockB))!)!
+
+  const map = duplicateBlocks(sheet, [blockA], 60, 40)
+  const copyId = map.get(blockA)!
+  check(Boolean(copyId) && copyId !== blockA, 'S3: duplicate assigns a new block id')
+  const stubsCopy = attachedStubsForBlocks(sheet, [copyId])
+  check(stubsCopy.length === 3, 'S3: copy receives all three attached stubs')
+  check(stubsCopy.some((segment) => segment.points.length > 2), 'S3: multi-bend stub is copied')
+  check(stubsCopy.some((segment) => segment.start.kind === 'free'), 'S3: Free→Port orientation is copied')
+  check(stubsCopy.some((segment) => segment.end.kind === 'free'), 'S3: Port→Free orientation is copied')
+  check(sheet.segments.length === segsBefore + 3, 'S3 B5: only three stub segments added (external Port↔Port excluded)')
+  check(
+    near(freeOf(sheet.segments.find((segment) => isBlockAttachedStub(sheet, segment, blockB))!)!, freeBBefore),
+    'S3 B4: unrelated same-name stub on B is not copied/moved',
+  )
+  check(
+    !sheet.segments.some(
+      (segment) =>
+        segment.start.kind === 'port' &&
+        segment.end.kind === 'port' &&
+        sheet.nets.find((net) => net.id === segment.netId)?.name === 'ext' &&
+        [segment.start.portId, segment.end.portId].some((portId) => sheet.ports.find((port) => port.id === portId)?.blockId === copyId),
+    ),
+    'S3 B5: copied block has no remapped external Port↔Port trunk',
+  )
+  check(
+    stubsCopy.every((segment) => {
+      const net = sheet.nets.find((item) => item.id === segment.netId)
+      if (net?.name === 'clk' || net?.name === 'data' || net?.name === 'rst') return segment.netId === sheet.nets.find((item) => item.name === net.name)!.id
+      return true
+    }),
+    'S3: named stubs join sheet nets by name',
+  )
+  check(sheet.segments.filter((segment) => segment.netId === clkNetBefore).length === 3, 'S3: clk net gains the copied stub (A original, B, A copy)')
+  for (const stub of stubsCopy) {
+    const label = sheet.labels.find((item) => item.anchor.kind === 'segment' && item.anchor.segmentId === stub.id)
+    check(Boolean(label), `S3: stub ${stub.id} keeps a label`)
+    const portEnd = stub.start.kind === 'port' ? stub.start.portId : stub.end.kind === 'port' ? stub.end.portId : ''
+    const port = sheet.ports.find((item) => item.id === portEnd)
+    check(port?.blockId === copyId, `S3: stub ${stub.id} remaps to the copied block`)
+    const free = freeOf(stub)!
+    const anchor = portAnchor(sheet, portEnd)!
+    // Relative free offset matches source geometry (±60/40 translation of whole stub).
+    check(Math.abs(free.x - anchor.x) >= 20, `S3: stub ${stub.id} keeps a free-end offset`)
+  }
+  const stubLabelCopies = sheet.labels.filter((label) => {
+    if (label.anchor.kind !== 'segment') return false
+    const segmentId = label.anchor.segmentId
+    return stubsCopy.some((segment) => segment.id === segmentId)
+  })
+  check(stubLabelCopies.length === 3, 'S3: three stub labels copied once (no duplicates)')
+  check(sheet.labels.length >= labelsBefore + 3, 'S3: label count grows by at least the copied stubs')
+
+  // Capture/paste path + repeated paste joins the same named nets again.
+  const frag = captureFragment(sheet, [blockA])
+  check(frag.segments.filter((segment) => isPortFreeLike(segment)).length === 3, 'S3: capture includes three stubs')
+  check(
+    !frag.segments.some((segment) => segment.start.kind === 'port' && segment.end.kind === 'port' && sheet.nets.find((net) => net.id === segment.netId)?.name === 'ext'),
+    'S3 B5: captureFragment excludes external Port↔Port',
+  )
+  const pasteA = pasteFragment(sheet, frag, 100, 0)
+  const pasteB = pasteFragment(sheet, frag, 140, 0)
+  check(pasteA.length === 1 && pasteB.length === 1 && pasteA[0] !== pasteB[0], 'S3: repeated paste creates distinct blocks')
+  check(attachedStubsForBlocks(sheet, pasteA).length === 3 && attachedStubsForBlocks(sheet, pasteB).length === 3, 'S3: each paste brings stubs')
+  check(sheet.nets.filter((net) => net.name === 'clk').length === 1, 'S3: repeated paste does not create parallel clk nets')
+
+  // Multi-block: internal Port↔Port + each block’s stubs.
+  const multi = emptyDocument()
+  const mA = placeTemplate(multi, BLOCK_TEMPLATES[1], false)
+  const mB = placeTemplate(multi, BLOCK_TEMPLATES[1], false)
+  multi.blocks.find((block) => block.id === mA)!.x = 20
+  multi.blocks.find((block) => block.id === mB)!.x = 220
+  const mOut = addPortAt(multi, mA, 'right', 0.5) ?? ''
+  const mIn = addPortAt(multi, mB, 'left', 0.5) ?? ''
+  const mStubPort = addPortAt(multi, mA, 'left', 0.5) ?? ''
+  multi.ports.find((port) => port.id === mStubPort)!.name = 'clk'
+  linkPorts(multi, mOut, mIn, 'bus')
+  const mAt = portAnchor(multi, mStubPort)!
+  commitWire(multi, [mAt, { x: mAt.x - 28, y: mAt.y }], { kind: 'port', portId: mStubPort, point: mAt }, { kind: 'free', point: { x: mAt.x - 28, y: mAt.y } })
+  const multiBefore = multi.segments.length
+  const multiBus = multi.segments.find((segment) => multi.nets.find((net) => net.id === segment.netId)?.name === 'bus')
+  check(Boolean(multiBus && multiBus.start.kind === 'port' && multiBus.end.kind === 'port'), 'S3 B6: fixture has internal Port↔Port bus')
+  const multiMap = duplicateBlocks(multi, [mA, mB], 0, 80)
+  check(multiMap.size === 2, 'S3: multi-block duplicate maps both blocks')
+  check(multi.segments.length === multiBefore + 2, 'S3 B6: multi-block copies internal Port↔Port + one stub once')
+  const copiedBus = multi.segments.filter(
+    (segment) =>
+      segment.start.kind === 'port' &&
+      segment.end.kind === 'port' &&
+      multi.nets.find((net) => net.id === segment.netId)?.name === 'bus',
+  )
+  check(copiedBus.length === 2, 'S3 B6: internal Port↔Port preserved (original + copy)')
+  const copyMA = multiMap.get(mA)!
+  const copyMB = multiMap.get(mB)!
+  const busOnCopies = copiedBus.find((segment) => {
+    const start = segment.start
+    const end = segment.end
+    if (start.kind !== 'port' || end.kind !== 'port') return false
+    const a = multi.ports.find((port) => port.id === start.portId)?.blockId
+    const b = multi.ports.find((port) => port.id === end.portId)?.blockId
+    return (a === copyMA && b === copyMB) || (a === copyMB && b === copyMA)
+  })
+  check(Boolean(busOnCopies), 'S3 B6: copied internal wire remaps to both copied blocks')
+
+  // Auto-named stub nets still follow D5c.5 join-by-display-name.
+  const unnamedMap = duplicateBlocks(sheet, [blockC], 0, 80)
+  const unnamedCopy = unnamedMap.get(blockC)!
+  const unnamedStubs = attachedStubsForBlocks(sheet, [unnamedCopy])
+  const unnamedOriginal = sheet.segments.find((segment) => isBlockAttachedStub(sheet, segment, blockC))!
+  check(unnamedStubs.length === 1, 'S3: unnamed stub is copied')
+  check(unnamedStubs[0]!.netId === unnamedOriginal.netId, 'S3: auto-named stub joins by its display name')
+
+  // Shift+Drag-style preview from baseline: cancel restores; commit keeps stubs.
+  const box = { project: createProject('S3StubCopy') }
+  const tm = new TransactionManager({
+    get: () => box.project,
+    set: (next) => {
+      box.project = next
+    },
+  })
+  let live = ''
+  tm.transact('setup', (project) => {
+    const doc = documentById(project, project.rootDocumentId)!
+    live = placeTemplate(doc, BLOCK_TEMPLATES[1], false)
+    const portId = addPortAt(doc, live, 'right', 0.5) ?? ''
+    doc.ports.find((port) => port.id === portId)!.name = 'clk'
+    const at = portAnchor(doc, portId)!
+    commitWire(doc, [at, { x: at.x + 40, y: at.y }], { kind: 'port', portId, point: at }, { kind: 'free', point: { x: at.x + 40, y: at.y } })
+    return project
+  })
+  const baseline = serializeProject(box.project)
+  const origin = documentById(box.project, box.project.rootDocumentId)!.blocks.find((block) => block.id === live)!
+  tm.begin('shift-dup')
+  tm.preview((project) => {
+    duplicateBlocks(documentById(project, project.rootDocumentId)!, [live], 20, 20)
+  })
+  tm.preview((project) => {
+    duplicateBlocks(documentById(project, project.rootDocumentId)!, [live], 40, 30)
+  })
+  check(documentById(box.project, box.project.rootDocumentId)!.blocks.length === 2, 'S3: preview shows one copy from baseline')
+  check(attachedStubsForBlocks(documentById(box.project, box.project.rootDocumentId)!, [...documentById(box.project, box.project.rootDocumentId)!.blocks.map((block) => block.id).filter((id) => id !== live)]).length === 1, 'S3: preview copy includes the stub')
+  tm.cancel()
+  check(serializeProject(box.project) === baseline, 'S3: escape/cancel restores document')
+  tm.begin('shift-commit')
+  tm.preview((project) => {
+    duplicateBlocks(documentById(project, project.rootDocumentId)!, [live], 40, 30)
+  })
+  check(tm.commit(), 'S3: Shift+Drag-style commit records one history entry')
+  const afterCommit = documentById(box.project, box.project.rootDocumentId)!
+  check(afterCommit.blocks.length === 2 && afterCommit.segments.length === 2, 'S3: commit keeps original + copy stubs')
+  const committed = serializeProject(box.project)
+  tm.undo()
+  check(serializeProject(box.project) === baseline, 'S3: undo removes stub-aware copy')
+  tm.redo()
+  check(serializeProject(box.project) === committed, 'S3: redo restores stub-aware copy')
+  const roundTrip = parseDocument(serialize(documentById(box.project, box.project.rootDocumentId)!))
+  check(roundTrip.segments.length === 2 && roundTrip.blocks.length === 2, 'S3: save/load keeps stub-aware copy')
+  void origin
+}
+
+function isPortFreeLike(segment: { start: { kind: string }; end: { kind: string } }): boolean {
+  return (
+    (segment.start.kind === 'port' && segment.end.kind === 'free') ||
+    (segment.start.kind === 'free' && segment.end.kind === 'port')
+  )
+}
+
+// --- D5d.0-A functional correction: rigid block-attached stub translation ---
+{
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }, tol = 0.5) =>
+    Math.hypot(a.x - b.x, a.y - b.y) <= tol
+  const freeOf = (segment: { start: { kind: string; x?: number; y?: number }; end: { kind: string; x?: number; y?: number } }) => {
+    if (segment.end.kind === 'free') return { x: segment.end.x!, y: segment.end.y! }
+    if (segment.start.kind === 'free') return { x: segment.start.x!, y: segment.start.y! }
+    return null
+  }
+
+  const sheet = emptyDocument()
+  const blockA = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  const blockB = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  sheet.blocks.find((block) => block.id === blockA)!.x = 80
+  sheet.blocks.find((block) => block.id === blockA)!.y = 80
+  sheet.blocks.find((block) => block.id === blockB)!.x = 360
+  sheet.blocks.find((block) => block.id === blockB)!.y = 80
+  const portA1 = addPortAt(sheet, blockA, 'right', 0.35) ?? ''
+  const portA2 = addPortAt(sheet, blockA, 'right', 0.65) ?? ''
+  const portA3 = addPortAt(sheet, blockA, 'left', 0.5) ?? ''
+  const portB1 = addPortAt(sheet, blockB, 'left', 0.5) ?? ''
+  sheet.ports.find((port) => port.id === portA1)!.name = 'clk'
+  sheet.ports.find((port) => port.id === portA2)!.name = 'data'
+  sheet.ports.find((port) => port.id === portA3)!.name = 'rst'
+  sheet.ports.find((port) => port.id === portB1)!.name = 'clk'
+  const a1 = portAnchor(sheet, portA1)!
+  const a2 = portAnchor(sheet, portA2)!
+  const a3 = portAnchor(sheet, portA3)!
+  const b1 = portAnchor(sheet, portB1)!
+  // Port→Free two-point.
+  commitWire(sheet, [a1, { x: a1.x + 40, y: a1.y }], { kind: 'port', portId: portA1, point: a1 }, { kind: 'free', point: { x: a1.x + 40, y: a1.y } })
+  // Port→Free multi-bend on the same block.
+  commitWire(
+    sheet,
+    [a2, { x: a2.x + 20, y: a2.y }, { x: a2.x + 20, y: a2.y + 24 }, { x: a2.x + 48, y: a2.y + 24 }],
+    { kind: 'port', portId: portA2, point: a2 },
+    { kind: 'free', point: { x: a2.x + 48, y: a2.y + 24 } },
+  )
+  // Free→Port on A.
+  commitWire(
+    sheet,
+    [{ x: a3.x - 36, y: a3.y }, a3],
+    { kind: 'free', point: { x: a3.x - 36, y: a3.y } },
+    { kind: 'port', portId: portA3, point: a3 },
+  )
+  // Same-name stub on B (joins clk net) — must not move with A.
+  commitWire(sheet, [b1, { x: b1.x - 40, y: b1.y }], { kind: 'port', portId: portB1, point: b1 }, { kind: 'free', point: { x: b1.x - 40, y: b1.y } })
+
+  const stubA = sheet.segments.filter((segment) => isBlockAttachedStub(sheet, segment, blockA))
+  const stubB = sheet.segments.filter((segment) => isBlockAttachedStub(sheet, segment, blockB))
+  check(stubA.length === 3, 'D5d stub-move: three stubs attach to block A')
+  check(stubB.length === 1, 'D5d stub-move: one stub attaches to block B')
+  check(stubA.some((segment) => segment.points.length > 2), 'D5d stub-move: includes a multi-bend stub')
+  check(stubA.some((segment) => segment.start.kind === 'free' && segment.end.kind === 'port'), 'D5d stub-move: includes Free→Port')
+  check(stubA.some((segment) => segment.start.kind === 'port' && segment.end.kind === 'free'), 'D5d stub-move: includes Port→Free')
+
+  const labelBySeg = new Map<string, string>()
+  for (const segment of stubA) {
+    const labelId = addNameLabel(sheet, segment.id, 0, 16, 6)
+    if (labelId) labelBySeg.set(segment.id, labelId)
+  }
+  const beforeA = stubA.map((segment) => ({
+    id: segment.id,
+    free: freeOf(segment)!,
+    points: segment.points.map((point) => ({ x: point.x, y: point.y })),
+    label: labelPlacement(sheet, labelBySeg.get(segment.id)!)!,
+  }))
+  const freeBBefore = freeOf(stubB[0]!)!
+  const clkNetId = sheet.segments.find((segment) => segment.id === stubA.find((item) => sheet.nets.find((net) => net.id === item.netId)?.name === 'clk')?.id)?.netId
+  const dx = 45
+  const dy = 65
+  const blockA0 = sheet.blocks.find((block) => block.id === blockA)!
+  moveBlock(sheet, blockA, blockA0.x + dx, blockA0.y + dy)
+  for (const prior of beforeA) {
+    const segment = sheet.segments.find((item) => item.id === prior.id)!
+    check(near(freeOf(segment)!, { x: prior.free.x + dx, y: prior.free.y + dy }), `D5d stub-move: free end of ${prior.id} translates rigidly`)
+    check(
+      segment.points.every((point, index) => near(point, { x: prior.points[index]!.x + dx, y: prior.points[index]!.y + dy })),
+      `D5d stub-move: full polyline of ${prior.id} translates`,
+    )
+    check(
+      near(labelPlacement(sheet, labelBySeg.get(prior.id)!)!, { x: prior.label.x + dx, y: prior.label.y + dy }),
+      `D5d stub-move: label on ${prior.id} follows the stub`,
+    )
+  }
+  check(near(freeOf(stubB[0]!)!, freeBBefore), 'D5d stub-move: same-name stub on other block stays put')
+  check(
+    Boolean(clkNetId) && sheet.segments.filter((segment) => segment.netId === clkNetId).length === 2,
+    'D5d stub-move: shared clk net id preserved across both stubs',
+  )
+
+  const trunk = sampleDocument()
+  const trunkBendX = trunk.segments[0]!.points[1]!.x
+  moveBlock(trunk, 'blk_a', 120, 120)
+  check(trunk.segments[0]!.points[1]!.x === trunkBendX, 'D5d stub-move: manual trunk bend stays put')
+
+  const multi = emptyDocument()
+  const mA = placeTemplate(multi, BLOCK_TEMPLATES[1], false)
+  const mB = placeTemplate(multi, BLOCK_TEMPLATES[1], false)
+  multi.blocks.find((block) => block.id === mA)!.x = 40
+  multi.blocks.find((block) => block.id === mA)!.y = 40
+  multi.blocks.find((block) => block.id === mB)!.x = 240
+  multi.blocks.find((block) => block.id === mB)!.y = 40
+  const mPa = addPortAt(multi, mA, 'right', 0.5) ?? ''
+  const mPb = addPortAt(multi, mB, 'left', 0.5) ?? ''
+  const mAa = portAnchor(multi, mPa)!
+  const mBb = portAnchor(multi, mPb)!
+  commitWire(multi, [mAa, { x: mAa.x + 30, y: mAa.y }], { kind: 'port', portId: mPa, point: mAa }, { kind: 'free', point: { x: mAa.x + 30, y: mAa.y } })
+  commitWire(multi, [mBb, { x: mBb.x - 30, y: mBb.y }], { kind: 'port', portId: mPb, point: mBb }, { kind: 'free', point: { x: mBb.x - 30, y: mBb.y } })
+  const freeMA0 = freeOf(multi.segments[0]!)!
+  const freeMB0 = freeOf(multi.segments[1]!)!
+  const originA = { x: multi.blocks.find((block) => block.id === mA)!.x, y: multi.blocks.find((block) => block.id === mA)!.y }
+  const originB = { x: multi.blocks.find((block) => block.id === mB)!.x, y: multi.blocks.find((block) => block.id === mB)!.y }
+  const mdx = 20
+  const mdy = 30
+  moveBlock(multi, mA, originA.x + mdx, originA.y + mdy)
+  moveBlock(multi, mB, originB.x + mdx, originB.y + mdy)
+  check(near(freeOf(multi.segments[0]!)!, { x: freeMA0.x + mdx, y: freeMA0.y + mdy }), 'D5d stub-move: multi-block A stub once')
+  check(near(freeOf(multi.segments[1]!)!, { x: freeMB0.x + mdx, y: freeMB0.y + mdy }), 'D5d stub-move: multi-block B stub once')
+
+  const box = { project: createProject('StubMove') }
+  const tm = new TransactionManager({
+    get: () => box.project,
+    set: (next) => {
+      box.project = next
+    },
+  })
+  let liveBlock = ''
+  let liveSeg = ''
+  tm.transact('setup', (project) => {
+    const doc = documentById(project, project.rootDocumentId)!
+    liveBlock = placeTemplate(doc, BLOCK_TEMPLATES[1], false)
+    const portId = addPortAt(doc, liveBlock, 'right', 0.5) ?? ''
+    const at = portAnchor(doc, portId)!
+    commitWire(doc, [at, { x: at.x + 40, y: at.y }], { kind: 'port', portId, point: at }, { kind: 'free', point: { x: at.x + 40, y: at.y } })
+    liveSeg = doc.segments[0]!.id
+    return project
+  })
+  const baseline = serializeProject(box.project)
+  const baseFree = freeOf(documentById(box.project, box.project.rootDocumentId)!.segments[0]!)!
+  const baseBlock = documentById(box.project, box.project.rootDocumentId)!.blocks.find((block) => block.id === liveBlock)!
+  tm.begin('stub-drag')
+  tm.preview((project) => {
+    moveBlock(documentById(project, project.rootDocumentId)!, liveBlock, baseBlock.x + 10, baseBlock.y + 10)
+  })
+  tm.preview((project) => {
+    moveBlock(documentById(project, project.rootDocumentId)!, liveBlock, baseBlock.x + 20, baseBlock.y + 20)
+  })
+  check(
+    near(freeOf(documentById(box.project, box.project.rootDocumentId)!.segments.find((segment) => segment.id === liveSeg)!)!, {
+      x: baseFree.x + 20,
+      y: baseFree.y + 20,
+    }),
+    'D5d stub-move: repeated preview has no cumulative drift',
+  )
+  tm.cancel()
+  check(serializeProject(box.project) === baseline, 'D5d stub-move: escape/cancel restores geometry')
+
+  tm.begin('stub-commit')
+  tm.preview((project) => {
+    moveBlock(documentById(project, project.rootDocumentId)!, liveBlock, baseBlock.x + 12, baseBlock.y + 8)
+  })
+  check(tm.commit(), 'D5d stub-move: commit records one history entry')
+  const committed = serializeProject(box.project)
+  const committedFree = freeOf(documentById(box.project, box.project.rootDocumentId)!.segments.find((segment) => segment.id === liveSeg)!)!
+  check(near(committedFree, { x: baseFree.x + 12, y: baseFree.y + 8 }), 'D5d stub-move: committed free end matches delta')
+  tm.undo()
+  check(serializeProject(box.project) === baseline, 'D5d stub-move: undo restores original stub geometry')
+  tm.redo()
+  check(serializeProject(box.project) === committed, 'D5d stub-move: redo restores moved stub geometry')
+  const roundTrip = parseDocument(serialize(documentById(box.project, box.project.rootDocumentId)!))
+  check(
+    near(freeOf(roundTrip.segments.find((segment) => segment.id === liveSeg)!)!, committedFree),
+    'D5d stub-move: save/load keeps moved stub geometry',
+  )
+}
+
+// --- S4 rigid stubs on Resize / Port Drag ---
+{
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }, tol = 0.5) =>
+    Math.hypot(a.x - b.x, a.y - b.y) <= tol
+  const freeOf = (segment: { start: { kind: string; x?: number; y?: number }; end: { kind: string; x?: number; y?: number } }) => {
+    if (segment.end.kind === 'free') return { x: segment.end.x!, y: segment.end.y! }
+    if (segment.start.kind === 'free') return { x: segment.start.x!, y: segment.start.y! }
+    return null
+  }
+
+  // Shared helper: port deltas drive stub translation (same path as move/resize/port-drag).
+  const helperDoc = emptyDocument()
+  const hBlock = placeTemplate(helperDoc, BLOCK_TEMPLATES[1], false)
+  const hPort = addPortAt(helperDoc, hBlock, 'right', 0.5) ?? ''
+  const hAt = portAnchor(helperDoc, hPort)!
+  commitWire(helperDoc, [hAt, { x: hAt.x + 40, y: hAt.y }], { kind: 'port', portId: hPort, point: hAt }, { kind: 'free', point: { x: hAt.x + 40, y: hAt.y } })
+  const beforeH = capturePortAnchors(helperDoc, hBlock)
+  helperDoc.blocks[0]!.width += 40
+  const deltasH = portAnchorDeltas(helperDoc, beforeH)
+  check(deltasH.has(hPort) && Math.abs(deltasH.get(hPort)!.x - 40) < 0.5, 'S4: portAnchorDeltas sees east-edge growth')
+  translateAttachedStubsByPortDeltas(helperDoc, deltasH)
+  check(near(freeOf(helperDoc.segments[0]!)!, { x: hAt.x + 40 + 40, y: hAt.y }), 'S4: translateAttachedStubsByPortDeltas moves the free end')
+  check(typeof translateSegmentGeometry === 'function' && typeof isPortAttachedStub === 'function', 'S4: shared stub helpers are exported')
+
+  const sheet = emptyDocument()
+  const block = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  const other = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  sheet.blocks.find((item) => item.id === block)!.x = 80
+  sheet.blocks.find((item) => item.id === block)!.y = 80
+  sheet.blocks.find((item) => item.id === other)!.x = 360
+  sheet.blocks.find((item) => item.id === other)!.y = 80
+  const leftPort = addPortAt(sheet, block, 'left', 0.5) ?? ''
+  const rightPort = addPortAt(sheet, block, 'right', 0.35) ?? ''
+  const rightPort2 = addPortAt(sheet, block, 'right', 0.7) ?? ''
+  const otherPort = addPortAt(sheet, other, 'left', 0.5) ?? ''
+  sheet.ports.find((port) => port.id === leftPort)!.name = 'rst'
+  sheet.ports.find((port) => port.id === rightPort)!.name = 'clk'
+  sheet.ports.find((port) => port.id === rightPort2)!.name = 'data'
+  sheet.ports.find((port) => port.id === otherPort)!.name = 'clk'
+  const lp = portAnchor(sheet, leftPort)!
+  const rp = portAnchor(sheet, rightPort)!
+  const rp2 = portAnchor(sheet, rightPort2)!
+  const op = portAnchor(sheet, otherPort)!
+  commitWire(sheet, [{ x: lp.x - 36, y: lp.y }, lp], { kind: 'free', point: { x: lp.x - 36, y: lp.y } }, { kind: 'port', portId: leftPort, point: lp })
+  commitWire(
+    sheet,
+    [rp, { x: rp.x + 20, y: rp.y }, { x: rp.x + 20, y: rp.y + 16 }, { x: rp.x + 48, y: rp.y + 16 }],
+    { kind: 'port', portId: rightPort, point: rp },
+    { kind: 'free', point: { x: rp.x + 48, y: rp.y + 16 } },
+  )
+  commitWire(sheet, [rp2, { x: rp2.x + 40, y: rp2.y }], { kind: 'port', portId: rightPort2, point: rp2 }, { kind: 'free', point: { x: rp2.x + 40, y: rp2.y } })
+  commitWire(sheet, [op, { x: op.x - 40, y: op.y }], { kind: 'port', portId: otherPort, point: op }, { kind: 'free', point: { x: op.x - 40, y: op.y } })
+  // Port↔Port trunk for rubber-band regression.
+  const trunkOut = addPortAt(sheet, block, 'right', 0.5) ?? ''
+  const trunkIn = addPortAt(sheet, other, 'left', 0.35) ?? ''
+  linkPorts(sheet, trunkOut, trunkIn, 'link')
+  const trunkBendX = sheet.segments.find((segment) => sheet.nets.find((net) => net.id === segment.netId)?.name === 'link')!.points[1]!.x
+
+  const leftSeg = sheet.segments.find((segment) => isPortAttachedStub(segment, leftPort))!
+  const rightSeg = sheet.segments.find((segment) => isPortAttachedStub(segment, rightPort))!
+  const rightSeg2 = sheet.segments.find((segment) => isPortAttachedStub(segment, rightPort2))!
+  const otherSeg = sheet.segments.find((segment) => isPortAttachedStub(segment, otherPort))!
+  const leftFree0 = freeOf(leftSeg)!
+  const rightFree0 = freeOf(rightSeg)!
+  const rightFree20 = freeOf(rightSeg2)!
+  const otherFree0 = freeOf(otherSeg)!
+  const rightPts0 = rightSeg.points.map((point) => ({ x: point.x, y: point.y }))
+  const labelRight = sheet.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === rightSeg.id)!
+  const labelAt0 = labelPlacement(sheet, labelRight.id)!
+
+  // Grow width eastward: left port Δ≈0, right ports move +Δw.
+  const block0 = sheet.blocks.find((item) => item.id === block)!
+  const oldW = block0.width
+  setBlockFields(sheet, block, { width: oldW + 50 })
+  check(near(freeOf(leftSeg)!, leftFree0), 'S4: left stub stays when growing width on the right')
+  check(near(freeOf(rightSeg)!, { x: rightFree0.x + 50, y: rightFree0.y }), 'S4: right multi-bend stub follows its port Δx')
+  check(
+    rightSeg.points.every((point, index) => near(point, { x: rightPts0[index]!.x + 50, y: rightPts0[index]!.y })),
+    'S4: all intermediate points of the multi-bend stub translate',
+  )
+  check(near(freeOf(rightSeg2)!, { x: rightFree20.x + 50, y: rightFree20.y }), 'S4: second right stub follows the same east Δ')
+  check(near(freeOf(otherSeg)!, otherFree0), 'S4: unrelated same-name stub on other block stays put')
+  check(near(labelPlacement(sheet, labelRight.id)!, { x: labelAt0.x + 50, y: labelAt0.y }), 'S4: label follows resized stub')
+  check(sheet.segments.find((segment) => sheet.nets.find((net) => net.id === segment.netId)?.name === 'link')!.points[1]!.x === trunkBendX, 'S4: Port↔Port trunk bend still rubber-bands (stays put)')
+
+  // Grow height southward: side ports typically keep Y if t is fractional — top/bottom would move;
+  // for left/right ports, y = block.y + height * t, so Δy = Δh * t.
+  const leftFree1 = freeOf(leftSeg)!
+  const h0 = sheet.blocks.find((item) => item.id === block)!.height
+  const leftT = sheet.ports.find((port) => port.id === leftPort)!.t ?? 0.5
+  setBlockFields(sheet, block, { height: h0 + 40 })
+  const expectedLeftDy = 40 * leftT
+  check(near(freeOf(leftSeg)!, { x: leftFree1.x, y: leftFree1.y + expectedLeftDy }), 'S4: vertical resize moves side-port stubs by height·t')
+
+  // Port drag: only the moved port’s stubs translate.
+  const rightFree1 = freeOf(rightSeg)!
+  const right2Free1 = freeOf(rightSeg2)!
+  placePort(sheet, rightPort, 'right', 0.15)
+  const rpAfter = portAnchor(sheet, rightPort)!
+  const expectedDy = rpAfter.y - (rp.y + 50) // account for prior width resize (x moved) — use live port delta via free relative
+  // Better: relative free offset preserved.
+  const freeAfter = freeOf(rightSeg)!
+  check(Math.abs(freeAfter.x - rpAfter.x - (rightFree0.x - rp.x)) < 1 && Math.abs(freeAfter.y - rpAfter.y - (rightFree0.y - rp.y)) < 1, 'S4: port drag preserves stub relative geometry')
+  check(near(freeOf(rightSeg2)!, right2Free1), 'S4: other stubs on the block stay when a different port is dragged')
+  void expectedDy
+  void rightFree1
+
+  // Two stubs on one port (multi).
+  const multiPort = addPortAt(sheet, block, 'left', 0.2) ?? ''
+  const mp = portAnchor(sheet, multiPort)!
+  commitWire(sheet, [mp, { x: mp.x - 24, y: mp.y }], { kind: 'port', portId: multiPort, point: mp }, { kind: 'free', point: { x: mp.x - 24, y: mp.y } })
+  commitWire(sheet, [mp, { x: mp.x - 24, y: mp.y - 12 }], { kind: 'port', portId: multiPort, point: mp }, { kind: 'free', point: { x: mp.x - 24, y: mp.y - 12 } })
+  const multiStubs = sheet.segments.filter((segment) => isPortAttachedStub(segment, multiPort))
+  check(multiStubs.length === 2, 'S4: two stubs can attach to one port')
+  const multiFrees0 = multiStubs.map((segment) => freeOf(segment)!)
+  placePort(sheet, multiPort, 'left', 0.8)
+  const mp2 = portAnchor(sheet, multiPort)!
+  multiStubs.forEach((segment, index) => {
+    check(near(freeOf(segment)!, { x: multiFrees0[index]!.x + (mp2.x - mp.x), y: multiFrees0[index]!.y + (mp2.y - mp.y) }), `S4: multi-stub ${index} follows port drag`)
+  })
+
+  // Gesture preview / cancel / undo for resize.
+  const box = { project: createProject('S4Resize') }
+  const tm = new TransactionManager({
+    get: () => box.project,
+    set: (next) => {
+      box.project = next
+    },
+  })
+  let liveBlock = ''
+  let livePort = ''
+  let liveSeg = ''
+  tm.transact('setup', (project) => {
+    const doc = documentById(project, project.rootDocumentId)!
+    liveBlock = placeTemplate(doc, BLOCK_TEMPLATES[1], false)
+    livePort = addPortAt(doc, liveBlock, 'right', 0.5) ?? ''
+    const at = portAnchor(doc, livePort)!
+    commitWire(doc, [at, { x: at.x + 40, y: at.y }], { kind: 'port', portId: livePort, point: at }, { kind: 'free', point: { x: at.x + 40, y: at.y } })
+    liveSeg = doc.segments[0]!.id
+    return project
+  })
+  const baseline = serializeProject(box.project)
+  const baseFree = freeOf(documentById(box.project, box.project.rootDocumentId)!.segments[0]!)!
+  const baseW = documentById(box.project, box.project.rootDocumentId)!.blocks[0]!.width
+  tm.begin('resize')
+  tm.preview((project) => {
+    setBlockFields(documentById(project, project.rootDocumentId)!, liveBlock, { width: baseW + 20 })
+  })
+  tm.preview((project) => {
+    setBlockFields(documentById(project, project.rootDocumentId)!, liveBlock, { width: baseW + 40 })
+  })
+  check(
+    near(freeOf(documentById(box.project, box.project.rootDocumentId)!.segments.find((segment) => segment.id === liveSeg)!)!, {
+      x: baseFree.x + 40,
+      y: baseFree.y,
+    }),
+    'S4: repeated resize preview has no cumulative drift',
+  )
+  tm.cancel()
+  check(serializeProject(box.project) === baseline, 'S4: escape/cancel restores resize geometry')
+
+  tm.begin('resize-commit')
+  tm.preview((project) => {
+    setBlockFields(documentById(project, project.rootDocumentId)!, liveBlock, { width: baseW + 30 })
+  })
+  check(tm.commit(), 'S4: resize commit records one history entry')
+  const committed = serializeProject(box.project)
+  tm.undo()
+  check(serializeProject(box.project) === baseline, 'S4: undo restores pre-resize stubs')
+  tm.redo()
+  check(serializeProject(box.project) === committed, 'S4: redo restores resized stubs')
+  const roundTrip = parseDocument(serialize(documentById(box.project, box.project.rootDocumentId)!))
+  check(near(freeOf(roundTrip.segments[0]!)!, freeOf(documentById(box.project, box.project.rootDocumentId)!.segments[0]!)!), 'S4: save/load keeps resized stub geometry')
+
+  // Port-drag cancel path.
+  const portBox = { project: createProject('S4Port') }
+  const portTm = new TransactionManager({
+    get: () => portBox.project,
+    set: (next) => {
+      portBox.project = next
+    },
+  })
+  let pBlock = ''
+  let pPort = ''
+  portTm.transact('setup', (project) => {
+    const doc = documentById(project, project.rootDocumentId)!
+    pBlock = placeTemplate(doc, BLOCK_TEMPLATES[1], false)
+    pPort = addPortAt(doc, pBlock, 'right', 0.5) ?? ''
+    const at = portAnchor(doc, pPort)!
+    commitWire(doc, [at, { x: at.x + 32, y: at.y }], { kind: 'port', portId: pPort, point: at }, { kind: 'free', point: { x: at.x + 32, y: at.y } })
+    return project
+  })
+  const portBaseline = serializeProject(portBox.project)
+  portTm.begin('port-drag')
+  portTm.preview((project) => {
+    placePort(documentById(project, project.rootDocumentId)!, pPort, 'right', 0.2)
+  })
+  portTm.cancel()
+  check(serializeProject(portBox.project) === portBaseline, 'S4: port-drag cancel restores stub geometry')
+
+  // Move regression still rigid.
+  const moveDoc = emptyDocument()
+  const mB = placeTemplate(moveDoc, BLOCK_TEMPLATES[1], false)
+  const mP = addPortAt(moveDoc, mB, 'right', 0.5) ?? ''
+  const mAt = portAnchor(moveDoc, mP)!
+  commitWire(moveDoc, [mAt, { x: mAt.x + 30, y: mAt.y }], { kind: 'port', portId: mP, point: mAt }, { kind: 'free', point: { x: mAt.x + 30, y: mAt.y } })
+  const mFree0 = freeOf(moveDoc.segments[0]!)!
+  const mBlock = moveDoc.blocks[0]!
+  moveBlock(moveDoc, mB, mBlock.x + 25, mBlock.y + 10)
+  check(near(freeOf(moveDoc.segments[0]!)!, { x: mFree0.x + 25, y: mFree0.y + 10 }), 'S4: block-move regression still translates stubs')
+
+  // S3 copy regression smoke.
+  const copyMap = duplicateBlocks(moveDoc, [mB], 40, 0)
+  check(attachedStubsForBlocks(moveDoc, [copyMap.get(mB)!]).length === 1, 'S4: S3 stub-aware copy regression still works')
+}
+
+// --- S5a port-originated stub drawing (double-click finish without degenerate geometry) ---
+{
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }, eps = 1) => Math.hypot(a.x - b.x, a.y - b.y) < eps
+  const freeOf = (segment: { start: { kind: string; x?: number; y?: number }; end: { kind: string; x?: number; y?: number } }) => {
+    if (segment.end.kind === 'free') return { x: segment.end.x!, y: segment.end.y! }
+    if (segment.start.kind === 'free') return { x: segment.start.x!, y: segment.start.y! }
+    return null
+  }
+
+  const sheet = emptyDocument()
+  const blockId = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  sheet.blocks.find((block) => block.id === blockId)!.x = 200
+  sheet.blocks.find((block) => block.id === blockId)!.y = 120
+  const portId = addPortAt(sheet, blockId, 'right', 0.5) ?? ''
+  const portAt = portAnchor(sheet, portId)!
+  const portHit = { kind: 'port' as const, portId, point: portAt }
+
+  // Port → straight stub via simulated double-click (detail=1 bend + detail=2 finish with checkpoint).
+  // Companion click and finish point differ slightly — without checkpoint that leaves an extra terminal knick.
+  const started = wireClick(null, portHit)
+  check(started.draft !== null && started.commit === null, 'S5a: port click opens a draft')
+  const companionAt = { x: portAt.x + 60, y: portAt.y + 24 }
+  const freeAt = { x: portAt.x + 64, y: portAt.y + 20 }
+  const companion = wireClick(started.draft, { kind: 'free', point: companionAt })
+  check(companion.draft !== null && companion.draft.pointsBeforeFreeBend !== undefined, 'S5a: free click stores bend checkpoint')
+  const straightCommit = finishFree(companion.draft!, freeAt, { fromBeforeLastFreeBend: true })
+  check(straightCommit.start.kind === 'port' && straightCommit.end.kind === 'free', 'S5a: Port→Free orientation')
+  check(stubGeometrySane(straightCommit.points), 'S5a: straight stub has no zero-length terminals')
+  check(near(straightCommit.points[0]!, portAt) && near(straightCommit.points[straightCommit.points.length - 1]!, freeAt), 'S5a: straight stub spans port to free')
+  const withoutCheckpoint = finishFree(companion.draft!, freeAt)
+  check(
+    withoutCheckpoint.points.length > straightCommit.points.length,
+    'S5a: finishing without checkpoint keeps the companion bend (regression guard)',
+  )
+  const beforeStraight = sheet.segments.length
+  const straightResult = commitWire(sheet, straightCommit.points, straightCommit.start, straightCommit.end)
+  check(straightResult.ok && sheet.segments.length === beforeStraight + 1, 'S5a: straight stub is one commitWire')
+  check(stubGeometrySane(sheet.segments[sheet.segments.length - 1]!.points), 'S5a: committed straight geometry stays sane')
+
+  // Port → multi-bend stub: intentional bend, then dblclick finish.
+  const port2 = addPortAt(sheet, blockId, 'right', 0.25) ?? ''
+  const p2 = portAnchor(sheet, port2)!
+  const bendA = { x: p2.x + 40, y: p2.y }
+  const companionB = { x: p2.x + 40, y: p2.y + 48 }
+  const freeB = { x: p2.x + 44, y: p2.y + 52 }
+  const multiStart = wireClick(null, { kind: 'port', portId: port2, point: p2 })
+  const multiBent = wireClick(multiStart.draft, { kind: 'free', point: bendA })
+  check(multiBent.draft !== null && multiBent.draft.points.length >= 2, 'S5a: intentional bend stays in the draft')
+  const multiCompanion = wireClick(multiBent.draft, { kind: 'free', point: companionB })
+  const multiCommit = finishFree(multiCompanion.draft!, freeB, { fromBeforeLastFreeBend: true })
+  check(multiCommit.points.length >= 3, 'S5a: multi-bend stub keeps the intentional corner')
+  check(stubGeometrySane(multiCommit.points), 'S5a: multi-bend stub has no degenerate terminals')
+  check(
+    multiCommit.points.some((point) => near(point, bendA)),
+    'S5a: intentional bend locus is preserved',
+  )
+  commitWire(sheet, multiCommit.points, multiCommit.start, multiCommit.end)
+
+  // Reverse Free → Port (existing single-click finish).
+  const port3 = addPortAt(sheet, blockId, 'left', 0.5) ?? ''
+  const p3 = portAnchor(sheet, port3)!
+  const freeStart = { x: p3.x - 50, y: p3.y }
+  const revStart = wireClick(null, { kind: 'free', point: freeStart })
+  const revDone = wireClick(revStart.draft, { kind: 'port', portId: port3, point: p3 })
+  check(revDone.commit !== null && revDone.draft === null, 'S5a: Free→Port still commits on port click')
+  if (revDone.commit) {
+    const rev = commitWire(sheet, revDone.commit.points, revDone.commit.start, revDone.commit.end)
+    check(rev.ok, 'S5a: Free→Port commitWire ok')
+    const seg = sheet.segments[sheet.segments.length - 1]!
+    check(seg.start.kind === 'free' && seg.end.kind === 'port', 'S5a: Free→Port orientation stored')
+  }
+
+  // Escape before completion: draft only, no document write.
+  const escDoc = emptyDocument()
+  const escBlock = placeTemplate(escDoc, BLOCK_TEMPLATES[1], false)
+  const escPort = addPortAt(escDoc, escBlock, 'right', 0.5) ?? ''
+  const escAt = portAnchor(escDoc, escPort)!
+  const escDraft = wireClick(null, { kind: 'port', portId: escPort, point: escAt }).draft
+  wireClick(escDraft, { kind: 'free', point: { x: escAt.x + 30, y: escAt.y } })
+  check(escDoc.segments.length === 0, 'S5a: escape/drop draft writes nothing')
+
+  // Undo / redo of a port-originated stub.
+  let live = emptyDocument()
+  const liveBlock = placeTemplate(live, BLOCK_TEMPLATES[1], false)
+  const livePort = addPortAt(live, liveBlock, 'right', 0.4) ?? ''
+  const liveAt = portAnchor(live, livePort)!
+  const session = new EditSession(
+    () => live,
+    (next) => {
+      live = next
+    },
+  )
+  const draft0 = wireClick(null, { kind: 'port', portId: livePort, point: liveAt }).draft!
+  const freeLive = { x: liveAt.x + 48, y: liveAt.y + 20 }
+  const polluted = wireClick(draft0, { kind: 'free', point: freeLive }).draft!
+  const commitLive = finishFree(polluted, freeLive, { fromBeforeLastFreeBend: true })
+  session.execute((doc) => {
+    commitWire(doc, commitLive.points, commitLive.start, commitLive.end)
+  })
+  check(live.segments.length === 1, 'S5a: undo session stores one stub')
+  const netName = live.nets[0]?.name
+  const portName = live.ports.find((port) => port.id === livePort)?.name
+  check(Boolean(netName) && netName === portName, 'S5a: stub inherits port name (D5c.5)')
+  session.undo()
+  check(live.segments.length === 0, 'S5a: undo removes the stub')
+  session.redo()
+  check(live.segments.length === 1 && live.nets[0]?.name === netName, 'S5a: redo restores stub and name')
+
+  // Save / load.
+  const reloaded = parseDocument(serialize(live))
+  check(reloaded.segments.length === 1 && reloaded.segments[0]!.end.kind === 'free', 'S5a: save/load keeps Port→Free')
+  check(near(freeOf(reloaded.segments[0]!)!, freeOf(live.segments[0]!)!), 'S5a: free end survives reload')
+
+  // Subsequent stub move / resize / copy still attach.
+  const moved = parseDocument(serialize(live))
+  const blk = moved.blocks[0]!
+  const free0 = freeOf(moved.segments[0]!)!
+  moveBlock(moved, blk.id, blk.x + 15, blk.y)
+  check(near(freeOf(moved.segments[0]!)!, { x: free0.x + 15, y: free0.y }), 'S5a: stub-move still follows block')
+  setBlockFields(moved, blk.id, { width: blk.width + 40 })
+  const afterResize = freeOf(moved.segments[0]!)!
+  check(Math.abs(afterResize.x - (free0.x + 15 + 40)) < 2, 'S5a: resize still follows stub')
+  const dup = duplicateBlocks(moved, [blk.id], 30, 0)
+  check(attachedStubsForBlocks(moved, [dup.get(blk.id)!]).length === 1, 'S5a: stub-aware copy still works')
+
+  // Named-net join: second stub with same port name joins.
+  const joinDoc = emptyDocument()
+  const jA = placeTemplate(joinDoc, BLOCK_TEMPLATES[1], false)
+  const jB = placeTemplate(joinDoc, BLOCK_TEMPLATES[1], false)
+  joinDoc.blocks.find((block) => block.id === jB)!.x = 420
+  const jPortA = addPortAt(joinDoc, jA, 'right', 0.5) ?? ''
+  const jPortB = addPortAt(joinDoc, jB, 'right', 0.5) ?? ''
+  joinDoc.ports.find((port) => port.id === jPortA)!.name = 'clk'
+  joinDoc.ports.find((port) => port.id === jPortB)!.name = 'clk'
+  const jAa = portAnchor(joinDoc, jPortA)!
+  const jBa = portAnchor(joinDoc, jPortB)!
+  const c1 = finishFree(wireClick(null, { kind: 'port', portId: jPortA, point: jAa }).draft!, { x: jAa.x + 40, y: jAa.y }, { fromBeforeLastFreeBend: false })
+  commitWire(joinDoc, c1.points, c1.start, c1.end)
+  const d0 = wireClick(null, { kind: 'port', portId: jPortB, point: jBa }).draft!
+  const d1 = wireClick(d0, { kind: 'free', point: { x: jBa.x + 40, y: jBa.y } }).draft!
+  const c2 = finishFree(d1, { x: jBa.x + 40, y: jBa.y }, { fromBeforeLastFreeBend: true })
+  const joined = commitWire(joinDoc, c2.points, c2.start, c2.end)
+  check(joined.ok && !joined.createdNet && joinDoc.nets.filter((net) => net.name === 'clk').length === 1, 'S5a: second stub joins existing named net')
+}
+
+// --- S5a.1 incremental wire drawing undo (local steps; one global history entry) ---
+{
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }, eps = 1) => Math.hypot(a.x - b.x, a.y - b.y) < eps
+
+  const sheet = emptyDocument()
+  const blockId = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  const portId = addPortAt(sheet, blockId, 'right', 0.5) ?? ''
+  const portAt = portAnchor(sheet, portId)!
+  const portHit = { kind: 'port' as const, portId, point: portAt }
+
+  const started = wireClick(null, portHit)
+  check(started.draft !== null && started.draft.fixedSteps.length === 1, 'S5a.1: start is one fixed step')
+  check(started.message === WIRE_DRAW_HINT, 'S5a.1: status hint lists undo keys')
+  check(!canUndoWireStep(started.draft!), 'S5a.1: cannot undo past the start anchor')
+
+  // One free click that is not axis-aligned → multiple orthogonal edges, still one step.
+  const corner = { x: portAt.x + 40, y: portAt.y + 30 }
+  const bent = wireClick(started.draft, { kind: 'free', point: corner })
+  check(bent.draft !== null && bent.draft.points.length >= 3, 'S5a.1: orthogonal click may add multiple edges')
+  check(bent.draft!.fixedSteps.length === 2, 'S5a.1: multi-edge click is still one drawing step')
+  check(canUndoWireStep(bent.draft!), 'S5a.1: a bend can be undone')
+
+  const afterOne = undoWireStep(bent.draft!)
+  check(!afterOne.cancelled && afterOne.draft !== null, 'S5a.1: undo one step keeps the draft')
+  check(afterOne.draft!.fixedSteps.length === 1 && afterOne.draft!.points.length === 1, 'S5a.1: undo removes the whole multi-edge step')
+  check(near(afterOne.draft!.points[0]!, portAt), 'S5a.1: undo returns to the start anchor')
+
+  // Multiple steps, undo twice, continue drawing.
+  const s1 = wireClick(afterOne.draft, { kind: 'free', point: { x: portAt.x + 20, y: portAt.y } }).draft!
+  const s2 = wireClick(s1, { kind: 'free', point: { x: portAt.x + 20, y: portAt.y + 40 } }).draft!
+  const s3 = wireClick(s2, { kind: 'free', point: { x: portAt.x + 50, y: portAt.y + 40 } }).draft!
+  check(s3.fixedSteps.length === 4, 'S5a.1: three bends yield four fixed steps')
+  const u1 = undoWireStep(s3).draft!
+  const u2 = undoWireStep(u1).draft!
+  check(u2.fixedSteps.length === 2, 'S5a.1: two undos walk back two steps')
+  const continued = wireClick(u2, { kind: 'free', point: { x: portAt.x + 20, y: portAt.y - 30 } }).draft!
+  check(continued.fixedSteps.length === 3, 'S5a.1: drawing continues after local undo')
+
+  // Esc at start cancels.
+  const onlyStart = undoWireStep(undoWireStep(continued).draft!).draft!
+  check(onlyStart.fixedSteps.length === 1, 'S5a.1: walked back to start')
+  const cancelled = undoWireStep(onlyStart)
+  check(cancelled.cancelled && cancelled.draft === null, 'S5a.1: undo at start cancels the operation')
+
+  // Port→Free stub after local undo (simulate companion + finish).
+  const stubDraft0 = wireClick(null, portHit).draft!
+  const stubDraft1 = wireClick(stubDraft0, { kind: 'free', point: { x: portAt.x + 30, y: portAt.y } }).draft!
+  const stubDraft2 = wireClick(stubDraft1, { kind: 'free', point: { x: portAt.x + 30, y: portAt.y + 40 } }).draft!
+  const stubBack = undoWireStep(stubDraft2).draft!
+  const freeAt = { x: portAt.x + 55, y: portAt.y }
+  const companion = wireClick(stubBack, { kind: 'free', point: freeAt }).draft!
+  const stubCommit = finishFree(companion, freeAt, { fromBeforeLastFreeBend: true })
+  check(stubGeometrySane(stubCommit.points), 'S5a.1: stub after undo has sane geometry')
+  check(stubCommit.start.kind === 'port' && stubCommit.end.kind === 'free', 'S5a.1: Port→Free after undo')
+
+  // Free→Port after local undo.
+  const freeStart = { x: portAt.x + 80, y: portAt.y + 60 }
+  const rev0 = wireClick(null, { kind: 'free', point: freeStart }).draft!
+  const rev1 = wireClick(rev0, { kind: 'free', point: { x: freeStart.x, y: portAt.y } }).draft!
+  const revBack = undoWireStep(rev1).draft!
+  const revDone = wireClick(revBack, portHit)
+  check(revDone.commit !== null && revDone.commit.start.kind === 'free' && revDone.commit.end.kind === 'port', 'S5a.1: Free→Port after undo')
+
+  // Port→Port after local undo.
+  const other = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  sheet.blocks.find((block) => block.id === other)!.x = 420
+  const otherPort = addPortAt(sheet, other, 'left', 0.5) ?? ''
+  const otherAt = portAnchor(sheet, otherPort)!
+  const pp0 = wireClick(null, portHit).draft!
+  const pp1 = wireClick(pp0, { kind: 'free', point: { x: portAt.x + 40, y: portAt.y } }).draft!
+  const ppBack = undoWireStep(pp1).draft!
+  const ppDone = wireClick(ppBack, { kind: 'port', portId: otherPort, point: otherAt })
+  check(ppDone.commit !== null && ppDone.draft === null, 'S5a.1: Port→Port after undo')
+
+  // Junction-originated draft where supported.
+  const juncDoc = emptyDocument()
+  const jBlock = placeTemplate(juncDoc, BLOCK_TEMPLATES[1], false)
+  const jPort = addPortAt(juncDoc, jBlock, 'right', 0.5) ?? ''
+  const jAt = portAnchor(juncDoc, jPort)!
+  commitWire(juncDoc, [jAt, { x: jAt.x + 40, y: jAt.y }], { kind: 'port', portId: jPort, point: jAt }, { kind: 'free', point: { x: jAt.x + 40, y: jAt.y } })
+  const freeEnd = juncDoc.segments[0]!.end
+  check(freeEnd.kind === 'free', 'S5a.1: fixture stub for junction extend')
+  if (freeEnd.kind !== 'free') throw new Error('S5a.1 expected free end')
+  const endHit = { kind: 'end' as const, segmentId: juncDoc.segments[0]!.id, which: 'end' as const, point: { x: freeEnd.x, y: freeEnd.y } }
+  const fromEnd = wireClick(null, endHit).draft!
+  const fromEndBent = wireClick(fromEnd, { kind: 'free', point: { x: freeEnd.x + 20, y: freeEnd.y + 20 } }).draft!
+  const fromEndBack = undoWireStep(fromEndBent)
+  check(!fromEndBack.cancelled && fromEndBack.draft!.fixedSteps.length === 1, 'S5a.1: undo works from an end/junction-style start')
+
+  // No intermediate global history; one entry after completion; global undo/redo.
+  let live = emptyDocument()
+  const liveBlock = placeTemplate(live, BLOCK_TEMPLATES[1], false)
+  const livePort = addPortAt(live, liveBlock, 'right', 0.5) ?? ''
+  const liveAt = portAnchor(live, livePort)!
+  const session = new EditSession(
+    () => live,
+    (next) => {
+      live = next
+    },
+  )
+  // Seed one undoable edit so canUndo is meaningful, then draft without further executes.
+  session.execute((doc) => {
+    setBlockFields(doc, liveBlock, { name: 'Unit' })
+  })
+  check(session.canUndo, 'S5a.1: session has prior history')
+  const segsBefore = live.segments.length
+  let draft = wireClick(null, { kind: 'port', portId: livePort, point: liveAt }).draft!
+  draft = wireClick(draft, { kind: 'free', point: { x: liveAt.x + 25, y: liveAt.y } }).draft!
+  draft = wireClick(draft, { kind: 'free', point: { x: liveAt.x + 25, y: liveAt.y + 35 } }).draft!
+  draft = undoWireStep(draft).draft!
+  draft = wireClick(draft, { kind: 'free', point: { x: liveAt.x + 45, y: liveAt.y } }).draft!
+  check(live.segments.length === segsBefore, 'S5a.1: local steps do not write the document')
+  check(session.canUndo, 'S5a.1: local undo does not consume global history')
+  const finishAt = { x: liveAt.x + 48, y: liveAt.y + 4 }
+  const polluted = wireClick(draft, { kind: 'free', point: finishAt }).draft!
+  const commit = finishFree(polluted, finishAt, { fromBeforeLastFreeBend: true })
+  check(stubGeometrySane(commit.points), 'S5a.1: completed geometry has no zero-length edges')
+  session.execute((doc) => {
+    commitWire(doc, commit.points, commit.start, commit.end)
+  })
+  check(live.segments.length === segsBefore + 1, 'S5a.1: completion adds one segment')
+  session.undo()
+  check(live.segments.length === segsBefore, 'S5a.1: global undo removes the finished wire')
+  session.redo()
+  check(live.segments.length === segsBefore + 1, 'S5a.1: global redo restores the wire')
+
+  // Snap-on free finish still produces orthogonal sane points (grid values).
+  const snapAt = { x: Math.round(liveAt.x / 20) * 20 + 60, y: Math.round(liveAt.y / 20) * 20 }
+  const snapDraft = wireClick(null, { kind: 'port', portId: livePort, point: liveAt }).draft!
+  const snapCommit = finishFree(snapDraft, snapAt)
+  check(stubGeometrySane(snapCommit.points), 'S5a.1: snapped finish stays non-degenerate')
+}
+
 if (failures.length) {
   throw new Error(failures.join('\n'))
 }
 console.log('selfcheck ok')
+
+

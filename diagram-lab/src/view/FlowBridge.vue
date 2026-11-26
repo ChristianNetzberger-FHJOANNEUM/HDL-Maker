@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useVueFlow, type ViewportTransform } from '@vue-flow/core'
 import { nextTick, onMounted, watch } from 'vue'
+import { VIEWPORT_MAX_ZOOM, VIEWPORT_MIN_ZOOM, viewportAfterWheel } from './viewportWheel'
 
 const props = defineProps<{
   portCount: number
@@ -53,6 +54,18 @@ watch(
 
 defineExpose({
   setViewport(next: ViewportTransform): void {
+    void flow.setViewport(next)
+  },
+  /** Single canonical wheel path: cursor-centred, same delta as Vue Flow, no history. */
+  applyWheelZoom(event: WheelEvent, stageRect: DOMRect): void {
+    const view = flow.viewport.value
+    const next = viewportAfterWheel(
+      { x: view.x, y: view.y, zoom: view.zoom },
+      { x: event.clientX - stageRect.left, y: event.clientY - stageRect.top },
+      event,
+      { min: VIEWPORT_MIN_ZOOM, max: VIEWPORT_MAX_ZOOM },
+    )
+    if (next.x === view.x && next.y === view.y && next.zoom === view.zoom) return
     void flow.setViewport(next)
   },
 })

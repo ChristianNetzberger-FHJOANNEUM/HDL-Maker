@@ -41,6 +41,43 @@ export function duplicateDragMoved(dx: number, dy: number, threshold = 4): boole
   return Math.hypot(dx, dy) >= threshold
 }
 
+export type PressStamp = { t: number; x: number; y: number }
+
+/**
+ * Double-press detector for pointerdown.
+ * `PointerEvent.detail` is always 0 on pointerdown in Chromium/Edge — do not use it for click count.
+ * Client-pixel distance so zoom does not change the tolerance.
+ */
+export function isDoublePress(
+  previous: PressStamp | null,
+  next: PressStamp,
+  windowMs = 500,
+  maxDistPx = 8,
+): boolean {
+  if (!previous) return false
+  if (next.t - previous.t > windowMs) return false
+  return Math.hypot(next.x - previous.x, next.y - previous.y) <= maxDistPx
+}
+
+/**
+ * Keyboard while an unfinished wire draft owns the gesture (S5a.1).
+ * Returns `pass` so callers keep the normal Select/history shortcuts.
+ */
+export type WireDrawingShortcut = 'undo-step' | 'cancel-all' | 'pass'
+
+export function wireDrawingShortcut(
+  key: string,
+  drafting: boolean,
+  mods: { shift?: boolean; ctrlOrMeta?: boolean } = {},
+): WireDrawingShortcut {
+  if (!drafting) return 'pass'
+  if (key === 'Escape' && mods.shift) return 'cancel-all'
+  if (key === 'Escape') return 'undo-step'
+  if (key === 'Backspace') return 'undo-step'
+  if (mods.ctrlOrMeta && key.toLowerCase() === 'z' && !mods.shift) return 'undo-step'
+  return 'pass'
+}
+
 /** Middle-click, or Space+LMB, starts viewport pan without touching the wire draft. */
 export function shouldBeginViewPan(button: number, spaceHeld: boolean): boolean {
   return button === 1 || (button === 0 && spaceHeld)

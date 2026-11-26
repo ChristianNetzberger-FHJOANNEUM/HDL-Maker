@@ -162,6 +162,8 @@ export type Label = {
    * A missing role on a segment anchor is a name label, so older files keep their meaning.
    */
   role?: 'name' | 'note'
+  /** Optional drawing size in CSS px. Omit for the stage default (~13px). */
+  fontSize?: number
   anchor: LabelAnchor
 }
 

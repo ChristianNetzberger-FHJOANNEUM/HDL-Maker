@@ -359,11 +359,97 @@ function fitShape(shape: SymbolShape, mapX: (value: number) => number, mapY: (va
   return shape
 }
 
+/**
+ * Port↔Free stub attached to `blockId` (either orientation).
+ * Other stubs that only share the net name are not included.
+ */
+export function isBlockAttachedStub(doc: DiagramDocument, segment: Segment, blockId: string): boolean {
+  const startOnBlock = segment.start.kind === 'port' && portBelongsToBlock(doc, segment.start.portId, blockId)
+  const endOnBlock = segment.end.kind === 'port' && portBelongsToBlock(doc, segment.end.portId, blockId)
+  const startFree = segment.start.kind === 'free'
+  const endFree = segment.end.kind === 'free'
+  return (startOnBlock && endFree) || (endOnBlock && startFree)
+}
+
+function portBelongsToBlock(doc: DiagramDocument, portId: string, blockId: string): boolean {
+  return doc.ports.some((port) => port.id === portId && port.blockId === blockId)
+}
+
+/** Rigid translation of stub geometry (all points + free endpoint). Labels follow via segment anchors. */
+export function translateSegmentGeometry(segment: Segment, dx: number, dy: number): void {
+  if (dx === 0 && dy === 0) return
+  segment.points = segment.points.map((point) => ({ ...point, x: point.x + dx, y: point.y + dy }))
+  if (segment.start.kind === 'free') {
+    segment.start = { kind: 'free', x: segment.start.x + dx, y: segment.start.y + dy }
+  }
+  if (segment.end.kind === 'free') {
+    segment.end = { kind: 'free', x: segment.end.x + dx, y: segment.end.y + dy }
+  }
+}
+
+/** Port↔Free stub attached to a specific port (either orientation). */
+export function isPortAttachedStub(segment: Segment, portId: string): boolean {
+  const startPort = segment.start.kind === 'port' && segment.start.portId === portId
+  const endPort = segment.end.kind === 'port' && segment.end.portId === portId
+  const startFree = segment.start.kind === 'free'
+  const endFree = segment.end.kind === 'free'
+  return (startPort && endFree) || (endPort && startFree)
+}
+
+/** Snapshot of current port anchors (optionally limited to one block). */
+export function capturePortAnchors(doc: DiagramDocument, blockId?: string): Map<string, Point> {
+  const map = new Map<string, Point>()
+  for (const port of doc.ports) {
+    if (blockId && port.blockId !== blockId) continue
+    const at = portAnchor(doc, port.id)
+    if (at) map.set(port.id, { x: at.x, y: at.y })
+  }
+  return map
+}
+
+/** Per-port Δ from a prior `capturePortAnchors` snapshot to current positions. */
+export function portAnchorDeltas(doc: DiagramDocument, before: Map<string, Point>): Map<string, Point> {
+  const deltas = new Map<string, Point>()
+  for (const [portId, prev] of before) {
+    const next = portAnchor(doc, portId)
+    if (!next) continue
+    const dx = next.x - prev.x
+    const dy = next.y - prev.y
+    if (dx !== 0 || dy !== 0) deltas.set(portId, { x: dx, y: dy })
+  }
+  return deltas
+}
+
+/**
+ * Translate each Port↔Free stub by its attached port’s Δ.
+ * Shared by block move, resize, and port drag. Non-stub segments are untouched here
+ * (callers still `refreshAll` for rubber-band ends).
+ */
+export function translateAttachedStubsByPortDeltas(doc: DiagramDocument, deltas: Map<string, Point>): void {
+  if (deltas.size === 0) return
+  const seen = new Set<string>()
+  for (const [portId, delta] of deltas) {
+    if (delta.x === 0 && delta.y === 0) continue
+    for (const segment of doc.segments) {
+      if (seen.has(segment.id)) continue
+      if (!isPortAttachedStub(segment, portId)) continue
+      seen.add(segment.id)
+      translateSegmentGeometry(segment, delta.x, delta.y)
+    }
+  }
+}
+
+/**
+ * Move a block. Attached Port↔Free stubs follow each port’s actual Δ
+ * (HDL Designer–like). Port↔Port / junction / free↔free keep rubber-band refresh.
+ */
 export function moveBlock(doc: DiagramDocument, blockId: string, x: number, y: number): void {
   const block = doc.blocks.find((item) => item.id === blockId)
   if (!block) return
+  const before = capturePortAnchors(doc, blockId)
   block.x = x
   block.y = y
+  translateAttachedStubsByPortDeltas(doc, portAnchorDeltas(doc, before))
   refreshAll(doc)
 }
 

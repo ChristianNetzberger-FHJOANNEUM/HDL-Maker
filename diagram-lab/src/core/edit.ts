@@ -1,5 +1,15 @@
-import { createId, type Block, type BlockGroup, type DiagramDocument, type Label, type Net, type Point, type Port, type Segment } from './document'
-import { pinLocal, pinOnBorder, portAnchor, refreshAll } from './geometry'
+import { createId, type Block, type BlockGroup, type DiagramDocument, type Endpoint, type Label, type Net, type Point, type Port, type Segment } from './document'
+import {
+  capturePortAnchors,
+  isBlockAttachedStub,
+  moveBlock,
+  pinLocal,
+  pinOnBorder,
+  portAnchor,
+  portAnchorDeltas,
+  refreshAll,
+  translateAttachedStubsByPortDeltas,
+} from './geometry'
 import { ensureNetByName, reassignComponents } from './nets'
 
 export const GRID = 20
@@ -83,11 +93,14 @@ export function nearestBlockBorder(
 export function placePort(doc: DiagramDocument, portId: string, side: Port['side'], t: number): void {
   const port = doc.ports.find((item) => item.id === portId)
   if (!port) return
+  const before = capturePortAnchors(doc, port.blockId)
   port.side = side
   port.t = clampUnit(t)
   port.placed = true
   delete port.x
   delete port.y
+  // Attached Port↔Free stubs follow this port’s actual Δ (S4); other stubs stay put.
+  translateAttachedStubsByPortDeltas(doc, portAnchorDeltas(doc, before))
   refreshAll(doc)
 }
 
@@ -220,10 +233,9 @@ export function snapBlocks(doc: DiagramDocument, blockIds: string[], enabled: bo
   for (const id of blockIds) {
     const block = doc.blocks.find((item) => item.id === id)
     if (!block) continue
-    block.x = snapValue(block.x, true)
-    block.y = snapValue(block.y, true)
+    // Route through moveBlock so attached Port↔Free stubs follow the snap delta.
+    moveBlock(doc, id, snapValue(block.x, true), snapValue(block.y, true))
   }
-  refreshAll(doc)
 }
 
 export function setBlockFields(
@@ -233,11 +245,16 @@ export function setBlockFields(
 ): void {
   const block = doc.blocks.find((item) => item.id === blockId)
   if (!block) return
+  const geometry =
+    fields.x !== undefined || fields.y !== undefined || fields.width !== undefined || fields.height !== undefined
+  const before = geometry ? capturePortAnchors(doc, blockId) : null
   if (fields.name !== undefined) block.name = fields.name
   if (fields.x !== undefined) block.x = fields.x
   if (fields.y !== undefined) block.y = fields.y
   if (fields.width !== undefined) block.width = Math.max(GRID, fields.width)
   if (fields.height !== undefined) block.height = Math.max(GRID, fields.height)
+  // Per-port Δ so east/west (or north/south) stubs move independently on resize (S4).
+  if (before) translateAttachedStubsByPortDeltas(doc, portAnchorDeltas(doc, before))
   refreshAll(doc)
 }
 
@@ -270,11 +287,15 @@ export function ungroup(doc: DiagramDocument, groupId: string): void {
   doc.groups = doc.groups.filter((group) => group.id !== groupId)
 }
 
-/** Copy blocks and the wires whose both ends lie on those blocks. External wires stay put. */
+/**
+ * Copy blocks, internal Port↔Port wires (both ends in the selection), and attached Port↔Free stubs.
+ * Named stubs join sheet nets by name (D5c.5). External trunks and unrelated same-name stubs stay put.
+ */
 export function duplicateBlocks(doc: DiagramDocument, blockIds: string[], dx: number, dy: number): Map<string, string> {
   const blockMap = new Map<string, string>()
   const portMap = new Map<string, string>()
   const chosen = new Set(blockIds)
+  const stubs = attachedStubsForBlocks(doc, chosen)
   for (const id of blockIds) {
     const block = doc.blocks.find((item) => item.id === id)
     if (!block) continue
@@ -300,19 +321,15 @@ export function duplicateBlocks(doc: DiagramDocument, blockIds: string[], dx: nu
     doc.segments.push({
       id: segmentId,
       netId,
-      routed: 'manual',
+      routed: segment.routed,
       points: segment.points.map((point) => ({ x: point.x + dx, y: point.y + dy })),
       start: { kind: 'port', portId: portMap.get(segment.start.portId) ?? segment.start.portId },
       end: { kind: 'port', portId: portMap.get(segment.end.portId) ?? segment.end.portId },
     })
-    for (const label of doc.labels) {
-      if (label.anchor.kind !== 'segment' || label.anchor.segmentId !== segment.id) continue
-      doc.labels.push({
-        id: createId('lbl'),
-        text: label.text,
-        anchor: { ...label.anchor, segmentId },
-      })
-    }
+    copySegmentLabels(doc, segment.id, segmentId)
+  }
+  for (const segment of stubs) {
+    copyAttachedStub(doc, segment, portMap, dx, dy)
   }
   refreshAll(doc)
   return blockMap
@@ -341,21 +358,35 @@ export type Fragment = {
   groupName: string | null
 }
 
-/** Copy the selected blocks and only the wires that stay inside that selection. */
+/**
+ * Copy the selected blocks, internal Port↔Port wires, and attached Port↔Free stubs (implicit closure).
+ * Attached stubs need not be explicitly selected.
+ */
 export function captureFragment(doc: DiagramDocument, blockIds: string[]): Fragment {
   const chosen = new Set(blockIds)
   const blocks = doc.blocks.filter((block) => chosen.has(block.id)).map((block) => ({ ...block }))
   const ports = doc.ports.filter((port) => chosen.has(port.blockId)).map((port) => ({ ...port }))
   const portIds = new Set(ports.map((port) => port.id))
-  const segments = doc.segments
-    .filter(
-      (segment) =>
-        segment.start.kind === 'port' &&
-        segment.end.kind === 'port' &&
-        portIds.has(segment.start.portId) &&
-        portIds.has(segment.end.portId),
-    )
-    .map((segment) => ({ ...segment, points: segment.points.map((point) => ({ ...point })), start: { ...segment.start }, end: { ...segment.end } }))
+  const internal = doc.segments.filter(
+    (segment) =>
+      segment.start.kind === 'port' &&
+      segment.end.kind === 'port' &&
+      portIds.has(segment.start.portId) &&
+      portIds.has(segment.end.portId),
+  )
+  const stubs = attachedStubsForBlocks(doc, chosen)
+  const seen = new Set<string>()
+  const segments: Segment[] = []
+  for (const segment of [...internal, ...stubs]) {
+    if (seen.has(segment.id)) continue
+    seen.add(segment.id)
+    segments.push({
+      ...segment,
+      points: segment.points.map((point) => ({ ...point })),
+      start: { ...segment.start },
+      end: { ...segment.end },
+    })
+  }
   const netIds = new Set(segments.map((segment) => segment.netId))
   const nets = doc.nets.filter((net) => netIds.has(net.id)).map((net) => ({ ...net }))
   const segmentIds = new Set(segments.map((segment) => segment.id))
@@ -392,6 +423,24 @@ export function pasteFragment(doc: DiagramDocument, fragment: Fragment, dx: numb
   }
   const segmentMap = new Map<string, string>()
   for (const segment of fragment.segments) {
+    const stub = isPortFreeSegment(segment)
+    if (stub) {
+      const remapped = remapStubGeometry(segment, portMap, dx, dy)
+      if (!remapped) continue
+      const net = fragment.nets.find((item) => item.id === segment.netId)
+      const netId = ensureNetByName(doc, net?.name ?? '')
+      const segmentId = createId('seg')
+      segmentMap.set(segment.id, segmentId)
+      doc.segments.push({
+        id: segmentId,
+        netId,
+        routed: segment.routed,
+        points: remapped.points,
+        start: remapped.start,
+        end: remapped.end,
+      })
+      continue
+    }
     if (segment.start.kind !== 'port' || segment.end.kind !== 'port') continue
     const start = portMap.get(segment.start.portId)
     const end = portMap.get(segment.end.portId)
@@ -404,7 +453,7 @@ export function pasteFragment(doc: DiagramDocument, fragment: Fragment, dx: numb
     doc.segments.push({
       id: segmentId,
       netId,
-      routed: 'manual',
+      routed: segment.routed,
       points: segment.points.map((point) => ({ x: point.x + dx, y: point.y + dy })),
       start: { kind: 'port', portId: start },
       end: { kind: 'port', portId: end },
@@ -418,6 +467,7 @@ export function pasteFragment(doc: DiagramDocument, fragment: Fragment, dx: numb
       id: createId('lbl'),
       text: label.text,
       role: label.role,
+      fontSize: label.fontSize,
       anchor: { ...label.anchor, segmentId },
     })
   }
@@ -459,4 +509,88 @@ function usesPort(end: DiagramDocument['segments'][number]['start'], portIds: Se
 
 function blockOfPort(doc: DiagramDocument, portId: string): string | null {
   return doc.ports.find((port) => port.id === portId)?.blockId ?? null
+}
+
+/** Port↔Free stubs attached to any of `chosen` blocks (deduped by segment id). */
+export function attachedStubsForBlocks(doc: DiagramDocument, chosen: Set<string> | string[]): Segment[] {
+  const blocks = chosen instanceof Set ? chosen : new Set(chosen)
+  const out: Segment[] = []
+  const seen = new Set<string>()
+  for (const blockId of blocks) {
+    for (const segment of doc.segments) {
+      if (seen.has(segment.id)) continue
+      if (!isBlockAttachedStub(doc, segment, blockId)) continue
+      seen.add(segment.id)
+      out.push(segment)
+    }
+  }
+  return out
+}
+
+function isPortFreeSegment(segment: Segment): boolean {
+  const portFree = segment.start.kind === 'port' && segment.end.kind === 'free'
+  const freePort = segment.start.kind === 'free' && segment.end.kind === 'port'
+  return portFree || freePort
+}
+
+function copyAttachedStub(
+  doc: DiagramDocument,
+  segment: Segment,
+  portMap: Map<string, string>,
+  dx: number,
+  dy: number,
+): void {
+  const remapped = remapStubGeometry(segment, portMap, dx, dy)
+  if (!remapped) return
+  const net = doc.nets.find((item) => item.id === segment.netId)
+  const netId = ensureNetByName(doc, net?.name ?? '')
+  const segmentId = createId('seg')
+  doc.segments.push({
+    id: segmentId,
+    netId,
+    routed: segment.routed,
+    points: remapped.points,
+    start: remapped.start,
+    end: remapped.end,
+  })
+  copySegmentLabels(doc, segment.id, segmentId)
+}
+
+function remapStubGeometry(
+  segment: Segment,
+  portMap: Map<string, string>,
+  dx: number,
+  dy: number,
+): { points: Segment['points']; start: Endpoint; end: Endpoint } | null {
+  const start = translateEndpoint(segment.start, portMap, dx, dy)
+  const end = translateEndpoint(segment.end, portMap, dx, dy)
+  if (!start || !end) return null
+  return {
+    points: segment.points.map((point) => ({ ...point, x: point.x + dx, y: point.y + dy })),
+    start,
+    end,
+  }
+}
+
+function translateEndpoint(end: Endpoint, portMap: Map<string, string>, dx: number, dy: number): Endpoint | null {
+  if (end.kind === 'port') {
+    const portId = portMap.get(end.portId)
+    return portId ? { kind: 'port', portId } : null
+  }
+  if (end.kind === 'free') return { kind: 'free', x: end.x + dx, y: end.y + dy }
+  return null
+}
+
+function copySegmentLabels(doc: DiagramDocument, sourceSegmentId: string, nextSegmentId: string): void {
+  // Snapshot — do not iterate `doc.labels` live while pushing copies.
+  for (const label of [...doc.labels]) {
+    if (label.anchor.kind !== 'segment' || label.anchor.segmentId !== sourceSegmentId) continue
+    doc.labels.push({
+      id: createId('lbl'),
+      text: label.text,
+      role: label.role,
+      fontSize: label.fontSize,
+      anchor: { ...label.anchor, segmentId: nextSegmentId },
+    })
+  }
 }

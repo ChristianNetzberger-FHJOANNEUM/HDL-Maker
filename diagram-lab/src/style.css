@@ -276,6 +276,10 @@ button:disabled {
   user-select: none;
 }
 
+.label.compact {
+  font-size: 9px;
+}
+
 .block {
   position: relative;
   box-sizing: border-box;
@@ -665,4 +669,45 @@ textarea {
 
 .open-as button:disabled {
   opacity: 0.45;
+}
+
+.benchgen-dialog {
+  width: 320px;
+  gap: 10px;
+}
+
+.benchgen-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.benchgen-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.benchgen-field select,
+.benchgen-field input {
+  padding: 6px 8px;
+  border: 1px solid #c5ced8;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.benchgen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.benchgen-generate {
+  background: #1d6fd6;
+  color: #fff;
+  border: 1px solid #1a63bf;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
 }
