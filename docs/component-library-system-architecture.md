@@ -1,10 +1,10 @@
 # Component Library System — architecture (proposal)
 
-**Status:** planning only. Not accepted. Not released for implementation.  
-**Does not replace** accepted D0–D5a / D5b.1–D5b.3 decisions or the ongoing D5b.4 work.  
+**Status:** strategic roadmap extension **accepted** (25 Nov 2026). Stream CL0–CL7 remains **planned only** — not released for implementation. Detailed technical formats and APIs stay open until a future CL0 acceptance.  
+**Does not replace** accepted D0–D5a / D5b.1–D5b.3 decisions or D5b.4.  
 **Related:** [educational-web-editor-architecture.md](educational-web-editor-architecture.md), [diagram-editor-roadmap.md](diagram-editor-roadmap.md), [learning-mode.md](learning-mode.md).
 
-## 1. Product vision (proposal)
+## 1. Product vision (accepted strategically)
 
 The diagram lab should become a **universal, license-free technical diagram editor**. Domain meaning comes from **loaded component libraries**, not from hard-coded HDL semantics in the core.
 
@@ -192,6 +192,14 @@ Treat student JSON, libraries, SVG, ZIP as untrusted: schema validate, size limi
 
 **CL0 before or parallel to late D5f** is recommended so the reusable Vue package does not bake in hard-coded palettes.
 
+### Accepted strategic recommendations (not an implementation order change)
+
+- Prefer scheduling **CL0 before D5f** so host library/palette/parameter seams are known when packaging the reusable editor.
+- First didactic MVP may use **hand-authored library JSON**; a full Library Manager is not required for that MVP.
+- At CL0, study existing **`SymbolLibrary` (D3c)** and **shapes/assets (D3d)** especially carefully — the manager may largely be UX over structures already present.
+- Study extending **`Block.parameters`** toward a typed schema later (CL4/CL6).
+- Asset duplication under full project snapshots remains a **D5d / CL5** concern; do not revise accepted D5b Variant A for that alone.
+
 Relation to existing **D4f–D4g** (HDL adapter libraries): keep separate; CL is domain-neutral. Relation to **Learning Mode L0**: complementary (local HDL courses vs browser/library-first education).
 
 ## 16. Inventory table (planned vs present)
@@ -220,4 +228,4 @@ Relation to existing **D4f–D4g** (HDL adapter libraries): keep separate; CL is
 
 ## 18. What this document is not
 
-No code, no schema migration, no library implementation, no D5b.4 changes, no `libs/` edits. Implementation requires explicit acceptance of **CL0** (and related EDU decisions).
+No code, no schema migration, no library implementation, no D5b.4 changes, no `libs/` edits. **CL0–CL7 stay locked** until an explicit implementation release. A future **CL0** work order is required before schema or API decisions become binding.

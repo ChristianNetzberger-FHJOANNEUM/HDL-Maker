@@ -1,6 +1,6 @@
 # Diagram editor roadmap
 
-D0 through D5 are one program. D0 through D4d are built in `diagram-lab`. D5a prepares the acceptance review and three reference projects. D5a.1, D5a.2, and D5a.3 are accepted by the user; D5a is complete. D5b is released. D5b.1–D5b.3 are accepted. D5b.4 hardens interactive gestures ([d5b4-interactive-gesture-transactions.md](d5b4-interactive-gesture-transactions.md)) and waits for acceptance. D5b.5–D5b.6 and D5c through D5f are not started. D4f and D4g are not started. The HDL-Maker editor, the VHDL generators, and the FPGA backends stay as they are while the lab proceeds.
+D0 through D5 are one program. D0 through D4d are built in `diagram-lab`. D5a prepares the acceptance review and three reference projects. D5a.1, D5a.2, and D5a.3 are accepted by the user; D5a is complete. D5b is released. D5b.1–D5b.3 and D5b.4a are accepted. **D5b.5a** adds interaction defaults ([d5b5a-interaction-defaults.md](d5b5a-interaction-defaults.md)) and waits for acceptance. Full D5b.5 toolbar polish and D5b.6 stay locked. D5c through D5f are not started. D4f and D4g are not started. The HDL-Maker editor, the VHDL generators, and the FPGA backends stay as they are while the lab proceeds.
 
 The rule for the whole program: the library is a diagram editor first. HDL is an adapter.
 
@@ -23,15 +23,15 @@ The rule for the whole program: the library is a diagram editor first. HDL is an
 | D5a.1 | Interactive top-down authoring | Built in `diagram-lab`. Accepted by the user on 25 Nov 2026. [d5a1-interactive-top-down-authoring.md](d5a1-interactive-top-down-authoring.md). |
 | D5a.2 | Interactive block resizing | Built in `diagram-lab`. Accepted by the user on 25 Nov 2026. [d5a2-interactive-block-resizing.md](d5a2-interactive-block-resizing.md). |
 | D5a.3 | Interactive port authoring | Accepted. D5a.3a–D5a.3c closed. [d5a3-interactive-port-authoring.md](d5a3-interactive-port-authoring.md). |
-| D5b | One chronological undo history | Released. D5b.1–D5b.3 accepted. D5b.4 gesture robustness waiting for acceptance. [d5b4-interactive-gesture-transactions.md](d5b4-interactive-gesture-transactions.md). |
+| D5b | One chronological undo history | Released. D5b.1–D5b.3 / D5b.4a accepted. **D5b.5a** interaction defaults waiting for acceptance. [d5b5a-interaction-defaults.md](d5b5a-interaction-defaults.md). |
 | D5c | Drawing tools and interaction | Specified. Not started. Includes the earlier freehand work. |
 | D5d | Large diagrams | Specified. Not started. |
 | D5e | Export and documentation | Specified. Not started. |
 | D5f | A Vue 3 component library | Specified. Not started. |
-| CL0–CL7 | Component Library System (planning) | Proposed only. Not accepted. Not started. [component-library-system-architecture.md](component-library-system-architecture.md). |
-| EDU0–EDU6 | Educational Web Applications (planning) | Proposed only. Not accepted. Not started. [educational-web-editor-architecture.md](educational-web-editor-architecture.md). |
+| CL0–CL7 | Component Library System | Strategic extension **accepted**. Phases planned; **not** released for implementation. [component-library-system-architecture.md](component-library-system-architecture.md). |
+| EDU0–EDU6 | Educational Web Applications | Strategic extension **accepted**. Phases planned; **not** released for implementation. [educational-web-editor-architecture.md](educational-web-editor-architecture.md). |
 
-Planning IDs **CL** / **EDU** avoid collisions with existing **L0** (Learning Mode) and **E0–E6** (Studio editor). They are not released for implementation.
+Planning IDs **CL** / **EDU** avoid collisions with existing **L0** (Learning Mode) and **E0–E6** (Studio editor). Recommendation (not a schedule change): consider **CL0 before D5f**.
 
 ## Long-term streams after D5 (planning)
 
@@ -155,7 +155,7 @@ The later HDL adapter still adds entity, architecture, generics, directions, and
 
 ## D5 — Consolidation before integration
 
-D5 makes the lab a base that HDL-Maker and the Nuxt script can share. It does not start that integration. The order is D5a (complete), then D5b (D5b.1–D5b.3 accepted; D5b.4 gesture robustness awaiting acceptance), then the drawing, performance, export, and library steps. D5b.5 is locked until D5b.4 is accepted. The keyboard session can change the order of D5c through D5f. It does not skip the undo problem.
+D5 makes the lab a base that HDL-Maker and the Nuxt script can share. It does not start that integration. The order is D5a (complete), then D5b (through D5b.4a accepted; D5b.5a interaction defaults awaiting acceptance; full D5b.5 / D5b.6 locked), then the drawing, performance, export, and library steps. The keyboard session can change the order of D5c through D5f. It does not skip the undo problem.
 
 | Step | Content | Status |
 | --- | --- | --- |
@@ -163,12 +163,12 @@ D5 makes the lab a base that HDL-Maker and the Nuxt script can share. It does no
 | D5a.1 | A drawn block becomes a component from the sheet, through Open as | Accepted by the user on 25 Nov 2026. [d5a1-interactive-top-down-authoring.md](d5a1-interactive-top-down-authoring.md). |
 | D5a.2 | One instance can be scaled, and the symbol is drawn in that box | Accepted by the user on 25 Nov 2026. [d5a2-interactive-block-resizing.md](d5a2-interactive-block-resizing.md). |
 | D5a.3 | Ports can be added and moved on any side of one instance | Accepted. [d5a3-interactive-port-authoring.md](d5a3-interactive-port-authoring.md). |
-| D5b | One chronological transaction history for sheet edits and project commands | D5b.1–D5b.3 accepted. D5b.4 waiting for acceptance. [d5b4-interactive-gesture-transactions.md](d5b4-interactive-gesture-transactions.md). |
+| D5b | One chronological transaction history for sheet edits and project commands | D5b.1–D5b.3 / D5b.4a accepted. D5b.5a waiting for acceptance. [d5b5a-interaction-defaults.md](d5b5a-interaction-defaults.md). |
 | D5c | Drawing tools and interaction, including routes that stay readable, fit, and the rest of the backlog | Specified. Not started. [diagram-editor-usability-backlog.md](diagram-editor-usability-backlog.md). |
 | D5d | Performance on a large sheet, including continuous mouse movement | Specified. Not started. |
 | D5e | Export of a whole diagram, and documentation for a reader outside the lab | Specified. Not started. |
 | D5f | The lab surface as a Vue 3 component library | Specified. Not started. Prefer APIs that can host dynamic libraries (CL2) without a second editor. |
-| CL / EDU | Component libraries and educational web apps | Planning docs only. [component-library-system-architecture.md](component-library-system-architecture.md), [educational-web-editor-architecture.md](educational-web-editor-architecture.md). |
+| CL / EDU | Component libraries and educational web apps | Strategic docs accepted; implementation locked. [component-library-system-architecture.md](component-library-system-architecture.md), [educational-web-editor-architecture.md](educational-web-editor-architecture.md). |
 
 Freehand ink, a confirmed conversion to an orthogonal wire, and a stroke that stays ink until that confirmation are already in the lab as a prototype. Eraser, arrows, and a pen mode are D5c and are not started. A learning task that stores instructions, allowed edits, and a check against nets was specified before this split. It is not built, and it is not part of D5a. Browser assignment packs are the separate **EDU** proposal; local HDL Learning Mode remains **L0**.
 

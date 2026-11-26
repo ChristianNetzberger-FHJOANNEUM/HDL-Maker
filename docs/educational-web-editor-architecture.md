@@ -1,6 +1,6 @@
 # Educational Web Applications — architecture (proposal)
 
-**Status:** planning only. Not accepted. Not released for implementation.  
+**Status:** strategic roadmap extension **accepted** (25 Nov 2026). Stream EDU0–EDU6 remains **planned only** — not released for implementation. Concrete pack formats and embed choices stay open until a future EDU0 acceptance.  
 **Sister document:** [component-library-system-architecture.md](component-library-system-architecture.md).  
 **Does not replace** D5b priorities or accepted diagram-lab decisions.
 
@@ -135,6 +135,13 @@ Share the **diagram core** and eventually D5f; do not merge roadmaps into one ID
 4. Whether MVP parameters stay untyped strings  
 5. BASIN integration (out of editor scope)
 
-## 14. Boundaries
+## 14. Accepted strategic recommendations (shared with CL)
 
-Documentation only. No assignment system code, no web deploy, no schema change, no D5b.4 overwrite.
+- MVP may start from manual library JSON + existing editor after D5b; full Manager (CL3) and Shape Editor (CL7) are not MVP gates.
+- Prefer knowing CL0 host seams before locking D5f packaging APIs.
+- Asset/snapshot cost stays with D5d / CL5.
+- Auto-grading (EDU5) and simulation (EDU6) remain post-MVP.
+
+## 15. Boundaries
+
+**EDU0–EDU6 stay locked** until an explicit implementation release. No assignment system code, no web deploy, no schema change from this acceptance alone.

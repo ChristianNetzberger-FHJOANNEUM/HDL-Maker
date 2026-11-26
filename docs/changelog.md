@@ -127,11 +127,19 @@
 
 ### Strategic planning — CL / EDU streams
 
-- Architecture-only docs for a long-term Component Library System and Educational Web Applications. Planning IDs **CL0–CL7** and **EDU0–EDU6** avoid collisions with existing Learning Mode **L0** and Studio **E0–E6**. No productive library/education code. Details: `docs/component-library-system-architecture.md`, `docs/educational-web-editor-architecture.md`.
+- Architecture-only docs for a long-term Component Library System and Educational Web Applications. Planning IDs **CL0–CL7** and **EDU0–EDU6** avoid collisions with existing Learning Mode **L0** and Studio **E0–E6**. Strategic extension accepted; phases remain locked (no productive library/education code). Details: `docs/component-library-system-architecture.md`, `docs/educational-web-editor-architecture.md`.
+
+### D5b.5a lab
+
+- Interaction defaults: Select on load, sticky tool toggle, marquee kept on LMB empty space, middle-click pan and Space+LMB pan in any tool, RMB reserved for context menus (stage stub + existing block menu). Details: `docs/d5b5a-interaction-defaults.md`.
+
+### D5b.4a lab
+
+- Corrects D5b.4 acceptance failures C3 (wired port vs wire `.hit` overlay — hand off to port drag) and E3 (resize `pointerup` racing ahead of blur — deferred commit + `focusLossToken`). Documents shortcuts, D4=N/A, and F1/F2/F5/F6/G5 technical coverage. Accepted by the user. Details: `docs/d5b4a-gesture-robustness-fixes.md`.
 
 ### D5b.4 lab
 
-- Hardens interactive document gestures on the shared manager: unified cancel/commit latch, Escape/blur/visibility/pointercancel/lostcapture, Undo-cancels-only, Redo-refuses-while-gesturing, Save cancels before markSaved. Policy helper `gestureGuard.ts`. Details: `docs/d5b4-interactive-gesture-transactions.md`.
+- Hardens interactive document gestures on the shared manager: unified cancel/commit latch, Escape/blur/visibility/pointercancel/lostcapture, Undo-cancels-only, Redo-refuses-while-gesturing, Save cancels before markSaved. Policy helper `gestureGuard.ts`. Partial user acceptance (29/37); continued in D5b.4a. Details: `docs/d5b4-interactive-gesture-transactions.md`.
 
 ### D5b.3 lab
 

@@ -103,6 +103,25 @@ button.on {
   background: #f7f8fa;
 }
 
+.stage.cursor-select {
+  cursor: default;
+}
+
+.stage.cursor-pan,
+.stage.cursor-pan .vue-flow__pane {
+  cursor: grab;
+}
+
+.stage.cursor-pan:active,
+.stage.cursor-pan .vue-flow__pane:active {
+  cursor: grabbing;
+}
+
+.stage.cursor-draw,
+.stage.cursor-draw .vue-flow__pane {
+  cursor: crosshair;
+}
+
 .world {
   position: absolute;
   inset: 0;

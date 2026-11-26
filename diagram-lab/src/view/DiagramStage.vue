@@ -112,6 +112,7 @@ import {
   type HierarchyLocation,
 } from '../core/navigate'
 import { GestureCloseLatch, actionForRedoWhileGesturing } from './gestureGuard'
+import { allowMarquee, chooseTool as nextTool, panOnDragButtons, type EditorTool } from './interactionPolicy'
 import HierarchyTree from './HierarchyTree.vue'
 import { JsonRecordStorage, jsonFileName } from '../core/storage'
 import BlockNode from './BlockNode.vue'
@@ -120,7 +121,7 @@ import SymbolEditor from './SymbolEditor.vue'
 import SymbolFace, { type FacePin } from './SymbolFace.vue'
 import SymbolPalette from './SymbolPalette.vue'
 
-type Tool = 'select' | 'pan' | 'freehand' | 'wire' | 'port'
+type Tool = EditorTool
 type BendDrag = { segmentId: string; xEdge: number; yEdge: number; originX: number; originY: number; axis: 'x' | 'y' | null }
 type SpanDrag = { segmentId: string; edge: number; horizontal: boolean; origin: number; pointer: Point }
 type Drag = { origin: Map<string, Point>; baseX: number; baseY: number; cancelled: boolean }
@@ -131,9 +132,13 @@ type ResizeDrag = {
   cancelled: boolean
 }
 type Marquee = { x: number; y: number; width: number; height: number; shift: boolean }
+type ContextMenu =
+  | { kind: 'block'; blockId: string; x: number; y: number }
+  | { kind: 'stage'; x: number; y: number }
 
 const doc = ref<DiagramDocument>(emptyDocument())
 const tool = ref<Tool>('select')
+const spaceHeld = ref(false)
 const viewport = ref<ViewportTransform>({ x: 0, y: 0, zoom: 1 })
 const status = ref('New diagram.')
 const selected = ref<Set<string>>(new Set())
@@ -150,7 +155,7 @@ const canUndo = ref(false)
 const canRedo = ref(false)
 const interfaceFocus = ref<string | null>(null)
 const openAsBlock = ref<string | null>(null)
-const contextMenu = ref<{ blockId: string; x: number; y: number } | null>(null)
+const contextMenu = ref<ContextMenu | null>(null)
 const extractPlan = ref<ExtractPreview | null>(null)
 const expandPlan = ref<ExpandPreview | null>(null)
 const componentName = ref('Processing')
@@ -187,6 +192,8 @@ let spanDrag: SpanDrag | null = null
 let junctionDrag: { id: string; originX: number; originY: number; pointer: Point } | null = null
 /** Prevents double commit/cancel from late pointerup / lostpointercapture (D5b.4). */
 const gestureLatch = new GestureCloseLatch()
+/** Bumped on focus loss so a racing pointerup can still cancel instead of commit (D5b.4a E3). */
+let focusLossToken = 0
 
 /** Sheet-only history when no project is open (Example, Symbols, …). */
 const sheetSession = new EditSession(
@@ -478,6 +485,38 @@ const worldStyle = computed(() => ({
   transform: `translate(${viewport.value.x}px, ${viewport.value.y}px) scale(${viewport.value.zoom})`,
 }))
 
+/** Middle-click always pans; left pans only in Pan tool or while Space is held (D5b.5a). */
+const panDragButtons = computed(() => panOnDragButtons(tool.value, spaceHeld.value))
+
+const stageCursorClass = computed(() => {
+  if (spaceHeld.value || tool.value === 'pan') return 'cursor-pan'
+  if (tool.value === 'wire' || tool.value === 'freehand' || tool.value === 'port') return 'cursor-draw'
+  return 'cursor-select'
+})
+
+function resetInteractionMode(): void {
+  tool.value = 'select'
+  spaceHeld.value = false
+  portPreview.value = null
+  wireDraft.value = null
+  marquee.value = null
+}
+
+function chooseEditorTool(next: Tool): void {
+  const previous = tool.value
+  const chosen = nextTool(previous, next)
+  if (chosen !== 'port') portPreview.value = null
+  if (chosen !== 'wire') wireDraft.value = null
+  if (chosen !== 'freehand') drawing.value = null
+  if (chosen !== 'select') marquee.value = null
+  tool.value = chosen
+  if (chosen === 'select') status.value = 'Select.'
+  else if (chosen === 'pan') status.value = 'Pan. Middle-click or Space+drag also pan in any tool.'
+  else if (chosen === 'wire') status.value = 'Wire. Click a port or wire, then bends, then an end.'
+  else if (chosen === 'freehand') status.value = 'Freehand.'
+  else if (chosen === 'port') status.value = 'Click a block edge to add a port.'
+}
+
 function refreshHistory(): void {
   canUndo.value = edits().canUndo
   canRedo.value = edits().canRedo
@@ -499,11 +538,11 @@ function openDocument(next: DiagramDocument, message: string): void {
   selected.value = new Set()
   selectedStroke.value = null
   selectedSegment.value = null
-  wireDraft.value = null
   mergeFrom.value = null
   preview.value = null
   editingSymbol.value = null
   updatePreview.value = null
+  resetInteractionMode()
   refreshHistory()
   syncNav()
   status.value = message
@@ -1068,8 +1107,8 @@ function openInstalled(created: DiagramProject, message: string): void {
   navigation.value = rootLocation(created)
   doc.value = root
   selected.value = new Set()
-  wireDraft.value = null
   editingSymbol.value = null
+  resetInteractionMode()
   refreshHistory()
   const bounds = contentBounds(root)
   frame.value = { mode: 'fit', x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, zoom: 1, token: (frame.value?.token ?? 0) + 1 }
@@ -1370,6 +1409,8 @@ function showOpenAs(blockId: string): void {
 }
 
 function onBlockContext(blockId: string, event: MouseEvent): void {
+  event.preventDefault()
+  event.stopPropagation()
   if (!project.value) {
     status.value = 'Open as needs a project. Use New project.'
     return
@@ -1377,12 +1418,25 @@ function onBlockContext(blockId: string, event: MouseEvent): void {
   const kind = blockOpenKind(blockId)
   if (kind === 'boundary' || kind === 'missing') return
   selected.value = new Set([blockId])
-  contextMenu.value = { blockId, x: event.clientX, y: event.clientY }
+  contextMenu.value = { kind: 'block', blockId, x: event.clientX, y: event.clientY }
+}
+
+function onStageContextMenu(event: MouseEvent): void {
+  // RMB is reserved for menus — never pan/zoom. Stub menu on empty canvas (D5b.5a).
+  if (event.button !== 2 && event.type === 'contextmenu') {
+    // contextmenu fires after button 2; still prevent browser menu on stage chrome.
+  }
+  const target = event.target
+  if (target instanceof Element && target.closest('.vue-flow__node, .context-menu, .open-as, .props, .palette, button, input, select, textarea')) {
+    return
+  }
+  event.preventDefault()
+  contextMenu.value = { kind: 'stage', x: event.clientX, y: event.clientY }
 }
 
 function runContextAction(): void {
   const menu = contextMenu.value
-  if (!menu) return
+  if (!menu || menu.kind !== 'block') return
   const kind = blockOpenKind(menu.blockId)
   contextMenu.value = null
   if (kind === 'diagram' || kind === 'other') {
@@ -1390,6 +1444,11 @@ function runContextAction(): void {
     return
   }
   showOpenAs(menu.blockId)
+}
+
+function runStageContextPaste(): void {
+  contextMenu.value = null
+  paste()
 }
 
 function confirmOpenAs(): void {
@@ -1578,18 +1637,36 @@ function onResizeEnd(): void {
     resizing.value = false
     return
   }
-  const block = doc.value.blocks.find((item) => item.id === current.blockId)
-  const changed = Boolean(
-    block &&
-      (block.x !== current.origin.x || block.y !== current.origin.y || block.width !== current.origin.width || block.height !== current.origin.height),
-  )
   resizeDrag = null
   resizing.value = false
-  commitDocumentGesture()
-  if (changed) status.value = 'Block resized.'
+  // Defer commit one frame so window blur / visibilitychange from Alt-Tab can cancel first (E3).
+  const lossAtStart = focusLossToken
+  const origin = current.origin
+  const blockId = current.blockId
+  requestAnimationFrame(() => {
+    if (gestureLatch.isClosing || lossAtStart !== focusLossToken) {
+      if (edits().isGesturing) cancelActiveDocumentGesture('Resize cancelled.')
+      return
+    }
+    if (!document.hasFocus() || document.visibilityState === 'hidden') {
+      cancelActiveDocumentGesture('Resize cancelled.')
+      return
+    }
+    if (!edits().isGesturing) return
+    const block = doc.value.blocks.find((item) => item.id === blockId)
+    const changed = Boolean(
+      block &&
+        (block.x !== origin.x || block.y !== origin.y || block.width !== origin.width || block.height !== origin.height),
+    )
+    commitDocumentGesture()
+    if (changed) status.value = 'Block resized.'
+  })
 }
 
 function onResizeCancel(): void {
+  // onResizeEnd clears resizeDrag before the deferred commit. The handle then fires
+  // lostpointercapture → resizeCancel; ignoring that lets the commit proceed. A real
+  // mid-gesture cancel still has resizeDrag set (pointercancel / unexpected capture loss).
   if (!resizeDrag || gestureLatch.isClosing) return
   cancelActiveDocumentGesture('Resize cancelled.')
 }
@@ -1628,8 +1705,20 @@ function onDragStop(): void {
   }
   const ids = [...current.origin.keys()]
   drag = null
-  const recorded = commitDocumentGesture((draft) => snapBlocks(draft, ids, snapOn.value))
-  if (recorded) status.value = 'Block moved.'
+  const lossAtStart = focusLossToken
+  requestAnimationFrame(() => {
+    if (gestureLatch.isClosing || lossAtStart !== focusLossToken) {
+      if (edits().isGesturing) cancelActiveDocumentGesture('Gesture cancelled.')
+      return
+    }
+    if (!document.hasFocus() || document.visibilityState === 'hidden') {
+      cancelActiveDocumentGesture('Gesture cancelled.')
+      return
+    }
+    if (!edits().isGesturing) return
+    const recorded = commitDocumentGesture((draft) => snapBlocks(draft, ids, snapOn.value))
+    if (recorded) status.value = 'Block moved.'
+  })
 }
 
 function onNudge(id: string, dx: number, dy: number): void {
@@ -1733,9 +1822,7 @@ function portReach(): number {
 }
 
 function beginAddPort(): void {
-  tool.value = tool.value === 'port' ? 'select' : 'port'
-  portPreview.value = null
-  status.value = tool.value === 'port' ? 'Click a block edge to add a port.' : 'Select.'
+  chooseEditorTool('port')
 }
 
 function confirmPort(hit: { blockId: string; side: PortSide; t: number }): void {
@@ -1890,13 +1977,29 @@ function onPortEnd(): void {
     portDrag = null
     return
   }
-  const port = doc.value.ports.find((item) => item.id === current.portId)
-  const changed = Boolean(
-    port && (port.side !== current.side || Math.abs((port.t ?? 0) - current.t) > 1e-6 || Boolean(port.placed) !== current.placed),
-  )
   portDrag = null
-  commitDocumentGesture()
-  if (changed) status.value = 'Port moved.'
+  const lossAtStart = focusLossToken
+  const snapshot = { ...current }
+  requestAnimationFrame(() => {
+    if (gestureLatch.isClosing || lossAtStart !== focusLossToken) {
+      if (edits().isGesturing) cancelActiveDocumentGesture('Port move cancelled.')
+      return
+    }
+    if (!document.hasFocus() || document.visibilityState === 'hidden') {
+      cancelActiveDocumentGesture('Port move cancelled.')
+      return
+    }
+    if (!edits().isGesturing) return
+    const port = doc.value.ports.find((item) => item.id === snapshot.portId)
+    const changed = Boolean(
+      port &&
+        (port.side !== snapshot.side ||
+          Math.abs((port.t ?? 0) - snapshot.t) > 1e-6 ||
+          Boolean(port.placed) !== snapshot.placed),
+    )
+    commitDocumentGesture()
+    if (changed) status.value = 'Port moved.'
+  })
 }
 
 function onPortCancel(): void {
@@ -1931,13 +2034,33 @@ function clientToWorld(event: PointerEvent): Point {
   }
 }
 
+/**
+ * Wire hit strokes (12px) sit above Vue Flow nodes and cover port marks at endpoints (C3).
+ * Prefer starting a port drag when the pointer is near a port.
+ */
+function portNearWorld(point: Point, reach = 14): { blockId: string; portId: string } | null {
+  let best: { blockId: string; portId: string; dist: number } | null = null
+  for (const port of doc.value.ports) {
+    const at = portAnchor(doc.value, port.id)
+    if (!at) continue
+    const dist = Math.hypot(at.x - point.x, at.y - point.y)
+    if (dist <= reach && (!best || dist < best.dist)) best = { blockId: port.blockId, portId: port.id, dist }
+  }
+  return best ? { blockId: best.blockId, portId: best.portId } : null
+}
+
 function onStagePointerDown(event: PointerEvent): void {
-  if (tool.value !== 'select' || event.button !== 0 || marquee.value) return
+  if (!allowMarquee(tool.value, spaceHeld.value, event.button) || marquee.value) return
   const target = event.target
   if (!(target instanceof Element)) return
   if (target.closest('.vue-flow__node, .bend, .ink, .hit, .junction, .props, button, input')) return
   const start = clientToWorld(event)
   marquee.value = { x: start.x, y: start.y, width: 0, height: 0, shift: event.shiftKey }
+}
+
+function onStageAuxMouseDown(event: MouseEvent): void {
+  // Prevent the browser auto-scroll / paste affordance on middle click so Vue Flow can pan.
+  if (event.button === 1) event.preventDefault()
 }
 
 function onStagePointerMove(event: PointerEvent): void {
@@ -2158,6 +2281,12 @@ function onSpanDown(segmentId: string, event: PointerEvent): void {
     return
   }
   const world = clientToWorld(event)
+  // D5b.4a C3: wire hit overlay steals pointerdown from wired ports — hand off to port drag.
+  const nearPort = portNearWorld(world, Math.max(12, 16 / Math.max(viewport.value.zoom, 0.25)))
+  if (nearPort) {
+    onPortDown(nearPort.blockId, nearPort.portId, event)
+    return
+  }
   const hit = snapTarget(doc.value, world)
   const edge = hit.kind === 'segment' && hit.segmentId === segmentId ? hit.edge : 0
   const from = segment.points[edge]
@@ -2456,12 +2585,18 @@ function onKey(event: KeyboardEvent): void {
     acceptWire(finishFree(wireDraft.value, wireHover.value))
     return
   }
-  if (event.key === ' ' && wireDraft.value) {
+  if (event.key === ' ' && wireDraft.value && !event.repeat) {
     event.preventDefault()
     wireDraft.value = { ...wireDraft.value, elbow: wireDraft.value.elbow === 'h' ? 'v' : 'h' }
-    return
+    // Fall through so Space also arms temporary pan (Space+LMB) in wire mode.
   }
   if (typingTarget(event.target)) return
+  if (event.key === ' ' ) {
+    event.preventDefault()
+    spaceHeld.value = true
+    marquee.value = null
+    return
+  }
   const command = event.ctrlKey || event.metaKey
   const key = event.key.toLowerCase()
   if (command && key === 'z') {
@@ -2473,6 +2608,11 @@ function onKey(event: KeyboardEvent): void {
   if (command && key === 'y') {
     event.preventDefault()
     redo()
+    return
+  }
+  if (command && key === 's') {
+    event.preventDefault()
+    void save()
     return
   }
   if (command && key === 'a') {
@@ -2505,6 +2645,12 @@ function onKey(event: KeyboardEvent): void {
   }
 }
 
+function onKeyUp(event: KeyboardEvent): void {
+  if (event.key === ' ') {
+    spaceHeld.value = false
+  }
+}
+
 function outline(points: Array<Point & { pressure?: number }>, size: number): string {
   const stroke = getStroke(
     points.map((point) => [point.x, point.y, point.pressure ?? 0.5]),
@@ -2529,6 +2675,8 @@ function bends(points: Point[]): Point[] {
 }
 
 function onWindowBlur(): void {
+  focusLossToken += 1
+  spaceHeld.value = false
   if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
     cancelActiveDocumentGesture('Gesture cancelled.')
   }
@@ -2538,15 +2686,23 @@ function onVisibilityChange(): void {
   if (document.visibilityState === 'hidden') onWindowBlur()
 }
 
+function onPageHide(): void {
+  onWindowBlur()
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onKey)
+  window.addEventListener('keyup', onKeyUp)
   window.addEventListener('blur', onWindowBlur)
+  window.addEventListener('pagehide', onPageHide)
   document.addEventListener('visibilitychange', onVisibilityChange)
 })
 onUnmounted(() => {
   cancelActiveDocumentGesture()
   window.removeEventListener('keydown', onKey)
+  window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('blur', onWindowBlur)
+  window.removeEventListener('pagehide', onPageHide)
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 
@@ -2570,11 +2726,11 @@ defineExpose({ roundTrip, doc })
       <button @click="createSymbol">New symbol</button>
       <button @click="shiftSymbolPin">Shift pin</button>
       <button @click="dropSymbolPin">Drop pin</button>
-      <button :class="{ on: tool === 'select' }" @click="tool = 'select'">Select</button>
-      <button :class="{ on: tool === 'pan' }" @click="tool = 'pan'">Pan</button>
-      <button :class="{ on: tool === 'wire' }" @click="tool = 'wire'">Wire</button>
-      <button :class="{ on: tool === 'freehand' }" @click="tool = 'freehand'">Freehand</button>
-      <button :class="{ on: tool === 'port' }" @click="beginAddPort">Add port</button>
+      <button :class="{ on: tool === 'select' }" title="Select (default)" @click="chooseEditorTool('select')">Select</button>
+      <button :class="{ on: tool === 'pan' }" title="Pan tool (or middle-click / Space+drag)" @click="chooseEditorTool('pan')">Pan</button>
+      <button :class="{ on: tool === 'wire' }" title="Wire (sticky; click again for Select)" @click="chooseEditorTool('wire')">Wire</button>
+      <button :class="{ on: tool === 'freehand' }" title="Freehand (sticky; click again for Select)" @click="chooseEditorTool('freehand')">Freehand</button>
+      <button :class="{ on: tool === 'port' }" title="Add port (sticky; click again for Select)" @click="beginAddPort">Add port</button>
       <button :disabled="selected.size < 2" @click="groupSelection">Group</button>
       <button @click="ungroupSelection">Ungroup</button>
       <button :disabled="selected.size === 0" @click="duplicateSelection">Duplicate</button>
@@ -2649,6 +2805,9 @@ defineExpose({ roundTrip, doc })
     <div
       ref="stageEl"
       class="stage"
+      :class="stageCursorClass"
+      :data-tool="tool"
+      :data-space-pan="spaceHeld"
       :data-doc-id="doc.id"
       :data-blocks="doc.blocks.length"
       :data-nets="doc.nets.length"
@@ -2670,12 +2829,14 @@ defineExpose({ roundTrip, doc })
       @pointerdown="onStagePointerDown"
       @pointermove="onStagePointerMove"
       @pointerup="onStagePointerUp"
+      @mousedown="onStageAuxMouseDown"
+      @contextmenu="onStageContextMenu"
     >
       <VueFlow
         :nodes="flowNodes"
         :edges="[]"
-        :nodes-draggable="tool === 'select'"
-        :pan-on-drag="tool === 'pan'"
+        :nodes-draggable="tool === 'select' && !spaceHeld"
+        :pan-on-drag="panDragButtons"
         :nodes-connectable="false"
         :elements-selectable="false"
         :selection-key-code="null"
@@ -2930,7 +3091,13 @@ defineExpose({ roundTrip, doc })
     </footer>
     <div v-if="contextMenu" class="menu-back" @pointerdown="contextMenu = null">
       <div class="context-menu" data-context-menu :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }" @pointerdown.stop>
-        <button type="button" data-context-action @click="runContextAction">{{ blockOpenKind(contextMenu.blockId) === 'diagram' ? 'Open implementation' : 'Open as…' }}</button>
+        <template v-if="contextMenu.kind === 'block'">
+          <button type="button" data-context-action @click="runContextAction">{{ blockOpenKind(contextMenu.blockId) === 'diagram' ? 'Open implementation' : 'Open as…' }}</button>
+        </template>
+        <template v-else>
+          <button type="button" data-context-action="paste" @click="runStageContextPaste">Paste</button>
+          <button type="button" data-context-action="select" @click="chooseEditorTool('select'); contextMenu = null">Select tool</button>
+        </template>
       </div>
     </div>
     <div v-if="openAsBlock" class="menu-back" data-open-as @pointerdown.self="dismissOpenAs">

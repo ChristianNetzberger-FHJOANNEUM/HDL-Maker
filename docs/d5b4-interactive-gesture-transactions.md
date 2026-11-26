@@ -1,13 +1,14 @@
 # D5b.4 — Interactive gesture transaction robustness
 
-D5b.3 is fully accepted by the user (tests A–C). This note records D5b.4: reliable begin/preview/commit/cancel for existing document gestures on the shared `TransactionManager`. D5b.4 waits for user acceptance. D5b.5–D5b.6 stay locked.
+D5b.3 is fully accepted by the user (tests A–C). This note records D5b.4: reliable begin/preview/commit/cancel for existing document gestures on the shared `TransactionManager`. User acceptance of D5b.4 was **partial** (29/37; failures C3 and E3). Correction phase **D5b.4a** is documented in [d5b4a-gesture-robustness-fixes.md](d5b4a-gesture-robustness-fixes.md). D5b.5–D5b.6 stay locked until D5b.4a is accepted.
 
 ## 1. Status
 
 | Item | Status |
 | --- | --- |
 | D5b.3 | Accepted by the user |
-| D5b.4 | Implemented; waiting for user acceptance |
+| D5b.4 | Partial acceptance (29/37); see user matrix in D5b.4a doc |
+| D5b.4a | Implemented; waiting for user re-acceptance |
 | D5b.5–D5b.6 | Locked |
 
 No new undo architecture. No dual history. Snapshot strategy unchanged. No new editor features.
@@ -127,7 +128,12 @@ Preview still mutates in place (Variant A). No per-move `serializeProject` excep
 2. Property-panel width/height are separate `execute` transactions (not one gesture) — intentional; not a drag.
 3. Toolbar/shortcut polish remains D5b.5.
 4. Deep pointer-up-outside and multi-block drag acceptance still valuable in D5b.6.
+5. **Superseded by D5b.4a:** C3 (wired port vs wire hit overlay) and E3 (resize commit racing ahead of blur) — see [d5b4a-gesture-robustness-fixes.md](d5b4a-gesture-robustness-fixes.md).
 
 ## 11. Boundaries
 
 No schema / libs / EditableDiagram / Vue Flow upgrade / HDL / router / commit / push / ZIP.
+
+## 12. Follow-up
+
+D5b.4a corrects C3 and E3, documents shortcuts and D4=N/A, and secures F1/F2/F5/F6/G5 at the integration-test level. Re-acceptance checklist is in the D5b.4a note.

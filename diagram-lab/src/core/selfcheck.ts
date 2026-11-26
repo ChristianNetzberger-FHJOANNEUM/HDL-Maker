@@ -22,6 +22,7 @@ import { breadcrumbs, contentBounds, descend, DocumentSessions, parentLocation, 
 import { JsonProjectStorage, parseProject, ProjectSession, sampleProject, serializeProject } from './project'
 import { TransactionManager } from './transaction'
 import { GestureCloseLatch, actionForInterrupt, actionForRedoWhileGesturing } from '../view/gestureGuard'
+import { allowMarquee, chooseTool, panOnDragButtons } from '../view/interactionPolicy'
 import { compareSymbols } from './compare'
 import { acceptanceSheet, benchSheet } from './acceptance'
 import { commitSymbolUpdate, detachInstance, dropPortWires, prepareSymbolUpdate, rebindPort } from './migration'
@@ -3053,6 +3054,148 @@ if (faceOpened.ok) {
   })
   wiredTm.cancel()
   check(serializeProject(wiredBox.project) === netBefore, 'D5b.4 cancel restores full canonical project including nets')
+}
+
+// --- D5b.4a gesture robustness fixes ---
+{
+  // Wired port drag: topology ids stay; cancel restores; commit is one step.
+  const box = { project: createProject('WiredPort') }
+  const tm = new TransactionManager({
+    get: () => box.project,
+    set: (next) => {
+      box.project = next
+    },
+  })
+  let left = ''
+  let right = ''
+  let outPort = ''
+  let inPort = ''
+  tm.transact('setup', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    left = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    right = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    const a = sheet.blocks.find((block) => block.id === left)!
+    a.x = 40
+    a.y = 80
+    const b = sheet.blocks.find((block) => block.id === right)!
+    b.x = 280
+    b.y = 80
+    outPort = addPortAt(sheet, left, 'right', 0.5) ?? ''
+    inPort = addPortAt(sheet, right, 'left', 0.5) ?? ''
+    if (outPort && inPort) linkPorts(sheet, outPort, inPort, 'sig')
+    return project
+  })
+  const netId = documentById(box.project, box.project.rootDocumentId)!.segments[0]?.netId ?? ''
+  const beforeMove = serializeProject(box.project)
+  tm.begin('port-drag')
+  tm.preview((project) => {
+    placePort(documentById(project, project.rootDocumentId)!, outPort, 'right', 0.2)
+  })
+  tm.preview((project) => {
+    placePort(documentById(project, project.rootDocumentId)!, outPort, 'top', 0.4)
+  })
+  check(tm.commit() && tm.undoDepth === 2, 'D5b.4a wired port drag commits one history entry')
+  const sheetAfter = documentById(box.project, box.project.rootDocumentId)!
+  check(sheetAfter.ports.find((port) => port.id === outPort)?.side === 'top', 'D5b.4a wired port can change side')
+  check(sheetAfter.segments[0]?.netId === netId, 'D5b.4a net identity is preserved')
+  check(sheetAfter.ports.find((port) => port.id === outPort)?.id === outPort, 'D5b.4a port id is preserved')
+  tm.undo()
+  check(serializeProject(box.project) === beforeMove, 'D5b.4a undo restores wired port drag')
+  tm.redo()
+  check(documentById(box.project, box.project.rootDocumentId)!.ports.find((port) => port.id === outPort)?.side === 'top', 'D5b.4a redo restores wired port drag')
+
+  const beforeCancel = serializeProject(box.project)
+  const redoDepth = tm.redoDepth
+  tm.begin('port-cancel')
+  tm.preview((project) => {
+    placePort(documentById(project, project.rootDocumentId)!, outPort, 'bottom', 0.9)
+  })
+  tm.cancel()
+  check(serializeProject(box.project) === beforeCancel && tm.redoDepth === redoDepth, 'D5b.4a cancel of wired port drag keeps redo')
+
+  // F1 / F2: UI undo cancels gesture only; second undo consumes history.
+  tm.begin('f1')
+  tm.preview((project) => {
+    project.name = 'F1Preview'
+  })
+  const depthF1 = tm.undoDepth
+  const snapF1 = serializeProject(box.project)
+  tm.cancel() // DiagramStage undo-during-gesture
+  check(tm.undoDepth === depthF1 && serializeProject(box.project) !== snapF1 && box.project.name !== 'F1Preview', 'D5b.4a F1 cancel does not consume history')
+  const nameBeforeF2 = box.project.name
+  tm.undo()
+  check(box.project.name !== nameBeforeF2 || tm.undoDepth === depthF1 - 1, 'D5b.4a F2 second undo walks history')
+
+  // F5: successful gesture after undo drops redo.
+  tm.transact('seed', (project) => {
+    project.name = 'Seed'
+    return project
+  })
+  tm.undo()
+  check(tm.canRedo, 'D5b.4a F5 redo available after undo')
+  tm.begin('branch-gesture')
+  tm.preview((project) => {
+    project.name = 'BranchedGesture'
+  })
+  check(tm.commit() && !tm.canRedo, 'D5b.4a F5 successful gesture drops redo')
+
+  // F6: redo while gesturing refused.
+  tm.begin('f6')
+  check(!tm.redo().ok && tm.isGesturing, 'D5b.4a F6 redo refused while gesturing')
+  tm.cancel()
+
+  // G5: cancel then markSaved — preview never saved.
+  tm.markSaved()
+  const cleanG5 = serializeProject(box.project)
+  tm.begin('g5')
+  tm.preview((project) => {
+    project.name = 'UnsavedPreview'
+  })
+  check(tm.isDirty, 'D5b.4a G5 preview is dirty')
+  tm.cancel()
+  check(serializeProject(box.project) === cleanG5 && !tm.isDirty, 'D5b.4a G5 cancel before save restores clean')
+  tm.markSaved()
+  check(!tm.isDirty, 'D5b.4a G5 markSaved after cancel stays clean')
+
+  // Resize focus-loss policy: cancel restores size (core path used by blur handler).
+  let resizeBlock = ''
+  tm.transact('resize-block', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    resizeBlock = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    return project
+  })
+  const beforeResize = serializeProject(box.project)
+  const w0 = documentById(box.project, box.project.rootDocumentId)!.blocks.find((block) => block.id === resizeBlock)!.width
+  tm.begin('resize')
+  tm.preview((project) => {
+    setBlockFields(documentById(project, project.rootDocumentId)!, resizeBlock, { width: w0 + 80, height: 120 })
+  })
+  check(tm.isGesturing, 'D5b.4a resize gesture open')
+  tm.cancel()
+  check(
+    serializeProject(box.project) === beforeResize &&
+      documentById(box.project, box.project.rootDocumentId)!.blocks.find((block) => block.id === resizeBlock)!.width === w0,
+    'D5b.4a E3 cancel restores resize baseline',
+  )
+  check(!tm.isGesturing, 'D5b.4a no open transaction after resize cancel')
+}
+
+// --- D5b.5a interaction defaults (Select / sticky tools / pan / marquee) ---
+{
+  check(chooseTool('select', 'wire') === 'wire', 'D5b.5a choosing Wire activates wire')
+  check(chooseTool('wire', 'wire') === 'select', 'D5b.5a re-clicking Wire returns to Select')
+  check(chooseTool('port', 'pan') === 'pan', 'D5b.5a choosing another tool switches mode')
+  check(chooseTool('select', 'select') === 'select', 'D5b.5a Select stays Select')
+  check(JSON.stringify(panOnDragButtons('select', false)) === JSON.stringify([1]), 'D5b.5a Select pans with middle button only')
+  check(JSON.stringify(panOnDragButtons('select', true)) === JSON.stringify([1, 0]), 'D5b.5a Space enables left-button pan')
+  check(JSON.stringify(panOnDragButtons('pan', false)) === JSON.stringify([1, 0]), 'D5b.5a Pan tool enables left-button pan')
+  check(JSON.stringify(panOnDragButtons('wire', false)) === JSON.stringify([1]), 'D5b.5a Wire mode keeps middle-button pan')
+  check(!panOnDragButtons('select', false).includes(2), 'D5b.5a right button is never a pan button')
+  check(allowMarquee('select', false, 0), 'D5b.5a Select LMB allows marquee')
+  check(!allowMarquee('select', true, 0), 'D5b.5a Space suppresses marquee')
+  check(!allowMarquee('wire', false, 0), 'D5b.5a Wire mode has no marquee')
+  check(!allowMarquee('select', false, 1), 'D5b.5a middle button does not start marquee')
+  check(!allowMarquee('select', false, 2), 'D5b.5a right button does not start marquee')
 }
 
 if (failures.length) {
