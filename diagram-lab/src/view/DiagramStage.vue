@@ -39,7 +39,12 @@ import {
   deleteSegment,
   labelText,
   mergeNets,
+  mergeNetsByName,
   moveJunction,
+  nameCollisions,
+  netsNamed,
+  netPortIds,
+  placeLabelAt,
   placeSpan,
   probeWire,
   renameNet,
@@ -112,7 +117,17 @@ import {
   type HierarchyLocation,
 } from '../core/navigate'
 import { GestureCloseLatch, actionForRedoWhileGesturing } from './gestureGuard'
-import { allowMarquee, chooseTool as nextTool, panOnDragButtons, type EditorTool } from './interactionPolicy'
+import {
+  allowMarquee,
+  blockDragMode,
+  chooseTool as nextTool,
+  duplicateDragMoved,
+  panOnDragButtons,
+  nextEscapeAction,
+  shouldBeginViewPan,
+  spaceReleaseAction,
+  type EditorTool,
+} from './interactionPolicy'
 import HierarchyTree from './HierarchyTree.vue'
 import { JsonRecordStorage, jsonFileName } from '../core/storage'
 import BlockNode from './BlockNode.vue'
@@ -124,7 +139,18 @@ import SymbolPalette from './SymbolPalette.vue'
 type Tool = EditorTool
 type BendDrag = { segmentId: string; xEdge: number; yEdge: number; originX: number; originY: number; axis: 'x' | 'y' | null }
 type SpanDrag = { segmentId: string; edge: number; horizontal: boolean; origin: number; pointer: Point }
-type Drag = { origin: Map<string, Point>; baseX: number; baseY: number; cancelled: boolean }
+type Drag = {
+  origin: Map<string, Point>
+  sourceIds: string[]
+  baseX: number
+  baseY: number
+  cancelled: boolean
+  mode: 'move' | 'duplicate'
+  /** Last preview’s created block ids (duplicate mode). */
+  createdIds: string[]
+  lastDx: number
+  lastDy: number
+}
 type ResizeDrag = {
   blockId: string
   handle: ResizeHandle
@@ -174,6 +200,7 @@ const symbolEditor = ref<{
   cancelDraft: () => boolean
   abandonGesture: () => void
 } | null>(null)
+const flowBridge = ref<{ setViewport: (next: ViewportTransform) => void } | null>(null)
 const storage = new JsonRecordStorage()
 const projectStorage = new JsonProjectStorage()
 const libraryStorage = new JsonLibraryStorage()
@@ -183,6 +210,8 @@ const libraryDiagnostics = ref<LibraryDiagnostic[]>([])
 const libraryFile = ref<HTMLInputElement | null>(null)
 const zoomToken = ref(0)
 let clip: Fragment | null = null
+/** Increments on each paste so copies do not stack on the same point (D5c.3). */
+let clipPasteCount = 0
 let drag: Drag | null = null
 let resizeDrag: ResizeDrag | null = null
 const resizing = ref(false)
@@ -190,10 +219,26 @@ let portDrag: { portId: string; side: PortSide; t: number; placed: boolean; canc
 let bendDrag: BendDrag | null = null
 let spanDrag: SpanDrag | null = null
 let junctionDrag: { id: string; originX: number; originY: number; pointer: Point } | null = null
+let labelDrag: {
+  labelId: string
+  origin: { edge: number; distance: number; offset: number }
+  cancelled: boolean
+} | null = null
 /** Prevents double commit/cancel from late pointerup / lostpointercapture (D5b.4). */
 const gestureLatch = new GestureCloseLatch()
 /** Bumped on focus loss so a racing pointerup can still cancel instead of commit (D5b.4a E3). */
 let focusLossToken = 0
+/** Viewport pan over the world SVG (MMB / Space+LMB) — does not touch wire draft (D5b.5b). */
+let viewPan: {
+  pointerId: number
+  startX: number
+  startY: number
+  originX: number
+  originY: number
+  moved: boolean
+} | null = null
+let spacePanMoved = false
+let lastPointerClient: { x: number; y: number } | null = null
 
 /** Sheet-only history when no project is open (Example, Symbols, …). */
 const sheetSession = new EditSession(
@@ -267,6 +312,8 @@ const projectSheetAdapter = {
       const sheet = documentById(proj, sheetId)
       if (sheet) apply(sheet)
     })
+    // Preview restores a fresh project graph from baseline — rebind doc to the live sheet.
+    rebindAfterProject()
   },
   commit(finalize?: (draft: DiagramDocument) => void): boolean {
     if (!transactions?.isGesturing) return false
@@ -448,6 +495,31 @@ const selectedNet = computed(() => {
   return segment ? doc.value.nets.find((net) => net.id === segment.netId) ?? null : null
 })
 
+/** Read-only summary when a wire is selected (D5c.4). */
+const wireInspectorSummary = computed(() => {
+  const net = selectedNet.value
+  if (!net) return ''
+  const segments = doc.value.segments.filter((item) => item.netId === net.id)
+  const ports = netPortIds(doc.value, net.id)
+  const labels = doc.value.labels.filter((label) => {
+    const anchor = label.anchor
+    if (anchor.kind !== 'segment') return false
+    return segments.some((segment) => segment.id === anchor.segmentId)
+  })
+  return `${segments.length} segment${segments.length === 1 ? '' : 's'}, ${ports.length} port${ports.length === 1 ? '' : 's'}, ${labels.length} label${labels.length === 1 ? '' : 's'}`
+})
+
+/** Legacy / accidental duplicate display names on this sheet (D5c.5). */
+const selectedNameCollision = computed(() => {
+  const net = selectedNet.value
+  if (!net) return null
+  const ids = netsNamed(doc.value, net.name)
+  if (ids.length <= 1) return null
+  return { name: net.name, count: ids.length, netIds: ids }
+})
+
+const sheetNameCollisions = computed(() => nameCollisions(doc.value))
+
 const gridLines = computed(() => {
   const lines: number[] = []
   for (let value = 0; value <= 1600; value += GRID) lines.push(value)
@@ -497,9 +569,13 @@ const stageCursorClass = computed(() => {
 function resetInteractionMode(): void {
   tool.value = 'select'
   spaceHeld.value = false
+  spacePanMoved = false
+  viewPan = null
   portPreview.value = null
   wireDraft.value = null
   marquee.value = null
+  clip = null
+  clipPasteCount = 0
 }
 
 function chooseEditorTool(next: Tool): void {
@@ -512,7 +588,7 @@ function chooseEditorTool(next: Tool): void {
   tool.value = chosen
   if (chosen === 'select') status.value = 'Select.'
   else if (chosen === 'pan') status.value = 'Pan. Middle-click or Space+drag also pan in any tool.'
-  else if (chosen === 'wire') status.value = 'Wire. Click a port or wire, then bends, then an end.'
+  else if (chosen === 'wire') status.value = 'Wire. Middle-click or Space+drag pans without cancelling the draft.'
   else if (chosen === 'freehand') status.value = 'Freehand.'
   else if (chosen === 'port') status.value = 'Click a block edge to add a port.'
 }
@@ -524,6 +600,62 @@ function refreshHistory(): void {
 
 function onViewport(next: ViewportTransform): void {
   viewport.value = { x: next.x, y: next.y, zoom: next.zoom }
+  refreshWireHoverFromClient()
+}
+
+function clientPointToWorld(clientX: number, clientY: number): Point {
+  const rect = stageEl.value?.getBoundingClientRect()
+  return {
+    x: (clientX - (rect?.left ?? 0) - viewport.value.x) / viewport.value.zoom,
+    y: (clientY - (rect?.top ?? 0) - viewport.value.y) / viewport.value.zoom,
+  }
+}
+
+function refreshWireHoverFromClient(): void {
+  if (!wireDraft.value || !lastPointerClient) return
+  wireHover.value = clientPointToWorld(lastPointerClient.x, lastPointerClient.y)
+}
+
+function beginViewPan(event: PointerEvent): void {
+  event.preventDefault()
+  event.stopPropagation()
+  viewPan = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    originX: viewport.value.x,
+    originY: viewport.value.y,
+    moved: false,
+  }
+  try {
+    ;(event.currentTarget as Element | null)?.setPointerCapture?.(event.pointerId)
+  } catch {
+    // Window / element listeners still receive moves when capture is unavailable.
+  }
+}
+
+function moveViewPan(event: PointerEvent): boolean {
+  const current = viewPan
+  if (!current || event.pointerId !== current.pointerId) return false
+  const dx = event.clientX - current.startX
+  const dy = event.clientY - current.startY
+  if (!current.moved && Math.hypot(dx, dy) >= 2) {
+    current.moved = true
+    if (spaceHeld.value) spacePanMoved = true
+  }
+  const next = { x: current.originX + dx, y: current.originY + dy, zoom: viewport.value.zoom }
+  viewport.value = next
+  flowBridge.value?.setViewport(next)
+  lastPointerClient = { x: event.clientX, y: event.clientY }
+  refreshWireHoverFromClient()
+  return true
+}
+
+function endViewPan(event?: PointerEvent): boolean {
+  if (!viewPan) return false
+  if (event && event.pointerId !== viewPan.pointerId) return false
+  viewPan = null
+  return true
 }
 
 function openDocument(next: DiagramDocument, message: string): void {
@@ -939,6 +1071,7 @@ function clearUiGestureState(): void {
   if (resizeDrag) resizeDrag.cancelled = true
   if (portDrag) portDrag.cancelled = true
   if (drag) drag.cancelled = true
+  if (labelDrag) labelDrag.cancelled = true
   portPreview.value = null
   resizing.value = false
   resizeDrag = null
@@ -947,6 +1080,8 @@ function clearUiGestureState(): void {
   bendDrag = null
   spanDrag = null
   junctionDrag = null
+  labelDrag = null
+  stopLabelListeners()
 }
 
 /**
@@ -955,8 +1090,17 @@ function clearUiGestureState(): void {
  */
 function cancelActiveDocumentGesture(message?: string): boolean {
   const wasGesturing = edits().isGesturing
-  const hadUi =
-    Boolean(resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag || wireDraft.value || drawing.value)
+  const hadUi = Boolean(
+    resizeDrag ||
+      portDrag ||
+      drag ||
+      bendDrag ||
+      spanDrag ||
+      junctionDrag ||
+      labelDrag ||
+      wireDraft.value ||
+      drawing.value,
+  )
   if (!wasGesturing && !hadUi && !gestureLatch.isClosing) {
     clearUiGestureState()
     return false
@@ -1675,6 +1819,9 @@ function onDragStart(event: NodeDragEvent): void {
   if (tool.value !== 'select') return
   if (edits().isGesturing) cancelActiveDocumentGesture()
   const id = event.node.id
+  const shift = event.event instanceof MouseEvent && event.event.shiftKey
+  const mode = blockDragMode(shift)
+  // Shift+drag on a block duplicates; do not treat as marquee (marquee starts on empty canvas).
   if (!selected.value.has(id)) selected.value = new Set([id])
   const origin = new Map<string, Point>()
   for (const blockId of selected.value) {
@@ -1683,15 +1830,37 @@ function onDragStart(event: NodeDragEvent): void {
   }
   const base = origin.get(id)
   if (!base) return
-  drag = { origin, baseX: base.x, baseY: base.y, cancelled: false }
+  drag = {
+    origin,
+    sourceIds: [...origin.keys()],
+    baseX: base.x,
+    baseY: base.y,
+    cancelled: false,
+    mode,
+    createdIds: [],
+    lastDx: 0,
+    lastDy: 0,
+  }
   beginDocumentGesture()
+  if (mode === 'duplicate') status.value = 'Duplicating… release to place, Esc to cancel.'
 }
 
 function onDrag(event: NodeDragEvent): void {
   if (!drag || drag.cancelled || gestureLatch.isClosing) return
   const dx = event.node.position.x - drag.baseX
   const dy = event.node.position.y - drag.baseY
+  drag.lastDx = dx
+  drag.lastDy = dy
   const origin = drag.origin
+  if (drag.mode === 'duplicate') {
+    const sourceIds = drag.sourceIds
+    edits().preview((draft) => {
+      // Baseline keeps originals; each preview rebuilds copies under the pointer (D5c.6).
+      const map = duplicateBlocks(draft, sourceIds, dx, dy)
+      drag!.createdIds = [...map.values()]
+    })
+    return
+  }
   edits().preview((draft) => {
     for (const [blockId, start] of origin) moveBlock(draft, blockId, start.x + dx, start.y + dy)
   })
@@ -1703,9 +1872,17 @@ function onDragStop(): void {
     drag = null
     return
   }
-  const ids = [...current.origin.keys()]
+  const mode = current.mode
+  const ids = mode === 'duplicate' ? current.createdIds : [...current.origin.keys()]
+  const moved = duplicateDragMoved(current.lastDx, current.lastDy)
   drag = null
+  if (mode === 'duplicate' && !moved) {
+    cancelActiveDocumentGesture()
+    status.value = 'Duplicate cancelled (no move).'
+    return
+  }
   const lossAtStart = focusLossToken
+  const createdIds = mode === 'duplicate' ? [...ids] : []
   requestAnimationFrame(() => {
     if (gestureLatch.isClosing || lossAtStart !== focusLossToken) {
       if (edits().isGesturing) cancelActiveDocumentGesture('Gesture cancelled.')
@@ -1717,7 +1894,15 @@ function onDragStop(): void {
     }
     if (!edits().isGesturing) return
     const recorded = commitDocumentGesture((draft) => snapBlocks(draft, ids, snapOn.value))
-    if (recorded) status.value = 'Block moved.'
+    if (!recorded) return
+    if (mode === 'duplicate') {
+      selected.value = new Set(createdIds.filter((id) => doc.value.blocks.some((block) => block.id === id)))
+      selectedPort.value = null
+      selectedSegment.value = null
+      status.value = `Duplicated ${createdIds.length} block${createdIds.length === 1 ? '' : 's'}.`
+    } else {
+      status.value = 'Block moved.'
+    }
   })
 }
 
@@ -1759,7 +1944,11 @@ function ungroupSelection(): void {
 
 function duplicateSelection(): void {
   const ids = [...selected.value]
-  if (ids.length === 0) return
+  if (ids.length === 0) {
+    status.value = 'Select a block to duplicate.'
+    return
+  }
+  // Flat blocks and component instances share duplicateBlocks; hierarchy "Place on sheet" is separate.
   const group = doc.value.groups.find((item) => item.blockIds.length === ids.length && item.blockIds.every((id) => selected.value.has(id)))
   let created: string[] = []
   edits().execute((draft) => {
@@ -1771,26 +1960,40 @@ function duplicateSelection(): void {
     }
   })
   selected.value = new Set(created)
+  selectedPort.value = null
+  selectedSegment.value = null
   refreshHistory()
-  status.value = 'Duplicated.'
+  status.value = created.length > 0 ? `Duplicated ${created.length} block${created.length === 1 ? '' : 's'}.` : 'Nothing to duplicate.'
 }
 
 function copySelection(): void {
-  if (selected.value.size === 0) return
+  if (selected.value.size === 0) {
+    status.value = 'Select a block to copy.'
+    return
+  }
   clip = captureFragment(doc.value, [...selected.value])
-  status.value = 'Copied.'
+  clipPasteCount = 0
+  status.value = `Copied ${clip.blocks.length} block${clip.blocks.length === 1 ? '' : 's'}.`
 }
 
 function paste(): void {
-  if (!clip) return
+  if (!clip || clip.blocks.length === 0) {
+    status.value = 'Clipboard is empty. Copy a block first.'
+    return
+  }
+  clipPasteCount += 1
+  const dx = GRID * clipPasteCount
+  const dy = GRID * clipPasteCount
   let created: string[] = []
   const fragment = clip
   edits().execute((draft) => {
-    created = pasteFragment(draft, fragment, GRID, GRID)
+    created = pasteFragment(draft, fragment, dx, dy)
   })
   selected.value = new Set(created)
+  selectedPort.value = null
+  selectedSegment.value = null
   refreshHistory()
-  status.value = 'Pasted.'
+  status.value = created.length > 0 ? `Pasted ${created.length} block${created.length === 1 ? '' : 's'}.` : 'Paste failed.'
 }
 
 function removeSelection(): void {
@@ -2007,6 +2210,85 @@ function onPortCancel(): void {
   cancelActiveDocumentGesture('Port move cancelled.')
 }
 
+function stopLabelListeners(): void {
+  window.removeEventListener('pointermove', onLabelMove)
+  window.removeEventListener('pointerup', onLabelEnd)
+  window.removeEventListener('pointercancel', onLabelCancel)
+}
+
+/** Hit priority: label above wire `.hit` (D5c.1). */
+function onLabelDown(labelId: string, event: PointerEvent): void {
+  if (tool.value !== 'select' || event.button !== 0 || spaceHeld.value) return
+  event.stopPropagation()
+  event.preventDefault()
+  const label = doc.value.labels.find((item) => item.id === labelId)
+  if (!label || label.anchor.kind !== 'segment') return
+  if (edits().isGesturing) cancelActiveDocumentGesture()
+  labelDrag = {
+    labelId,
+    origin: {
+      edge: label.anchor.edge,
+      distance: label.anchor.distance,
+      offset: label.anchor.offset,
+    },
+    cancelled: false,
+  }
+  selectedSegment.value = label.anchor.segmentId
+  beginDocumentGesture()
+  // Window listeners only — setPointerCapture on the label would fire lostpointercapture
+  // on the world SVG after pointerup and cancel the deferred commit (same class of bug as E3 resize).
+  window.addEventListener('pointermove', onLabelMove)
+  window.addEventListener('pointerup', onLabelEnd)
+  window.addEventListener('pointercancel', onLabelCancel)
+}
+
+function onLabelMove(event: PointerEvent): void {
+  const current = labelDrag
+  if (!current || current.cancelled || gestureLatch.isClosing) return
+  const world = clientToWorld(event)
+  edits().preview((draft) => {
+    placeLabelAt(draft, current.labelId, world)
+  })
+}
+
+function onLabelEnd(): void {
+  stopLabelListeners()
+  const current = labelDrag
+  if (!current || current.cancelled || gestureLatch.isClosing) {
+    labelDrag = null
+    return
+  }
+  labelDrag = null
+  const lossAtStart = focusLossToken
+  const snapshot = { ...current, origin: { ...current.origin } }
+  requestAnimationFrame(() => {
+    if (gestureLatch.isClosing || lossAtStart !== focusLossToken) {
+      if (edits().isGesturing) cancelActiveDocumentGesture('Label move cancelled.')
+      return
+    }
+    if (!document.hasFocus() || document.visibilityState === 'hidden') {
+      cancelActiveDocumentGesture('Label move cancelled.')
+      return
+    }
+    if (!edits().isGesturing) return
+    const label = doc.value.labels.find((item) => item.id === snapshot.labelId)
+    const changed = Boolean(
+      label &&
+        label.anchor.kind === 'segment' &&
+        (label.anchor.edge !== snapshot.origin.edge ||
+          Math.abs(label.anchor.distance - snapshot.origin.distance) > 1e-6 ||
+          Math.abs(label.anchor.offset - snapshot.origin.offset) > 1e-6),
+    )
+    commitDocumentGesture()
+    if (changed) status.value = 'Label moved.'
+  })
+}
+
+function onLabelCancel(): void {
+  if (!labelDrag || gestureLatch.isClosing) return
+  cancelActiveDocumentGesture('Label move cancelled.')
+}
+
 function commitName(event: Event): void {
   const block = oneBlock.value
   if (!block) return
@@ -2053,7 +2335,7 @@ function onStagePointerDown(event: PointerEvent): void {
   if (!allowMarquee(tool.value, spaceHeld.value, event.button) || marquee.value) return
   const target = event.target
   if (!(target instanceof Element)) return
-  if (target.closest('.vue-flow__node, .bend, .ink, .hit, .junction, .props, button, input')) return
+  if (target.closest('.vue-flow__node, .bend, .ink, .hit, .junction, .label-group, .label-hit, .props, button, input')) return
   const start = clientToWorld(event)
   marquee.value = { x: start.x, y: start.y, width: 0, height: 0, shift: event.shiftKey }
 }
@@ -2094,15 +2376,30 @@ function acceptWire(commit: { points: Point[]; start: Parameters<typeof commitWi
     status.value = probe.reason
     return
   }
+  let createdNet = probe.createdNet
+  let netId = probe.netId
   edits().execute((draft) => {
-    commitWire(draft, commit.points, commit.start, commit.end)
+    const result = commitWire(draft, commit.points, commit.start, commit.end)
+    if (result.ok) {
+      createdNet = result.createdNet
+      netId = result.netId
+    }
   })
   wireDraft.value = null
   refreshHistory()
-  status.value = probe.createdNet ? 'New net.' : 'Wire added to the net.'
+  const netName = doc.value.nets.find((item) => item.id === netId)?.name
+  status.value = createdNet
+    ? `New net${netName ? ` "${netName}"` : ''}.`
+    : `Wire on net${netName ? ` "${netName}"` : ''}.`
 }
 
 function onPointerDown(event: PointerEvent): void {
+  lastPointerClient = { x: event.clientX, y: event.clientY }
+  // Viewport pan must not commit/cancel an open wire draft (D5b.5b).
+  if (shouldBeginViewPan(event.button, spaceHeld.value)) {
+    beginViewPan(event)
+    return
+  }
   if (event.button !== 0) return
   if (tool.value === 'port') {
     const hit = nearestBlockBorder(doc.value.blocks, clientToWorld(event), snapOn.value, portReach())
@@ -2115,7 +2412,13 @@ function onPointerDown(event: PointerEvent): void {
     return
   }
   if (tool.value === 'wire') {
-    const hit = snapTarget(doc.value, clientToWorld(event))
+    const world = clientToWorld(event)
+    const hit = snapTarget(doc.value, world)
+    // D5c.5: LMB double-click on free space finishes an open stub (Port→free).
+    if (wireDraft.value && hit.kind === 'free' && event.detail >= 2) {
+      acceptWire(finishFree(wireDraft.value, world))
+      return
+    }
     const step = wireClick(wireDraft.value, hit)
     if (step.commit) acceptWire(step.commit)
     else {
@@ -2132,6 +2435,8 @@ function onPointerDown(event: PointerEvent): void {
 }
 
 function onPointerMove(event: PointerEvent): void {
+  lastPointerClient = { x: event.clientX, y: event.clientY }
+  if (moveViewPan(event)) return
   const point = clientToWorld(event)
   if (tool.value === 'port') {
     portPreview.value = nearestBlockBorder(doc.value.blocks, point, snapOn.value, portReach())
@@ -2168,7 +2473,8 @@ function onPointerMove(event: PointerEvent): void {
   else edits().preview((draft) => placeSpan(draft, dragState.segmentId, dragState.yEdge, dragState.originY + dy))
 }
 
-function onPointerUp(): void {
+function onPointerUp(event: PointerEvent): void {
+  if (endViewPan(event)) return
   if (drawing.value) {
     const points = drawing.value
     drawing.value = null
@@ -2220,7 +2526,8 @@ function onPointerUp(): void {
   status.value = 'Bend moved.'
 }
 
-function onPointerCancel(): void {
+function onPointerCancel(event: PointerEvent): void {
+  if (endViewPan(event)) return
   if (drawing.value) {
     drawing.value = null
     status.value = 'Stroke cancelled.'
@@ -2232,9 +2539,15 @@ function onPointerCancel(): void {
 }
 
 function onLostPointerCapture(): void {
+  // View-pan capture end must not cancel an open wire draft.
+  if (viewPan) {
+    viewPan = null
+    return
+  }
   // Expected after a normal commit that released capture — latch ignores duplicates.
+  // Do not cancel on isGesturing alone: deferred commit clears UI drag state first (label/resize/port).
   if (gestureLatch.isClosing) return
-  if (bendDrag || spanDrag || junctionDrag || resizeDrag || portDrag || edits().isGesturing) {
+  if (bendDrag || spanDrag || junctionDrag || resizeDrag || portDrag || labelDrag) {
     cancelActiveDocumentGesture('Gesture cancelled.')
   }
 }
@@ -2315,10 +2628,68 @@ function onJunctionDown(junctionId: string, event: PointerEvent): void {
 function commitNetName(event: Event): void {
   const net = selectedNet.value
   if (!net) return
-  const name = (event.target as HTMLInputElement).value
-  edits().execute((draft) => renameNet(draft, net.id, name))
+  const input = event.target as HTMLInputElement
+  const candidate = input.value.trim()
+  if (!candidate) {
+    input.value = net.name
+    status.value = 'Wire name cannot be empty.'
+    return
+  }
+  if (candidate === net.name) {
+    input.value = net.name
+    return
+  }
+  let renamed = ''
+  let joined = false
+  let keptId = net.id
+  let refused = ''
+  edits().execute((draft) => {
+    const outcome = renameNet(draft, net.id, candidate)
+    if (!outcome.ok) {
+      refused = outcome.reason
+      return
+    }
+    renamed = outcome.name
+    joined = outcome.joined
+    keptId = outcome.netId
+  })
   refreshHistory()
-  status.value = 'Net renamed.'
+  if (refused || !renamed) {
+    input.value = selectedNet.value?.name ?? net.name
+    status.value = refused || 'Rename failed.'
+    return
+  }
+  if (joined) {
+    const still = doc.value.segments.find((segment) => segment.netId === keptId)
+    selectedSegment.value = still?.id ?? selectedSegment.value
+    status.value = `Joined into "${renamed}" (one net).`
+  } else {
+    status.value = `Wire renamed to "${renamed}".`
+  }
+}
+
+function mergeSelectedByName(): void {
+  const net = selectedNet.value
+  if (!net) return
+  let keptId = net.id
+  let merged = 0
+  edits().execute((draft) => {
+    const outcome = mergeNetsByName(draft, net.name)
+    if (!outcome.ok) {
+      status.value = outcome.reason
+      return
+    }
+    keptId = outcome.keptId
+    merged = outcome.merged
+  })
+  refreshHistory()
+  if (merged === 0) {
+    status.value = 'No other nets share this name.'
+    return
+  }
+  const still = doc.value.segments.find((segment) => segment.netId === keptId)
+  selectedSegment.value = still?.id ?? null
+  status.value = `Merged ${merged + 1} nets named "${net.name}" into one.`
 }
 
 function addLabel(): void {
@@ -2380,7 +2751,7 @@ function confirmPreview(): void {
 
 function undo(): void {
   symbolEditor.value?.abandonGesture()
-  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag || labelDrag) {
     // First Undo during a gesture only cancels — no history step.
     cancelActiveDocumentGesture('Gesture cancelled.')
     preview.value = null
@@ -2399,7 +2770,7 @@ function undo(): void {
 
 function redo(): void {
   symbolEditor.value?.abandonGesture()
-  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag || labelDrag) {
     // D5b.4: redo refuses while gesturing; history and gesture stay as they are.
     void actionForRedoWhileGesturing()
     status.value = 'Finish or cancel the drag before redo.'
@@ -2427,7 +2798,7 @@ function download(filename: string, text: string): void {
 
 async function save(): Promise<void> {
   // D5b.4: cancel any open gesture so a preview is never marked saved.
-  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag || labelDrag) {
     cancelActiveDocumentGesture()
   }
   const current = project.value
@@ -2539,6 +2910,7 @@ function typingTarget(target: EventTarget | null): boolean {
 function onKey(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     event.preventDefault()
+    // Overlays / symbol polygon draft consume Esc before the Select stack (D5c.2).
     if (openAsBlock.value || contextMenu.value) {
       dismissOpenAs()
       return
@@ -2547,33 +2919,61 @@ function onKey(event: KeyboardEvent): void {
       status.value = 'Polygon cancelled.'
       return
     }
-    if (wireDraft.value) {
-      wireDraft.value = null
-      status.value = 'Wire cancelled.'
-      return
-    }
-    if (mergeFrom.value) {
-      mergeFrom.value = null
-      status.value = 'Merge cancelled.'
-      return
-    }
-    if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
+    const hasTransient = Boolean(
+      wireDraft.value ||
+        mergeFrom.value ||
+        edits().isGesturing ||
+        resizeDrag ||
+        portDrag ||
+        drag ||
+        bendDrag ||
+        spanDrag ||
+        junctionDrag ||
+        labelDrag,
+    )
+    const hasSelection =
+      selected.value.size > 0 ||
+      Boolean(selectedPort.value) ||
+      Boolean(selectedSegment.value) ||
+      Boolean(selectedStroke.value)
+    const escape = nextEscapeAction(tool.value, hasTransient, hasSelection)
+    if (escape === 'cancel') {
+      if (wireDraft.value) {
+        wireDraft.value = null
+        status.value = 'Wire cancelled.'
+        return
+      }
+      if (mergeFrom.value) {
+        mergeFrom.value = null
+        status.value = 'Merge cancelled.'
+        return
+      }
       const wasResize = resizeDrag !== null
       const wasPort = portDrag !== null
+      const wasLabel = labelDrag !== null
       cancelActiveDocumentGesture(
-        wasPort ? 'Port move cancelled.' : wasResize ? 'Resize cancelled.' : 'Cancelled.',
+        wasLabel
+          ? 'Label move cancelled.'
+          : wasPort
+            ? 'Port move cancelled.'
+            : wasResize
+              ? 'Resize cancelled.'
+              : 'Cancelled.',
       )
       return
     }
-    if (tool.value === 'port') {
-      tool.value = 'select'
-      portPreview.value = null
-      status.value = 'Port cancelled.'
+    if (escape === 'tool-select') {
+      // Keep selection; only leave the sticky tool (Cancel → Select → Deselect).
+      chooseEditorTool('select')
       return
     }
-    selected.value = new Set()
-    selectedPort.value = null
-    selectedSegment.value = null
+    if (escape === 'clear-selection') {
+      selected.value = new Set()
+      selectedPort.value = null
+      selectedSegment.value = null
+      selectedStroke.value = null
+      return
+    }
     return
   }
   if (event.key === 'Enter' && symbolEditor.value?.finishPolygon()) {
@@ -2585,16 +2985,15 @@ function onKey(event: KeyboardEvent): void {
     acceptWire(finishFree(wireDraft.value, wireHover.value))
     return
   }
-  if (event.key === ' ' && wireDraft.value && !event.repeat) {
-    event.preventDefault()
-    wireDraft.value = { ...wireDraft.value, elbow: wireDraft.value.elbow === 'h' ? 'v' : 'h' }
-    // Fall through so Space also arms temporary pan (Space+LMB) in wire mode.
-  }
   if (typingTarget(event.target)) return
-  if (event.key === ' ' ) {
+  if (event.key === ' ') {
+    // Arm Space-pan; elbow toggles on keyup only if no pan occurred (D5b.5b).
     event.preventDefault()
-    spaceHeld.value = true
-    marquee.value = null
+    if (!event.repeat) {
+      spaceHeld.value = true
+      spacePanMoved = false
+      marquee.value = null
+    }
     return
   }
   const command = event.ctrlKey || event.metaKey
@@ -2646,8 +3045,12 @@ function onKey(event: KeyboardEvent): void {
 }
 
 function onKeyUp(event: KeyboardEvent): void {
-  if (event.key === ' ') {
-    spaceHeld.value = false
+  if (event.key !== ' ') return
+  const panOccurred = spacePanMoved || Boolean(viewPan?.moved)
+  spaceHeld.value = false
+  spacePanMoved = false
+  if (spaceReleaseAction(Boolean(wireDraft.value), panOccurred) === 'elbow' && wireDraft.value) {
+    wireDraft.value = { ...wireDraft.value, elbow: wireDraft.value.elbow === 'h' ? 'v' : 'h' }
   }
 }
 
@@ -2677,7 +3080,9 @@ function bends(points: Point[]): Point[] {
 function onWindowBlur(): void {
   focusLossToken += 1
   spaceHeld.value = false
-  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag) {
+  spacePanMoved = false
+  viewPan = null
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag || labelDrag) {
     cancelActiveDocumentGesture('Gesture cancelled.')
   }
 }
@@ -2879,7 +3284,7 @@ defineExpose({ roundTrip, doc })
             @port-down="onPortDown"
           />
         </template>
-        <FlowBridge :port-count="doc.ports.length" :ids="doc.blocks.map((block) => block.id)" :fit-token="fitToken" :pin-key="pinKey" :zoom-token="zoomToken" :frame="frame" @viewport="onViewport" />
+        <FlowBridge ref="flowBridge" :port-count="doc.ports.length" :ids="doc.blocks.map((block) => block.id)" :fit-token="fitToken" :pin-key="pinKey" :zoom-token="zoomToken" :frame="frame" @viewport="onViewport" />
       </VueFlow>
       <svg
         class="world"
@@ -2936,12 +3341,47 @@ defineExpose({ roundTrip, doc })
         />
         <path v-if="drawing" :d="outline(drawing, 8)" class="ink live" />
         <rect v-if="marqueeBox" class="marquee" :x="marqueeBox.x" :y="marqueeBox.y" :width="marqueeBox.width" :height="marqueeBox.height" />
-        <text v-for="label in labels" :key="label.id" v-show="label.at" :x="label.at?.x" :y="label.at?.y" class="label">{{ label.text }}</text>
+        <g
+          v-for="label in labels"
+          :key="label.id"
+          v-show="label.at"
+          class="label-group"
+          @pointerdown="onLabelDown(label.id, $event)"
+        >
+          <circle class="label-hit" :cx="label.at?.x ?? 0" :cy="label.at?.y ?? 0" r="12" />
+          <text class="label" :x="label.at?.x" :y="label.at?.y">{{ label.text }}</text>
+        </g>
       </svg>
     </div>
     </div>
     <aside class="props">
       <p>Properties</p>
+      <template v-if="selectedNet && !activePort && !oneBlock">
+        <p data-wire-inspector>Wire</p>
+        <label>Name <input data-wire-name :value="selectedNet.name" @change="commitNetName" /></label>
+        <p class="hint" data-wire-net-id>Net id {{ selectedNet.id }}</p>
+        <p class="hint" data-wire-net-info>{{ wireInspectorSummary }}</p>
+        <p
+          v-if="selectedNameCollision"
+          class="hint"
+          data-wire-name-collision
+        >Name "{{ selectedNameCollision.name }}" is used {{ selectedNameCollision.count }} times on this sheet. Rename-join or merge to make one net.</p>
+        <button type="button" @click="addLabel">Add label</button>
+        <button type="button" @click="beginMerge">Merge</button>
+        <button
+          v-if="selectedNameCollision"
+          type="button"
+          data-merge-by-name
+          @click="mergeSelectedByName"
+        >Merge all with this name</button>
+        <button type="button" @click="routeSelected('auto')">Auto route</button>
+        <button type="button" @click="routeSelected('manual')">Keep manual</button>
+      </template>
+      <p
+        v-if="sheetNameCollisions.length && !(selectedNet && !activePort && !oneBlock)"
+        class="hint"
+        data-sheet-name-collisions
+      >{{ sheetNameCollisions.length }} duplicate net name{{ sheetNameCollisions.length === 1 ? '' : 's' }} on this sheet.</p>
       <section v-if="project" class="components" data-interface-editor>
         <p>Components</p>
         <p class="hint" data-undo-rule>One undo history for this project. Sheet and component edits share it.</p>
@@ -3032,15 +3472,7 @@ defineExpose({ roundTrip, doc })
         <label>Width <input :value="oneBlock.width" type="number" @change="commitNumber('width', $event)" /></label>
         <label>Height <input :value="oneBlock.height" type="number" @change="commitNumber('height', $event)" /></label>
       </template>
-      <template v-else-if="selectedNet">
-        <label>Net <input :value="selectedNet.name" @change="commitNetName" /></label>
-        <p class="hint">{{ selectedNet.id }}</p>
-        <button @click="addLabel">Add label</button>
-        <button @click="beginMerge">Merge</button>
-        <button @click="routeSelected('auto')">Auto route</button>
-        <button @click="routeSelected('manual')">Keep manual</button>
-      </template>
-      <p v-else class="hint">{{ selected.size }} selected</p>
+      <p v-else-if="!selectedNet" class="hint">{{ selected.size }} selected</p>
       <button v-if="oneBlock?.symbolId" @click="separateInstance">Separate definition</button>
       <button v-if="oneBlock?.symbolId || activeSymbol" @click="compareWithLibrary">Compare library</button>
       <div

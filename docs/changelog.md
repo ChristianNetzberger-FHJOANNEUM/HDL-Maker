@@ -129,9 +129,41 @@
 
 - Architecture-only docs for a long-term Component Library System and Educational Web Applications. Planning IDs **CL0–CL7** and **EDU0–EDU6** avoid collisions with existing Learning Mode **L0** and Studio **E0–E6**. Strategic extension accepted; phases remain locked (no productive library/education code). Details: `docs/component-library-system-architecture.md`, `docs/educational-web-editor-architecture.md`.
 
+### D5c.7 lab (spec only)
+
+- Decision doc for wire/segment copy: **deferred**; recommended later scope = orphan stub polyline paste with name kept (by-name join). No implementation. Details: `docs/d5c7-wire-copy-spec.md`.
+
+### D5c.6 lab
+
+- Shift+LMB-drag on a block duplicates (copy under pointer, one history entry, Esc cancels). Gesture `preview` rebuilds from baseline so duplicate frames do not leave ghost blocks. Accepted by the user (26 Nov 2026). Details: `docs/d5c6-shift-drag-duplicate.md`.
+
+### D5c.5 lab
+
+- Connection-by-name on the current sheet: rename-join, stub Port→free (double-click), `mergeNetsByName` for legacy collisions; unequal geometric join still needs Merge. Accepted by the user (26 Nov 2026). Details: `docs/d5c5-connection-by-name.md`.
+
+### D5c.4 lab
+
+- Wire selection shows Name in the properties column; rename via `renameNet` with empty refuse. Accepted by the user (26 Nov 2026). Join-on-same-name follows in D5c.5. Details: `docs/d5c4-wire-rename-inspector.md`.
+
+### D5c.3 lab
+
+- Flat block Copy / Paste / Duplicate reliable without under-hierarchy; paste offset stacking; selfcheck coverage. Accepted by the user (26 Nov 2026). Details: `docs/d5c3-block-copy-duplicate.md`.
+
+### D5c.2 lab
+
+- Esc stack: cancel transient → return to Select (keep selection) → clear selection. Details: `docs/d5c2-escape-tool-select.md`.
+
+### D5c.1 lab
+
+- Wire name labels are draggable along their segment (`edge`/`distance`) with perpendicular `offset`. Document gesture with undo/cancel. Details: `docs/d5c1-wire-label-drag.md`.
+
+### D5b.5b lab
+
+- Wire draft survives viewport pan: middle-click and Space+LMB pan over an open ghost without cancel/commit; Space tap still toggles elbow. Accepted by the user. Details: `docs/d5b5b-wire-draft-pan.md`.
+
 ### D5b.5a lab
 
-- Interaction defaults: Select on load, sticky tool toggle, marquee kept on LMB empty space, middle-click pan and Space+LMB pan in any tool, RMB reserved for context menus (stage stub + existing block menu). Details: `docs/d5b5a-interaction-defaults.md`.
+- Interaction defaults: Select on load, sticky tool toggle, marquee kept on LMB empty space, middle-click pan and Space+LMB pan in any tool, RMB reserved for context menus (stage stub + existing block menu). Accepted by the user. Details: `docs/d5b5a-interaction-defaults.md`.
 
 ### D5b.4a lab
 

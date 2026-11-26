@@ -45,6 +45,8 @@ export class EditSession {
 
   preview(apply: (doc: DiagramDocument) => void): void {
     if (this.gesture === null) this.begin()
+    // Re-apply from baseline each frame so additive previews (e.g. duplicate) do not stack.
+    if (this.gesture !== null) this.replace(parseDocument(this.gesture))
     apply(this.current())
   }
 

@@ -1,7 +1,7 @@
 import { createId, parseDocument, serialize } from './document'
 import { autoRoute, fitSymbolShapes, labelPlacement, moveBlock, pinLocal, pinOnBorder, polylineLength, portAnchor, simplifyOrthogonal } from './geometry'
 import { netFixture } from './fixture'
-import { addNameLabel, commitWire, crossings, deleteSegment, labelText, mergeNets, moveLabelAlong, netPortIds, placeSpan, probeWire, renameNet, setRouted } from './nets'
+import { addNameLabel, commitWire, crossings, deleteSegment, ensureNetByName, labelText, mergeNets, mergeNetsByName, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeLabelAt, placeSpan, probeWire, renameNet, setLabelOffset, setRouted } from './nets'
 import { wireClick } from './wiretool'
 import { symbolSheet } from './symbolsheet'
 import { addImageAsset, addSymbolLabel, addSymbolPort, addSymbolShape, applySymbol, defineSymbol, instantiateSymbol, moveFreeSymbolPort, moveSymbolPort, removeSymbolPort, setComponent, setSymbolSize, symbolDiagnostics } from './symbols'
@@ -22,7 +22,16 @@ import { breadcrumbs, contentBounds, descend, DocumentSessions, parentLocation, 
 import { JsonProjectStorage, parseProject, ProjectSession, sampleProject, serializeProject } from './project'
 import { TransactionManager } from './transaction'
 import { GestureCloseLatch, actionForInterrupt, actionForRedoWhileGesturing } from '../view/gestureGuard'
-import { allowMarquee, chooseTool, panOnDragButtons } from '../view/interactionPolicy'
+import {
+  allowMarquee,
+  blockDragMode,
+  chooseTool,
+  duplicateDragMoved,
+  nextEscapeAction,
+  panOnDragButtons,
+  shouldBeginViewPan,
+  spaceReleaseAction,
+} from '../view/interactionPolicy'
 import { compareSymbols } from './compare'
 import { acceptanceSheet, benchSheet } from './acceptance'
 import { commitSymbolUpdate, detachInstance, dropPortWires, prepareSymbolUpdate, rebindPort } from './migration'
@@ -1280,8 +1289,24 @@ const d4dTap = (() => {
 })()
 const d4dN1 = linkPorts(d4dSheet, d4dBX, d4dSinkB, 'n')
 const d4dN1Net = d4dSheet.segments.find((segment) => segment.id === d4dN1)?.netId ?? ''
-const d4dN2 = linkPorts(d4dSheet, d4dDX, d4dEB, 'n')
-const d4dN2Net = d4dSheet.segments.find((segment) => segment.id === d4dN2)?.netId ?? ''
+// Legacy fixture: a second net deliberately reuses display name "n" without by-name join
+// (simulates pre-D5c.5 duplicates). Extract must still keep them as separate crossings.
+const d4dN2Net = createId('net')
+const d4dN2 = createId('seg')
+{
+  const start = portAnchor(d4dSheet, d4dDX)!
+  const end = portAnchor(d4dSheet, d4dEB)!
+  const trunk = (start.x + end.x) / 2
+  d4dSheet.nets.push({ id: d4dN2Net, name: 'n' })
+  d4dSheet.segments.push({
+    id: d4dN2,
+    netId: d4dN2Net,
+    routed: 'manual',
+    points: [start, { x: trunk, y: start.y }, { x: trunk, y: end.y }, end],
+    start: { kind: 'port', portId: d4dDX },
+    end: { kind: 'port', portId: d4dEB },
+  })
+}
 groupBlocks(d4dSheet, [d4dA, d4dB])
 const d4dChosen = [d4dA, d4dB, d4dC, d4dD]
 const d4dPreview = previewExtract(d4dProject, d4dSheet.id, d4dChosen)
@@ -1333,7 +1358,7 @@ check(Boolean(d4dChild && d4dReachable(d4dChild, d4dAIn).some((id) => d4dChild?.
 check(Boolean(d4dChild && d4dReachable(d4dChild, d4dAO).includes(d4dBI) && d4dReachable(d4dChild, d4dAO).includes(d4dCI) && d4dChild.junctions.some((junction) => junction.id === d4dBus.junctionId)), 'the internal branch keeps its junction and its three ports')
 check(d4dRoot.junctions.some((junction) => junction.id === d4dTap.junctionId) && d4dReachable(d4dRoot, d4dSrcQ).includes(d4dEP) && !d4dReachable(d4dRoot, d4dSrcQ).includes(d4dAT), 'the outside branch stays outside and still joins its two outside ports')
 check(Boolean(d4dChild && d4dChild.junctions.some((junction) => junction.id === d4dY.junctionId) && d4dReachable(d4dChild, d4dDO).includes(d4dCO) && d4dPortsOnNet(d4dRoot, d4dY.netId).includes(d4dSinkI)), 'a junction between two inside ports moves inside and the outside port keeps the net')
-check(d4dN1Net !== d4dN2Net && d4dPortsOnNet(d4dRoot, d4dN1Net).includes(d4dSinkB) && !d4dPortsOnNet(d4dRoot, d4dN1Net).includes(d4dEB) && d4dPortsOnNet(d4dRoot, d4dN2Net).includes(d4dEB), 'two nets with the same name stay separate')
+check(d4dN1Net !== d4dN2Net && d4dPortsOnNet(d4dRoot, d4dN1Net).includes(d4dSinkB) && !d4dPortsOnNet(d4dRoot, d4dN1Net).includes(d4dEB) && d4dPortsOnNet(d4dRoot, d4dN2Net).includes(d4dEB), 'legacy same-named nets stay separate through extract')
 check(d4dRoot.segments.find((segment) => segment.id === d4dClk)?.routed === 'manual' && Boolean(d4dChild && d4dChild.labels.some((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === d4dMid)), 'a manual route stays manual and the internal label moves with its segment')
 check(Boolean(d4dChild && d4dChild.groups.some((group) => group.blockIds.includes(d4dA) && group.blockIds.includes(d4dB))), 'a group whose blocks all move goes with them')
 const d4dInterface = d4dRoot.ports.find((port) => port.blockId === d4dInstance?.id && d4dPortsOnNet(d4dRoot, d4dClkNet).includes(port.id))?.interfacePortId
@@ -3196,6 +3221,382 @@ if (faceOpened.ok) {
   check(!allowMarquee('wire', false, 0), 'D5b.5a Wire mode has no marquee')
   check(!allowMarquee('select', false, 1), 'D5b.5a middle button does not start marquee')
   check(!allowMarquee('select', false, 2), 'D5b.5a right button does not start marquee')
+}
+
+// --- D5b.5b wire draft survives viewport pan ---
+{
+  check(shouldBeginViewPan(1, false), 'D5b.5b middle button starts view pan')
+  check(shouldBeginViewPan(0, true), 'D5b.5b Space+LMB starts view pan')
+  check(!shouldBeginViewPan(0, false), 'D5b.5b plain LMB is not view pan')
+  check(!shouldBeginViewPan(2, false), 'D5b.5b RMB is not view pan')
+  check(spaceReleaseAction(true, false) === 'elbow', 'D5b.5b Space tap toggles elbow')
+  check(spaceReleaseAction(true, true) === 'none', 'D5b.5b Space+pan leaves elbow alone')
+  check(spaceReleaseAction(false, false) === 'none', 'D5b.5b Space without draft does not toggle elbow')
+}
+
+// --- D5c.1 wire label drag ---
+{
+  const box = { project: createProject('LabelDrag') }
+  const tm = new TransactionManager({
+    get: () => box.project,
+    set: (next) => {
+      box.project = next
+    },
+  })
+  let labelId = ''
+  let segmentId = ''
+  tm.transact('setup', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    const left = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    const right = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    const a = sheet.blocks.find((block) => block.id === left)!
+    a.x = 40
+    a.y = 80
+    const b = sheet.blocks.find((block) => block.id === right)!
+    b.x = 280
+    b.y = 80
+    const outPort = addPortAt(sheet, left, 'right', 0.5) ?? ''
+    const inPort = addPortAt(sheet, right, 'left', 0.5) ?? ''
+    if (outPort && inPort) linkPorts(sheet, outPort, inPort, 'sig')
+    segmentId = sheet.segments[0]?.id ?? ''
+    labelId = addNameLabel(sheet, segmentId, 0, 20, 14) ?? ''
+    return project
+  })
+  const before = serializeProject(box.project)
+  const sheet0 = documentById(box.project, box.project.rootDocumentId)!
+  const origin = sheet0.labels.find((label) => label.id === labelId)?.anchor
+  check(origin?.kind === 'segment', 'D5c.1 label is segment-anchored')
+  tm.begin('label-drag')
+  tm.preview((project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    const seg = sheet.segments.find((item) => item.id === segmentId)
+    if (!seg || seg.points.length < 2) return
+    const mid = {
+      x: (seg.points[0].x + seg.points[1].x) / 2,
+      y: (seg.points[0].y + seg.points[1].y) / 2 - 24,
+    }
+    placeLabelAt(sheet, labelId, mid)
+  })
+  check(tm.commit() && tm.undoDepth === 2, 'D5c.1 label drag commits one history entry')
+  const after = documentById(box.project, box.project.rootDocumentId)!.labels.find((label) => label.id === labelId)
+  check(after?.anchor.kind === 'segment' && after.anchor.segmentId === segmentId, 'D5c.1 label stays on the same segment')
+  check(
+    after?.anchor.kind === 'segment' &&
+      (after.anchor.distance !== (origin && origin.kind === 'segment' ? origin.distance : -1) ||
+        after.anchor.offset !== (origin && origin.kind === 'segment' ? origin.offset : -1)),
+    'D5c.1 label position changed',
+  )
+  tm.undo()
+  check(serializeProject(box.project) === before, 'D5c.1 undo restores label position')
+  tm.redo()
+  const redone = documentById(box.project, box.project.rootDocumentId)!.labels.find((label) => label.id === labelId)
+  check(
+    redone?.anchor.kind === 'segment' &&
+      after?.anchor.kind === 'segment' &&
+      redone.anchor.distance === after.anchor.distance &&
+      redone.anchor.offset === after.anchor.offset,
+    'D5c.1 redo restores label position',
+  )
+  const beforeCancel = serializeProject(box.project)
+  const redoDepth = tm.redoDepth
+  tm.begin('label-cancel')
+  tm.preview((project) => {
+    setLabelOffset(documentById(project, project.rootDocumentId)!, labelId, 40)
+  })
+  tm.cancel()
+  check(serializeProject(box.project) === beforeCancel && tm.redoDepth === redoDepth, 'D5c.1 cancel keeps redo')
+}
+
+// --- D5c.3 flat block copy / paste / duplicate ---
+{
+  const box = { project: createProject('CopyFlat') }
+  const tm = new TransactionManager({
+    get: () => box.project,
+    set: (next) => {
+      box.project = next
+    },
+  })
+  let flatId = ''
+  tm.transact('place', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    flatId = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    return project
+  })
+  const before = serializeProject(box.project)
+  tm.transact('duplicate', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    const map = duplicateBlocks(sheet, [flatId], 20, 20)
+    check(map.size === 1 && map.get(flatId) !== flatId, 'D5c.3 duplicate assigns a new block id')
+    return project
+  })
+  check(documentById(box.project, box.project.rootDocumentId)!.blocks.length === 2, 'D5c.3 duplicate adds one flat block')
+  tm.undo()
+  check(serializeProject(box.project) === before, 'D5c.3 undo restores before duplicate')
+  tm.redo()
+  const sheetDup = documentById(box.project, box.project.rootDocumentId)!
+  check(sheetDup.blocks.length === 2, 'D5c.3 redo restores duplicate')
+  const frag = captureFragment(sheetDup, [flatId])
+  check(frag.blocks.length === 1 && frag.blocks[0]?.id === flatId, 'D5c.3 copy captures a flat block without hierarchy')
+  const paste1 = pasteFragment(sheetDup, frag, 40, 40)
+  const paste2 = pasteFragment(sheetDup, frag, 80, 80)
+  check(paste1.length === 1 && paste2.length === 1 && paste1[0] !== paste2[0], 'D5c.3 paste creates new ids')
+  const p1 = sheetDup.blocks.find((block) => block.id === paste1[0])
+  const p2 = sheetDup.blocks.find((block) => block.id === paste2[0])
+  check(Boolean(p1 && p2 && (p1.x !== p2.x || p1.y !== p2.y)), 'D5c.3 successive pastes can land at different offsets')
+  // Wired pair: internal wire copies with the selection.
+  let left = ''
+  let right = ''
+  tm.transact('wired', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    left = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    right = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    const a = sheet.blocks.find((block) => block.id === left)!
+    a.x = 40
+    a.y = 200
+    const b = sheet.blocks.find((block) => block.id === right)!
+    b.x = 280
+    b.y = 200
+    const outPort = addPortAt(sheet, left, 'right', 0.5) ?? ''
+    const inPort = addPortAt(sheet, right, 'left', 0.5) ?? ''
+    if (outPort && inPort) linkPorts(sheet, outPort, inPort, 'bus')
+    return project
+  })
+  const sheetWire = documentById(box.project, box.project.rootDocumentId)!
+  const segsBefore = sheetWire.segments.length
+  const wiredFrag = captureFragment(sheetWire, [left, right])
+  const pastedPair = pasteFragment(sheetWire, wiredFrag, 20, 20)
+  check(pastedPair.length === 2, 'D5c.3 paste of a wired pair creates two blocks')
+  check(sheetWire.segments.length === segsBefore + 1, 'D5c.3 paste copies the internal wire once')
+}
+
+// --- D5c.4 wire rename inspector ---
+{
+  const box = { project: createProject('WireRename') }
+  const tm = new TransactionManager({
+    get: () => box.project,
+    set: (next) => {
+      box.project = next
+    },
+  })
+  let segmentId = ''
+  let netId = ''
+  tm.transact('wire', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    const left = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    const right = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    const a = sheet.blocks.find((block) => block.id === left)!
+    a.x = 40
+    a.y = 80
+    const b = sheet.blocks.find((block) => block.id === right)!
+    b.x = 280
+    b.y = 80
+    const outPort = addPortAt(sheet, left, 'right', 0.5) ?? ''
+    const inPort = addPortAt(sheet, right, 'left', 0.5) ?? ''
+    if (outPort && inPort) segmentId = linkPorts(sheet, outPort, inPort, 'sig') ?? ''
+    netId = sheet.segments.find((segment) => segment.id === segmentId)?.netId ?? ''
+    return project
+  })
+  const before = serializeProject(box.project)
+  const sheet0 = documentById(box.project, box.project.rootDocumentId)!
+  check(Boolean(netId && sheet0.nets.some((net) => net.id === netId)), 'D5c.4 wire has a net')
+  const empty = renameNet(sheet0, netId, '   ')
+  check(!empty.ok && empty.reason.includes('empty'), 'D5c.4 empty name is refused')
+  check(sheet0.nets.find((net) => net.id === netId)?.name !== '', 'D5c.4 refused rename leaves the name')
+  tm.transact('rename', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    const result = renameNet(sheet, netId, 'clk')
+    check(result.ok && result.name === 'clk' && !result.joined, 'D5c.4 rename accepts a trimmed free name')
+    return project
+  })
+  const sheet1 = documentById(box.project, box.project.rootDocumentId)!
+  check(sheet1.nets.find((net) => net.id === netId)?.name === 'clk', 'D5c.4 rename persists on the net')
+  check(
+    sheet1.labels.filter((label) => label.role === 'name').every((label) => labelText(sheet1, label) === 'clk'),
+    'D5c.4 labels follow the net name',
+  )
+  tm.undo()
+  check(serializeProject(box.project) === before, 'D5c.4 undo restores the wire name')
+  tm.redo()
+  check(documentById(box.project, box.project.rootDocumentId)!.nets.find((net) => net.id === netId)?.name === 'clk', 'D5c.4 redo restores the rename')
+}
+
+// --- D5c.5 connection-by-name + open stubs ---
+{
+  const box = { project: createProject('ByName') }
+  const tm = new TransactionManager({
+    get: () => box.project,
+    set: (next) => {
+      box.project = next
+    },
+  })
+  let netA = ''
+  let netB = ''
+  let segA = ''
+  tm.transact('two', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    const left = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    const right = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    const outPort = addPortAt(sheet, left, 'right', 0.5) ?? ''
+    const inPort = addPortAt(sheet, right, 'left', 0.5) ?? ''
+    segA = outPort && inPort ? linkPorts(sheet, outPort, inPort, 'alpha') ?? '' : ''
+    netA = sheet.segments.find((segment) => segment.id === segA)?.netId ?? ''
+    const left2 = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    const right2 = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    sheet.blocks.find((block) => block.id === left2)!.y = 200
+    sheet.blocks.find((block) => block.id === right2)!.y = 200
+    const out2 = addPortAt(sheet, left2, 'right', 0.5) ?? ''
+    const in2 = addPortAt(sheet, right2, 'left', 0.5) ?? ''
+    const segB = out2 && in2 ? linkPorts(sheet, out2, in2, 'beta') ?? '' : ''
+    netB = sheet.segments.find((segment) => segment.id === segB)?.netId ?? ''
+    return project
+  })
+  const beforeJoin = serializeProject(box.project)
+  check(netA !== netB && Boolean(netA && netB), 'D5c.5 starts with two nets')
+  tm.transact('join', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    const result = renameNet(sheet, netB, 'alpha')
+    check(result.ok && result.joined && result.netId === netA, 'D5c.5 rename to existing name joins into the target net')
+    return project
+  })
+  const sheetJoin = documentById(box.project, box.project.rootDocumentId)!
+  check(sheetJoin.nets.filter((net) => net.name === 'alpha').length === 1, 'D5c.5 after join only one net named alpha')
+  check(sheetJoin.segments.every((segment) => segment.netId === netA || sheetJoin.nets.some((net) => net.id === segment.netId && net.name !== 'alpha')), 'D5c.5 joined segments share the kept id')
+  check(sheetJoin.segments.filter((segment) => segment.netId === netA).length === 2, 'D5c.5 both wires sit on the kept net')
+  tm.undo()
+  check(serializeProject(box.project) === beforeJoin, 'D5c.5 undo restores separate nets after rename-join')
+  tm.redo()
+  check(documentById(box.project, box.project.rootDocumentId)!.segments.filter((segment) => segment.netId === netA).length === 2, 'D5c.5 redo restores the join')
+
+  // Stub create with existing name reuses the net (no parallel id).
+  const stubDoc = emptyDocument()
+  const stubLeft = placeTemplate(stubDoc, BLOCK_TEMPLATES[1], false)
+  const stubRight = placeTemplate(stubDoc, BLOCK_TEMPLATES[1], false)
+  const stubOut = addPortAt(stubDoc, stubLeft, 'right', 0.5) ?? ''
+  const stubIn = addPortAt(stubDoc, stubRight, 'left', 0.5) ?? ''
+  const stubSeg = stubOut && stubIn ? linkPorts(stubDoc, stubOut, stubIn, 'clk') ?? '' : ''
+  const stubNet = stubDoc.segments.find((segment) => segment.id === stubSeg)?.netId ?? ''
+  const extra = placeTemplate(stubDoc, BLOCK_TEMPLATES[1], false)
+  stubDoc.blocks.find((block) => block.id === extra)!.y = 240
+  const extraPort = addPortAt(stubDoc, extra, 'left', 0.5) ?? ''
+  const port = stubDoc.ports.find((item) => item.id === extraPort)
+  if (port) port.name = 'clk'
+  const portPoint = portAnchor(stubDoc, extraPort!)!
+  const freePoint = { x: portPoint.x - 60, y: portPoint.y }
+  const stubResult = commitWire(
+    stubDoc,
+    [portPoint, freePoint],
+    { kind: 'port', portId: extraPort!, point: portPoint },
+    { kind: 'free', point: freePoint },
+  )
+  check(stubResult.ok && stubResult.netId === stubNet && !stubResult.createdNet, 'D5c.5 stub with existing port name joins that net')
+  check(stubDoc.nets.filter((net) => net.name === 'clk').length === 1, 'D5c.5 stub does not create a parallel clk net')
+
+  // Unequal geometric join still blocked.
+  const d = emptyDocument()
+  const a = placeTemplate(d, BLOCK_TEMPLATES[1], false)
+  const b = placeTemplate(d, BLOCK_TEMPLATES[1], false)
+  const c = placeTemplate(d, BLOCK_TEMPLATES[1], false)
+  d.blocks.find((block) => block.id === b)!.x = 280
+  d.blocks.find((block) => block.id === c)!.x = 280
+  d.blocks.find((block) => block.id === c)!.y = 200
+  const pa = addPortAt(d, a, 'right', 0.5) ?? ''
+  const pb = addPortAt(d, b, 'left', 0.5) ?? ''
+  const pc = addPortAt(d, c, 'left', 0.5) ?? ''
+  linkPorts(d, pa, pb, 'one')
+  const pbOut = addPortAt(d, b, 'right', 0.5) ?? ''
+  linkPorts(d, pbOut, pc, 'two')
+  const segOne = d.segments.find((segment) => d.nets.find((net) => net.id === segment.netId)?.name === 'one')!
+  const segTwo = d.segments.find((segment) => d.nets.find((net) => net.id === segment.netId)?.name === 'two')!
+  const midOne = segOne.points[1] ?? segOne.points[0]!
+  const midTwo = segTwo.points[1] ?? segTwo.points[0]!
+  const blocked = probeWire(
+    d,
+    { kind: 'segment', segmentId: segOne.id, point: midOne, edge: 0, distance: 0 },
+    { kind: 'segment', segmentId: segTwo.id, point: midTwo, edge: 0, distance: 0 },
+  )
+  check(!blocked.ok && blocked.netIds.length === 2, 'D5c.5 unequal nets still refuse geometric join')
+
+  // Legacy duplicates stay until merge-all.
+  const legacy = emptyDocument()
+  legacy.nets.push({ id: 'net_l1', name: 'net 4' }, { id: 'net_l2', name: 'net 4' }, { id: 'net_l3', name: 'net 4' })
+  legacy.segments.push(
+    { id: 'seg_l1', netId: 'net_l1', routed: 'manual', points: [{ x: 0, y: 0 }, { x: 40, y: 0 }], start: { kind: 'free', x: 0, y: 0 }, end: { kind: 'free', x: 40, y: 0 } },
+    { id: 'seg_l2', netId: 'net_l2', routed: 'manual', points: [{ x: 0, y: 40 }, { x: 40, y: 40 }], start: { kind: 'free', x: 0, y: 40 }, end: { kind: 'free', x: 40, y: 40 } },
+    { id: 'seg_l3', netId: 'net_l3', routed: 'manual', points: [{ x: 0, y: 80 }, { x: 40, y: 80 }], start: { kind: 'free', x: 0, y: 80 }, end: { kind: 'free', x: 40, y: 80 } },
+  )
+  check(nameCollisions(legacy).some((item) => item.name === 'net 4' && item.count === 3), 'D5c.5 legacy duplicate names are reported')
+  check(netsNamed(legacy, 'net 4').length === 3, 'D5c.5 legacy nets stay separate until merge-all')
+  const merged = mergeNetsByName(legacy, 'net 4')
+  check(merged.ok && merged.merged === 2 && netsNamed(legacy, 'net 4').length === 1, 'D5c.5 merge-all collapses duplicate names')
+  check(merged.ok && ensureNetByName(legacy, 'net 4') === merged.keptId, 'D5c.5 ensureNetByName reuses the kept id')
+}
+
+// --- D5c.6 Shift+Drag duplicate ---
+{
+  check(blockDragMode(false) === 'move', 'D5c.6 without Shift is move')
+  check(blockDragMode(true) === 'duplicate', 'D5c.6 with Shift is duplicate')
+  check(!duplicateDragMoved(0, 0) && !duplicateDragMoved(2, 2) && duplicateDragMoved(4, 0), 'D5c.6 tiny drags do not place a copy')
+  const box = { project: createProject('ShiftDup') }
+  const tm = new TransactionManager({
+    get: () => box.project,
+    set: (next) => {
+      box.project = next
+    },
+  })
+  let sourceId = ''
+  tm.transact('place', (project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    sourceId = placeTemplate(sheet, BLOCK_TEMPLATES[0], false)
+    return project
+  })
+  const before = serializeProject(box.project)
+  const sheet0 = documentById(box.project, box.project.rootDocumentId)!
+  const origin = sheet0.blocks.find((block) => block.id === sourceId)!
+  tm.begin('Gesture')
+  let createdId = ''
+  tm.preview((project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    const map = duplicateBlocks(sheet, [sourceId], 20, 20)
+    createdId = map.get(sourceId) ?? ''
+  })
+  tm.preview((project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    const map = duplicateBlocks(sheet, [sourceId], 40, 60)
+    createdId = map.get(sourceId) ?? ''
+  })
+  check(Boolean(createdId) && documentById(box.project, box.project.rootDocumentId)!.blocks.length === 2, 'D5c.6 successive previews do not stack ghost copies')
+  check(
+    documentById(box.project, box.project.rootDocumentId)!.blocks.find((block) => block.id === sourceId)?.x === origin.x &&
+      documentById(box.project, box.project.rootDocumentId)!.blocks.find((block) => block.id === sourceId)?.y === origin.y,
+    'D5c.6 original stays put during duplicate preview',
+  )
+  tm.commit()
+  const sheet1 = documentById(box.project, box.project.rootDocumentId)!
+  const copy = sheet1.blocks.find((block) => block.id === createdId)
+  check(Boolean(copy && copy.x === origin.x + 40 && copy.y === origin.y + 60), 'D5c.6 commit keeps the copy offset')
+  check(sheet1.blocks.length === 2, 'D5c.6 one history entry leaves two blocks')
+  tm.undo()
+  check(serializeProject(box.project) === before, 'D5c.6 undo removes the Shift+Drag copy')
+  tm.redo()
+  check(documentById(box.project, box.project.rootDocumentId)!.blocks.length === 2, 'D5c.6 redo restores the copy')
+  tm.begin('Gesture')
+  tm.preview((project) => {
+    const sheet = documentById(project, project.rootDocumentId)!
+    duplicateBlocks(sheet, [sourceId], 10, 10)
+  })
+  tm.cancel()
+  check(documentById(box.project, box.project.rootDocumentId)!.blocks.length === 2, 'D5c.6 cancel during a later gesture does not drop prior commit')
+}
+
+// --- D5c.2 Escape → cancel → Select → deselect ---
+{
+  check(nextEscapeAction('wire', true, true) === 'cancel', 'D5c.2 Esc with transient cancels first')
+  check(nextEscapeAction('wire', false, true) === 'tool-select', 'D5c.2 Esc with Wire tool returns to Select')
+  check(nextEscapeAction('pan', false, false) === 'tool-select', 'D5c.2 Esc with Pan tool returns to Select')
+  check(nextEscapeAction('select', false, true) === 'clear-selection', 'D5c.2 Esc in Select clears selection')
+  check(nextEscapeAction('select', false, false) === 'none', 'D5c.2 Esc with nothing selected is no-op')
+  check(nextEscapeAction('select', true, true) === 'cancel', 'D5c.2 cancel consumes Esc before deselect')
+  check(chooseTool('wire', 'select') === 'select', 'D5c.2 choosing Select from Wire is Select')
 }
 
 if (failures.length) {

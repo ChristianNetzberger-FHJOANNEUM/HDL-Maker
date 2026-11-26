@@ -7,7 +7,8 @@ D5b.4a is accepted by the user. This slice brings desktop interaction defaults t
 | Item | Status |
 | --- | --- |
 | D5b.4a | Accepted by the user |
-| D5b.5a | Implemented; waiting for user acceptance |
+| D5b.5a | Accepted by the user |
+| D5b.5b | Wire-draft pan ([d5b5b-wire-draft-pan.md](d5b5b-wire-draft-pan.md)) |
 | D5b.5 | Locked (remaining toolbar / shortcut polish) |
 | D5b.6 | Locked |
 

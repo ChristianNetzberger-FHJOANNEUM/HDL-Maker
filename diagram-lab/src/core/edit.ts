@@ -1,6 +1,6 @@
 import { createId, type Block, type BlockGroup, type DiagramDocument, type Label, type Net, type Point, type Port, type Segment } from './document'
 import { pinLocal, pinOnBorder, portAnchor, refreshAll } from './geometry'
-import { reassignComponents } from './nets'
+import { ensureNetByName, reassignComponents } from './nets'
 
 export const GRID = 20
 
@@ -414,7 +414,12 @@ export function pasteFragment(doc: DiagramDocument, fragment: Fragment, dx: numb
     if (label.anchor.kind !== 'segment') continue
     const segmentId = segmentMap.get(label.anchor.segmentId)
     if (!segmentId) continue
-    doc.labels.push({ id: createId('lbl'), text: label.text, anchor: { ...label.anchor, segmentId } })
+    doc.labels.push({
+      id: createId('lbl'),
+      text: label.text,
+      role: label.role,
+      anchor: { ...label.anchor, segmentId },
+    })
   }
   if (fragment.groupName && created.length > 1) {
     doc.groups.push({ id: createId('grp'), name: fragment.groupName, blockIds: created })
@@ -428,9 +433,9 @@ export function linkPorts(doc: DiagramDocument, startPortId: string, endPortId: 
   const end = portAnchor(doc, endPortId)
   if (!start || !end) return null
   const trunk = (start.x + end.x) / 2
-  const netId = createId('net')
+  // Reuse sheet net by name when present (D5c.5); otherwise create.
+  const netId = ensureNetByName(doc, name)
   const segmentId = createId('seg')
-  doc.nets.push({ id: netId, name })
   doc.segments.push({
     id: segmentId,
     netId,
@@ -442,6 +447,7 @@ export function linkPorts(doc: DiagramDocument, startPortId: string, endPortId: 
   doc.labels.push({
     id: createId('lbl'),
     text: name,
+    role: 'name',
     anchor: { kind: 'segment', segmentId, edge: 1, distance: 8, offset: 14 },
   })
   return segmentId

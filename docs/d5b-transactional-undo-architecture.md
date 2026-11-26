@@ -17,7 +17,8 @@ The earlier note [diagram-transaction-architecture.md](diagram-transaction-archi
 | D5b.2 | Accepted |
 | D5b.3 | Accepted by the user ([d5b3-transaction-migration.md](d5b3-transaction-migration.md)) |
 | D5b.4 / D5b.4a | Accepted ([d5b4a-gesture-robustness-fixes.md](d5b4a-gesture-robustness-fixes.md)) |
-| D5b.5a | Interaction defaults; waiting for acceptance ([d5b5a-interaction-defaults.md](d5b5a-interaction-defaults.md)) |
+| D5b.5a | Accepted ([d5b5a-interaction-defaults.md](d5b5a-interaction-defaults.md)) |
+| D5b.5b | Accepted ([d5b5b-wire-draft-pan.md](d5b5b-wire-draft-pan.md)) |
 | D5b.5–D5b.6 | Locked (remaining UI polish / regression gate) |
 
 D5b.1 does not change the document model, the schema, the editor behaviour, or the UI. It analyses the code that is in `diagram-lab` today and specifies the target.

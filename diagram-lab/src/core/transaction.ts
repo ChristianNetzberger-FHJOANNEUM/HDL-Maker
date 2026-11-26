@@ -154,8 +154,9 @@ export class TransactionManager {
   }
 
   /**
-   * Start an interactive gesture. Preview mutates the live project in place.
-   * Cancel restores the baseline snapshot. Commit records at most one history entry.
+   * Start an interactive gesture. Each preview re-applies from the baseline snapshot
+   * (so additive edits like duplicate cannot stack ghosts). Cancel restores baseline.
+   * Commit records at most one history entry.
    */
   begin(label: TransactionLabel): TransactResult<undefined> {
     if (this.depth > 0) return { ok: false, message: 'Cannot begin a gesture inside a transact.' }
@@ -166,6 +167,8 @@ export class TransactionManager {
 
   preview(apply: (project: DiagramProject) => void): TransactResult<undefined> {
     if (!this.gesture) return { ok: false, message: 'No gesture is open.' }
+    // Always rebuild from baseline — move/resize set absolute fields; duplicate adds rows.
+    this.store.set(parseProject(this.gesture.baseline))
     try {
       apply(this.store.get())
       return { ok: true, value: undefined }

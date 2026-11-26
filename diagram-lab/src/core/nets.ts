@@ -33,6 +33,71 @@ export function netPortIds(doc: DiagramDocument, netId: string): string[] {
   return [...ids]
 }
 
+/** Sheet-scope lookup by display name (D5c.5). Exact match after trim. */
+export function findNetByName(doc: DiagramDocument, rawName: string): { id: string; name: string } | null {
+  const name = rawName.trim()
+  if (!name) return null
+  const net = doc.nets.find((item) => item.name === name)
+  return net ? { id: net.id, name: net.name } : null
+}
+
+export function netsNamed(doc: DiagramDocument, rawName: string): string[] {
+  const name = rawName.trim()
+  if (!name) return []
+  return doc.nets.filter((item) => item.name === name).map((item) => item.id)
+}
+
+export function nameCollisions(doc: DiagramDocument): Array<{ name: string; netIds: string[]; count: number }> {
+  const groups = new Map<string, string[]>()
+  for (const net of doc.nets) {
+    const list = groups.get(net.name) ?? []
+    list.push(net.id)
+    groups.set(net.name, list)
+  }
+  return [...groups.entries()]
+    .filter(([, ids]) => ids.length > 1)
+    .map(([name, netIds]) => ({ name, netIds, count: netIds.length }))
+    .sort((a, b) => (a.name < b.name ? -1 : 1))
+}
+
+/** Next free display name on this sheet (`clk`, `clk 2`, …). */
+export function uniqueNetName(doc: DiagramDocument, baseRaw: string): string {
+  const base = baseRaw.trim() || 'net'
+  if (!findNetByName(doc, base)) return base
+  let index = 2
+  while (findNetByName(doc, `${base} ${index}`)) index += 1
+  return `${base} ${index}`
+}
+
+/** Reuse an existing sheet net with this name, or create one. */
+export function ensureNetByName(doc: DiagramDocument, rawName: string): string {
+  const name = rawName.trim()
+  if (!name) return createNet(doc)
+  const existing = findNetByName(doc, name)
+  if (existing) return existing.id
+  const id = createId('net')
+  doc.nets.push({ id, name })
+  return id
+}
+
+/**
+ * Merge every sheet net that shares `name` into one id (keep lexicographically smallest id).
+ * Used for legacy collisions; does not run automatically on load.
+ */
+export function mergeNetsByName(doc: DiagramDocument, rawName: string): { ok: true; keptId: string; merged: number } | { ok: false; reason: string } {
+  const name = rawName.trim()
+  if (!name) return { ok: false, reason: 'Wire name cannot be empty.' }
+  const ids = netsNamed(doc, name).sort()
+  if (ids.length === 0) return { ok: false, reason: 'No net with that name.' }
+  if (ids.length === 1) return { ok: true, keptId: ids[0]!, merged: 0 }
+  const keptId = ids[0]!
+  let merged = 0
+  for (const dropId of ids.slice(1)) {
+    if (mergeNets(doc, keptId, dropId)) merged += 1
+  }
+  return { ok: true, keptId, merged }
+}
+
 export function snapTarget(doc: DiagramDocument, point: Point): SnapHit {
   const found: Array<{ hit: SnapHit; rank: number; gap: number }> = []
   for (const port of doc.ports) {
@@ -90,7 +155,23 @@ export function commitWire(doc: DiagramDocument, points: Point[], start: SnapHit
   const resolvedEnd = resolveHit(doc, end)
   if ('error' in resolvedStart) return { ok: false, reason: resolvedStart.error, netIds: [] }
   if ('error' in resolvedEnd) return { ok: false, reason: resolvedEnd.error, netIds: [] }
-  const netId = probe.netId || createNet(doc)
+  // Geometry wins when a hit already touches a net; otherwise inherit a port name and join by name (D5c.5).
+  let createdNet = false
+  let netId = probe.netId
+  if (!netId) {
+    const inherited = inheritNetName(doc, start, end)
+    if (inherited) {
+      const existing = findNetByName(doc, inherited)
+      if (existing) netId = existing.id
+      else {
+        netId = ensureNetByName(doc, inherited)
+        createdNet = true
+      }
+    } else {
+      netId = createNet(doc)
+      createdNet = true
+    }
+  }
   const segmentId = createId('seg')
   const routedPoints = simplifyOrthogonal(points.map((point) => ({ ...point })))
   if (routedPoints.length >= 1) routedPoints[0] = { ...routedPoints[0], ...resolvedStart.point }
@@ -106,7 +187,7 @@ export function commitWire(doc: DiagramDocument, points: Point[], start: SnapHit
   const segment = doc.segments.find((item) => item.id === segmentId)
   if (segment) refreshSegment(doc, segment)
   addNameLabel(doc, segmentId, 0, 16, 14)
-  return { ok: true, netId, segmentId, createdNet: probe.createdNet }
+  return { ok: true, netId, segmentId, createdNet }
 }
 
 export function mergeNets(doc: DiagramDocument, keepId: string, dropId: string): boolean {
@@ -141,8 +222,9 @@ export function reassignComponents(doc: DiagramDocument, netId: string): string[
   const net = doc.nets.find((item) => item.id === netId)
   const created: string[] = []
   for (const component of ranked.slice(1)) {
+    // Unique names so a geometric split does not recreate silent name collisions (D5c.5).
     const id = createId('net')
-    doc.nets.push({ id, name: net?.name ?? 'net' })
+    doc.nets.push({ id, name: uniqueNetName(doc, net?.name ?? 'net') })
     created.push(id)
     for (const segmentId of component.ids) {
       const segment = doc.segments.find((item) => item.id === segmentId)
@@ -172,9 +254,27 @@ export function pruneTopology(doc: DiagramDocument): void {
   doc.nets = doc.nets.filter((net) => nets.has(net.id))
 }
 
-export function renameNet(doc: DiagramDocument, netId: string, name: string): void {
+export type RenameNetResult =
+  | { ok: true; name: string; joined: boolean; netId: string }
+  | { ok: false; reason: string }
+
+/**
+ * Rename a net (D5c.4 / D5c.5). Empty / whitespace-only names are refused.
+ * If another sheet net already uses the name, **join** into that net (keep the
+ * target id, drop this one). A free new name only renames — no silent split.
+ */
+export function renameNet(doc: DiagramDocument, netId: string, rawName: string): RenameNetResult {
   const net = doc.nets.find((item) => item.id === netId)
-  if (net) net.name = name
+  if (!net) return { ok: false, reason: 'No net for this wire.' }
+  const name = rawName.trim()
+  if (!name) return { ok: false, reason: 'Wire name cannot be empty.' }
+  const target = doc.nets.find((item) => item.id !== netId && item.name === name)
+  if (target) {
+    if (!mergeNets(doc, target.id, netId)) return { ok: false, reason: 'Could not join nets.' }
+    return { ok: true, name, joined: true, netId: target.id }
+  }
+  net.name = name
+  return { ok: true, name, joined: false, netId }
 }
 
 export function addNameLabel(doc: DiagramDocument, segmentId: string, edge: number, distance: number, offset: number): string | null {
@@ -201,6 +301,38 @@ export function setLabelOffset(doc: DiagramDocument, labelId: string, offset: nu
   const label = doc.labels.find((item) => item.id === labelId)
   if (!label || label.anchor.kind !== 'segment') return
   label.anchor = { ...label.anchor, offset }
+}
+
+/**
+ * Place a segment-anchored label from a world point (D5c.1).
+ * Stays on the same segment; nearest edge + signed offset (matches `pointOnEdge`).
+ */
+export function placeLabelAt(doc: DiagramDocument, labelId: string, point: Point): boolean {
+  const label = doc.labels.find((item) => item.id === labelId)
+  if (!label || label.anchor.kind !== 'segment') return false
+  const anchor = label.anchor
+  const segment = doc.segments.find((item) => item.id === anchor.segmentId)
+  if (!segment) return false
+  const hit = projectOnto(segment.points, point)
+  if (!hit) return false
+  const from = segment.points[hit.edge]
+  const to = segment.points[hit.edge + 1]
+  const len = Math.hypot(to.x - from.x, to.y - from.y)
+  let offset = 0
+  if (len >= 1e-6) {
+    const dx = (to.x - from.x) / len
+    const dy = (to.y - from.y) / len
+    // Same normal as pointOnEdge: (dy, -dx).
+    offset = (point.x - hit.point.x) * dy + (point.y - hit.point.y) * -dx
+  }
+  label.anchor = {
+    kind: 'segment',
+    segmentId: anchor.segmentId,
+    edge: hit.edge,
+    distance: hit.along,
+    offset,
+  }
+  return true
 }
 
 export function placeSpan(doc: DiagramDocument, segmentId: string, edge: number, coord: number): void {
@@ -418,11 +550,24 @@ function makeJunction(doc: DiagramDocument, netId: string, point: Point): Juncti
   return junction
 }
 
-function createNet(doc: DiagramDocument): string {
+function createNet(doc: DiagramDocument, preferredName?: string): string {
+  if (preferredName?.trim()) return ensureNetByName(doc, preferredName)
   const id = createId('net')
-  const count = doc.nets.length + 1
-  doc.nets.push({ id, name: count === 1 ? 'net' : `net ${count}` })
+  doc.nets.push({ id, name: uniqueNetName(doc, 'net') })
   return id
+}
+
+/** Port name inheritance when neither hit already belongs to a net (D5c.5). */
+function inheritNetName(doc: DiagramDocument, start: SnapHit, end: SnapHit): string | null {
+  if (start.kind === 'port') {
+    const port = doc.ports.find((item) => item.id === start.portId)
+    if (port?.name.trim()) return port.name.trim()
+  }
+  if (end.kind === 'port') {
+    const port = doc.ports.find((item) => item.id === end.portId)
+    if (port?.name.trim()) return port.name.trim()
+  }
+  return null
 }
 
 function netsTouching(doc: DiagramDocument, hit: SnapHit): string[] {

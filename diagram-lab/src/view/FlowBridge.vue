@@ -50,6 +50,12 @@ watch(
     else void flow.setViewport({ x: frame.x, y: frame.y, zoom: frame.zoom })
   },
 )
+
+defineExpose({
+  setViewport(next: ViewportTransform): void {
+    void flow.setViewport(next)
+  },
+})
 </script>
 
 <template><span class="bridge" /></template>

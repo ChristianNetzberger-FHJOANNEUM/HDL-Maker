@@ -42,13 +42,13 @@ These are not open work.
 | Rotate and mirror | Not implemented. | No command and no stored angle. |
 | Z-order | Paint order follows the block list. | No bring-forward or send-back. |
 | Align and distribute | Not implemented. | No command. |
-| Copy and paste | Internal clipboard. Port-to-port wires inside the selection. | Not the system clipboard. Junctions, labels on those junctions, and wires that leave the selection are omitted. |
+| Copy and paste | Internal clipboard. Port-to-port wires inside the selection. Block Shift+Drag duplicate (D5c.6). | Not the system clipboard. Wire-only copy **deferred** (D5c.7 spec: stub paste + by-name). Junctions / leaving wires omitted from block copy. |
 | Context menu | Not implemented. | Every action is a toolbar button or a shortcut. |
 | Shortcuts | Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Y for the sheet. Ctrl/Cmd+A, C, V, D. Delete, Escape, Enter, Space for the wire elbow. | No shortcut for project undo, fit, or the tools. Arrow keys work only while the block name button is focused. |
 | Grid and snap | 20-unit snap, one toggle. | No second grid, no snap to pins while drawing, no visible snap while snap is off. |
 | Marquee | Blocks whose boxes meet the rectangle. Shift adds. A box under 4 pixels clears the selection unless Shift is held. | Wires, junctions, labels, and strokes are not in the marquee. The drag must start on empty canvas. |
-| Net by name | A net is joined by segments and junctions. **Merge** joins two nets that are already drawn. | Two pins cannot share a net by typing the same name without a wire. |
-| Label handles | The label follows its segment. The core can move a label along an edge. | The sheet has no drag handle on the label. |
+| Net by name | **D5c.5:** same sheet name ⇒ one net (rename-join, stub reuse). **Merge** still joins unequal names. Legacy duplicates warn until Merge-all. | Cross-sheet / project-global name join not done. |
+| Label handles | The label follows its segment. The core can move a label along an edge. **D5c.1** adds sheet drag (`placeLabelAt`, along + offset). | Jumping to another segment / free 2D placement not in D5c.1. |
 | Groups | The membership is stored. Duplicate and ungroup use it. | Nothing is drawn around the members. |
 | Freehand | Draw, preview an orthogonal wire, confirm. Pressure is kept when the pointer reports it. | No eraser, no arrow tool, no pen mode. This is still a prototype. |
 | SVG export | A symbol can contain an SVG picture. | There is no export of a whole sheet. |

@@ -209,9 +209,25 @@ button.on {
   pointer-events: none;
 }
 
+.label-group {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.label-group:active {
+  cursor: grabbing;
+}
+
+.label-hit {
+  fill: transparent;
+  pointer-events: auto;
+}
+
 .label {
   font-size: 13px;
   fill: #1c2430;
+  pointer-events: none;
+  user-select: none;
 }
 
 .block {
