@@ -291,21 +291,49 @@ export function addNameLabel(doc: DiagramDocument, segmentId: string, edge: numb
   return id
 }
 
+/**
+ * Remove name-label instances anchored on one segment (P5b).
+ * Does not delete the segment, rename/remove the net, or change geometry.
+ * Note-role labels on the same segment are left alone. Missing `role` ≡ name.
+ * @returns true when at least one label was removed.
+ */
+export function removeSegmentNameLabels(doc: DiagramDocument, segmentId: string): boolean {
+  const before = doc.labels.length
+  doc.labels = doc.labels.filter((label) => {
+    if (label.anchor.kind !== 'segment' || label.anchor.segmentId !== segmentId) return true
+    if (label.role === 'note') return true
+    return false
+  })
+  return doc.labels.length < before
+}
+
+/** True when the label is a net-name label (explicit or legacy missing role). */
+export function isNameLabel(label: { role?: 'name' | 'note' }): boolean {
+  return label.role !== 'note'
+}
+
 export function moveLabelAlong(doc: DiagramDocument, labelId: string, edge: number, distance: number): void {
   const label = doc.labels.find((item) => item.id === labelId)
   if (!label || label.anchor.kind !== 'segment') return
   label.anchor = { ...label.anchor, edge, distance }
 }
 
+/** Default normal offset used by `addNameLabel` / reset (diagram units). */
+export const DEFAULT_NAME_LABEL_OFFSET = 14
+
 export function setLabelOffset(doc: DiagramDocument, labelId: string, offset: number): void {
   const label = doc.labels.find((item) => item.id === labelId)
   if (!label || label.anchor.kind !== 'segment') return
-  label.anchor = { ...label.anchor, offset }
+  // Legacy 1D API: clear free shift so drawing uses `offset` again.
+  const next = { ...label.anchor, offset }
+  delete next.shift
+  label.anchor = next
 }
 
 /**
- * Place a segment-anchored label from a world point (D5c.1).
- * Stays on the same segment; nearest edge + signed offset (matches `pointOnEdge`).
+ * Place a segment-anchored label from a world point (D5c.1 / P5a).
+ * Stays on the same segment; stores free 2D `shift` from the on-wire attachment
+ * so labels may sit beyond endpoints (unlike the legacy 1D normal offset).
  */
 export function placeLabelAt(doc: DiagramDocument, labelId: string, point: Point): boolean {
   const label = doc.labels.find((item) => item.id === labelId)
@@ -315,23 +343,33 @@ export function placeLabelAt(doc: DiagramDocument, labelId: string, point: Point
   if (!segment) return false
   const hit = projectOnto(segment.points, point)
   if (!hit) return false
-  const from = segment.points[hit.edge]
-  const to = segment.points[hit.edge + 1]
-  const len = Math.hypot(to.x - from.x, to.y - from.y)
-  let offset = 0
-  if (len >= 1e-6) {
-    const dx = (to.x - from.x) / len
-    const dy = (to.y - from.y) / len
-    // Same normal as pointOnEdge: (dy, -dx).
-    offset = (point.x - hit.point.x) * dy + (point.y - hit.point.y) * -dx
-  }
-  label.anchor = {
+  const shift = { x: point.x - hit.point.x, y: point.y - hit.point.y }
+  const next: typeof anchor = {
     kind: 'segment',
     segmentId: anchor.segmentId,
     edge: hit.edge,
     distance: hit.along,
-    offset,
+    offset: 0,
   }
+  if (Math.abs(shift.x) > 1e-9 || Math.abs(shift.y) > 1e-9) next.shift = shift
+  label.anchor = next
+  return true
+}
+
+/**
+ * Restore default name-label placement on the current attachment (P5a).
+ * Clears free `shift` and sets legacy normal `offset` to DEFAULT_NAME_LABEL_OFFSET.
+ */
+export function resetLabelPosition(doc: DiagramDocument, labelId: string): boolean {
+  const label = doc.labels.find((item) => item.id === labelId)
+  if (!label || label.anchor.kind !== 'segment') return false
+  const before = label.anchor
+  const hadShift = Boolean(before.shift)
+  const offsetChanged = before.offset !== DEFAULT_NAME_LABEL_OFFSET
+  if (!hadShift && !offsetChanged) return false
+  const next = { ...before, offset: DEFAULT_NAME_LABEL_OFFSET }
+  delete next.shift
+  label.anchor = next
   return true
 }
 
@@ -341,6 +379,56 @@ export function placeSpan(doc: DiagramDocument, segmentId: string, edge: number,
   const horizontal = Math.abs(segment.points[edge].y - segment.points[edge + 1].y) <= Math.abs(segment.points[edge].x - segment.points[edge + 1].x)
   const current = horizontal ? segment.points[edge].y : segment.points[edge].x
   moveSpan(doc, segmentId, edge, coord - current)
+}
+
+/**
+ * Move a free endpoint in diagram space (S5b).
+ * Keeps every point except the free tip; rebuilds only the terminal orthogonal leg
+ * from the adjacent hinge. Does not move ports/junctions or change net identity.
+ */
+export function placeFreeEnd(doc: DiagramDocument, segmentId: string, which: 'start' | 'end', at: Point): boolean {
+  const segment = doc.segments.find((item) => item.id === segmentId)
+  if (!segment || segment.points.length < 2) return false
+  if (which === 'start' && segment.start.kind !== 'free') return false
+  if (which === 'end' && segment.end.kind !== 'free') return false
+
+  const previous = segment.points.map(copyPoint)
+  const target = { x: at.x, y: at.y }
+  segment.routed = 'manual'
+
+  if (which === 'end') {
+    const kept = previous.slice(0, -1).map(copyPoint)
+    const hinge = kept[kept.length - 1]!
+    const oldTip = previous[previous.length - 1]!
+    if (samePoint(hinge, target, 0.5)) return false
+    const prefer: 'h' | 'v' = Math.abs(oldTip.x - hinge.x) >= Math.abs(oldTip.y - hinge.y) ? 'h' : 'v'
+    const extension = orthogonalTo(hinge, target, prefer).slice(1)
+    segment.points = simplifyOrthogonal([...kept, ...extension])
+    const tip = segment.points[segment.points.length - 1]
+    if (tip) {
+      tip.x = target.x
+      tip.y = target.y
+    }
+    segment.end = { kind: 'free', x: target.x, y: target.y }
+  } else {
+    const kept = previous.slice(1).map(copyPoint)
+    const hinge = kept[0]!
+    const oldTip = previous[0]!
+    if (samePoint(hinge, target, 0.5)) return false
+    const prefer: 'h' | 'v' = Math.abs(oldTip.x - hinge.x) >= Math.abs(oldTip.y - hinge.y) ? 'h' : 'v'
+    const head = orthogonalTo(target, hinge, prefer)
+    segment.points = simplifyOrthogonal([...head.slice(0, -1), ...kept])
+    const tip = segment.points[0]
+    if (tip) {
+      tip.x = target.x
+      tip.y = target.y
+    }
+    segment.start = { kind: 'free', x: target.x, y: target.y }
+  }
+
+  refreshSegment(doc, segment)
+  if (segment.points.length !== previous.length) reanchor(doc, segment.id, previous, segment.points)
+  return true
 }
 
 export function moveSpan(doc: DiagramDocument, segmentId: string, edge: number, delta: number): void {

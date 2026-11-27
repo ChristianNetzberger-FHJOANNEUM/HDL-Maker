@@ -122,11 +122,63 @@ button:disabled {
   font-size: 12px;
 }
 
-.props input {
+.props label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  grid-template-columns: none;
+}
+
+.props label.check input {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.props input,
+.props textarea {
   font: inherit;
   padding: 4px;
   border: 1px solid #c5ced8;
   border-radius: 4px;
+}
+
+.props textarea {
+  resize: vertical;
+  min-height: 3.5em;
+  line-height: 1.3;
+}
+
+.props label.colour {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.props label.colour input[type='color'] {
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #c5ced8;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.colour-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.colour-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #9aa7b5;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .hint {
@@ -141,12 +193,16 @@ button:disabled {
   position: relative;
   min-height: 0;
   overflow: hidden;
+  /* P0b: canvas colour lives here so the grid can sit under transparent Vue Flow */
+  background: #f7f8fa;
 }
 
 .stage .vue-flow {
   width: 100%;
   height: 100%;
-  background: #f7f8fa;
+  background: transparent;
+  /* Above world-grid (0), below svg.world (2); overrides library z-index: 0 */
+  z-index: 1;
 }
 
 .stage.cursor-select {
@@ -168,9 +224,22 @@ button:disabled {
   cursor: crosshair;
 }
 
+/* P0b: paint-only grid under blocks; same viewport transform as .world */
+.world-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+
 .world {
   position: absolute;
   inset: 0;
+  z-index: 2;
   width: 100%;
   height: 100%;
   overflow: visible;
@@ -187,6 +256,7 @@ button:disabled {
   stroke: #e1e6ec;
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 
 .hit {
@@ -232,12 +302,42 @@ button:disabled {
   vector-effect: non-scaling-stroke;
 }
 
+/* P0: bend chrome only when selected; geometry size is screen-constant via JS. */
+.bend-hit {
+  fill: transparent;
+  stroke: none;
+  pointer-events: auto;
+  cursor: ew-resize;
+}
+
 .bend {
   fill: #fff;
   stroke: #1d6fd6;
-  stroke-width: 1.5;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.free-end-hit {
+  fill: transparent;
+  stroke: none;
   pointer-events: auto;
-  cursor: ew-resize;
+  cursor: move;
+}
+
+.free-end {
+  fill: #fff;
+  stroke: #1d6fd6;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+/* Unselected free tip: small open marker, distinct from bends and junctions. */
+.free-end.tip {
+  fill: none;
+  stroke: #7a8794;
+  stroke-width: 1.2;
 }
 
 .ink {
@@ -587,6 +687,50 @@ button:disabled {
   cursor: grab;
 }
 
+/* P2/P3a: multiline caption at block centre + optional offset; hit only when selected. */
+.block-display {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(100%, 28em);
+  padding: 4px 6px;
+  overflow: visible;
+  pointer-events: none;
+  text-align: center;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.25;
+  color: #1c2430;
+  user-select: none;
+  border-radius: 2px;
+}
+
+.block-display.movable {
+  pointer-events: auto;
+  cursor: grab;
+  outline: 1px dashed rgba(36, 49, 64, 0.35);
+  outline-offset: 2px;
+}
+
+.block-display.movable:active {
+  cursor: grabbing;
+}
+
+.block-display-line {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
 .port {
   position: absolute;
   z-index: 5;
@@ -671,9 +815,38 @@ textarea {
   opacity: 0.45;
 }
 
-.benchgen-dialog {
+.benchgen-dialog,
+.prefs-dialog {
   width: 320px;
   gap: 10px;
+}
+
+.prefs-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prefs-preset {
+  min-width: 2.5rem;
+  padding: 4px 8px;
+  border: 1px solid #c5ced8;
+  border-radius: 4px;
+  background: #f7f9fb;
+  font: inherit;
+  cursor: pointer;
+}
+
+.prefs-preset.on {
+  border-color: #243140;
+  background: #e8eef5;
+}
+
+.prefs-dialog label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
 }
 
 .benchgen-title {

@@ -1,8 +1,8 @@
 # Diagram-Lab — Application Pilot Preparation
 
-**Status:** Planning / investigation only (26 Nov 2026). **Not** an implementation release.  
+**Status:** Preparation **accepted** (26 Nov 2026). **A1 formally closed** (27 Nov 2026) — [final evaluation](diagram-lab-pilot-a1-final-evaluation.md). Preferred order **A1 → A2 → B2 → B3 → B1**. **A2** requires a separate release (symbol-library focus).  
 **Purpose:** Complement selfchecks and D5d benchmarks with practical usage scenarios.  
-**Related:** [diagram-lab-strategic-vision.md](diagram-lab-strategic-vision.md), [adr-diagram-geometry-routing-style.md](adr-diagram-geometry-routing-style.md), [status-handoff-2026-11-26-d5d.md](status-handoff-2026-11-26-d5d.md).
+**Related:** [diagram-lab-strategic-vision.md](diagram-lab-strategic-vision.md), [adr-diagram-geometry-routing-style.md](adr-diagram-geometry-routing-style.md), [status-handoff-2026-11-26-d5d.md](status-handoff-2026-11-26-d5d.md), [d5d0a-s5b-stub-endpoint-drag.md](d5d0a-s5b-stub-endpoint-drag.md), **[diagram-lab-pilot-a1-presentation-findings.md](diagram-lab-pilot-a1-presentation-findings.md)**, [diagram-lab-pilot-a1-final-evaluation.md](diagram-lab-pilot-a1-final-evaluation.md).
 
 ---
 
@@ -39,10 +39,11 @@ Plain `BLOCK_TEMPLATES` remain available alongside symbols.
 
 | Gap | Affects | Notes |
 | --- | --- | --- |
-| Stable free-endpoint drag (**S5b**) | A + B | RCA done; **not released** |
+| Stable free-endpoint drag (**S5b**) | A + B | **Accepted** |
+| Presentation control (labels, fill, bend chrome) | A1 teaching look | **P0–P5b** accepted; **A1 closed** |
 | Free-angle / non-orthogonal wires | B1 constellation, annotations | Elbow routing only |
 | Wire style (dash, colour, arrows/markers) | B1–B3, teaching diagrams | ADR only |
-| Block / symbol fill & border colour | A2 / B2 differentiation | ADR; optional later micro-slice |
+| Block / symbol fill & border colour | A1 / A2 / B2 | Covered by A1 **P3** (function confirmed) |
 | Sheet SVG export | Webskriptum | **D5e** specified, not started |
 | Reusable Vue surface / read-only viewer | Script embed | **D5f** specified, not started |
 | Oscillator, ADC, DAC, Triangle, Point, Document shapes | Desired test set | Not in catalog; representable later as polygons/ellipse/text or deferred |
@@ -65,8 +66,8 @@ Plain `BLOCK_TEMPLATES` remain available alongside symbols.
 
 | ID | Diagram | Intent |
 | --- | --- | --- |
-| **A1** | Synchronous 4-bit counter (clk, en, rst, Q) | Reuse Counter/Register/DFF; named stubs (`clk`, `rst`); feedback / enable; junctions |
-| **A2** | Digital communication system blocks | Varied block sizes; Gain/Adder/Filter/etc.; shared nets; reusable symbol instances |
+| **A1** | Synchronous 4-bit counter (clk, en, rst, Q) | **Formally closed** — [final](diagram-lab-pilot-a1-final-evaluation.md); findings [here](diagram-lab-pilot-a1-presentation-findings.md) |
+| **A2** | Digital baseband / communication system | **Next** (separate freigabe) — symbol library & reuse; Gain/Adder/Filter/etc. already in builtins |
 
 **Acceptance (practical):** Completing A1/A2 without dead-end edits; stubs/names/junctions usable; missing features logged as defects vs enhancements vs architecture limits.
 
@@ -101,12 +102,12 @@ Plain `BLOCK_TEMPLATES` remain available alongside symbols.
 
 | Class | Examples |
 | --- | --- |
-| **Usability** | Endpoint jump until S5b; Port Drag confirmation open; constellation via orthogonal stubs looks awkward |
-| **Functional defect** | Anything that violates accepted S3/S4/S5a behaviour |
-| **Missing feature** | Dashed/arrow wires, block colour, free-angle wires, SVG export |
+| **Usability** | Port Drag confirmation open; constellation via orthogonal stubs looks awkward; always-on bend handles (A1) |
+| **Functional defect** | Anything that violates accepted S3/S4/S5a/S5b behaviour |
+| **Missing feature** | Free-angle wires, dashed/arrow wires, bus-width marks, SVG export, Library Manager |
 | **Architecture** | Net semantics forced on “connectors”; dual Vue Flow + SVG z-order; no persisted style on Segment |
 
-**Minimal block styling (fill / border / text / reset):** Likely high teaching value for A2/B2; treat as a **possible later micro-slice** after pilots, not as start of a full style system. Decide after drawing A/B, not before.
+**A1 outcome:** **Formally closed.** Technical block diagrams viable with documented limits. Next: **A2** (separate release) — symbol library / reuse focus, not more A1 presentation features.
 
 ---
 
@@ -130,12 +131,14 @@ Pass for a later **execution** phase (separate freigabe): five diagrams attempte
 
 ## 6. Suggested execution sequence
 
-1. **Wire gates still open** — S4 Port Drag confirmation; **S5b** only after explicit release; any further edge/vertex work only if freigegeben (user’s “S5a.2” is not an open Lab milestone today — clarify before inventing a slice).  
-2. **Pilot sessions** — same Lab UI; A then B (or interleaved); findings-only.  
-3. **Optional tiny test library JSON** — only if builtins prove awkward to browse; still no Library Manager.  
-4. **D5d performance campaign** — must not wait on pilots; pilots must not spawn unplanned features that delay D5d.  
-5. **D5e SVG/export → D5f viewer/library** — natural path for Webskriptum (JSON source + SVG figure; later interactive viewer).  
-6. **First specialised host app** — only after F0-style stability (vision), not now.
+1. **S5b** — **accepted**.  
+2. **A1 presentation** — **closed** (P0–P5b).  
+3. **A2** — digital baseband / communication system — **separate freigabe** (symbol library focus).  
+4. **S4** Port Drag — finish user confirmation.  
+5. **Manual pilots** B2→B3→B1 — findings only unless released.  
+6. **Vertex-handle / edge / vertex drag** (“S5a.2”) — **not** an open milestone; separate freigabe only.  
+7. **D5d** — independent; must not be delayed by pilots.  
+8. **D5e / D5f** — unchanged path for Webskriptum.
 
 Pilots may run **in parallel** with D5d prep if findings stay documentation-only.
 
@@ -147,7 +150,8 @@ Pilots may run **in parallel** with D5d prep if findings stay documentation-only
 | --- | --- |
 | S3 / S5a / S5a.1 | Stub copy / draw / step-undo — available |
 | S4 | Resize OK; finish Port Drag acceptance |
-| S5b | Needed for comfortable stub endpoint edit — gated |
+| S5b | **Accepted** — free-end drag available |
+| A1 presentation P0–P5 | **Closed** — [final evaluation](diagram-lab-pilot-a1-final-evaluation.md) |
 | D5d | Benchmarks; independent of pilots |
 | D5e | SVG/static export for scriptum |
 | D5f | Embeddable surface / viewer |
@@ -178,4 +182,4 @@ Preserve S-series gates and D5d priorities.
 
 ## 10. Stop for review
 
-Next human decision: approve pilot **execution** (sessions + findings templates) and/or release **S5b**; do not treat the shape/style wish-list as an automatic queue.
+Next human decision: review **A1 formal closure** ([final](diagram-lab-pilot-a1-final-evaluation.md)); separately freigeben **A2** (symbol library / baseband system). Keep **D5d** independent. No commit unless asked.

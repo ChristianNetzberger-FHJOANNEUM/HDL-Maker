@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { VueFlow, type NodeDragEvent, type ViewportTransform } from '@vue-flow/core'
 import { getStroke } from 'perfect-freehand'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
@@ -6,7 +6,6 @@ import { adoptWire, addStroke, removeStroke } from '../core/commands'
 import { parseDocument, serialize, type DiagramDocument, type Point, type PortSide, type SymbolDefinition } from '../core/document'
 import {
   BLOCK_TEMPLATES,
-  GRID,
   type BlockTemplate,
   type Fragment,
   captureFragment,
@@ -26,11 +25,25 @@ import {
   unusedPortName,
   resizeBox,
   setBlockFields,
+  setBlockStyle,
+  resetBlockStyle,
+  setDisplayTextOffset,
+  setSegmentLabelsVisible,
   snapBlocks,
   snapValue,
+  DUPLICATE_OFFSET,
   ungroup,
   type ResizeHandle,
 } from '../core/edit'
+import {
+  DEFAULT_EDITOR_PREFERENCES,
+  loadEditorPreferences,
+  normalizeSpacing,
+  saveEditorPreferences,
+  sanitizeEditorPreferences,
+  SPACING_PRESETS,
+  type EditorPreferences,
+} from '../core/preferences'
 import { labelPlacement, moveBlock, orthogonalTo, pinPoint, portAnchor } from '../core/geometry'
 import { netFixture } from '../core/fixture'
 import {
@@ -44,12 +57,17 @@ import {
   nameCollisions,
   netsNamed,
   netPortIds,
+  placeFreeEnd,
   placeLabelAt,
   placeSpan,
   probeWire,
   renameNet,
+  removeSegmentNameLabels,
+  resetLabelPosition,
+  isNameLabel,
   setRouted,
   snapTarget,
+  type SnapHit,
 } from '../core/nets'
 import { finishFree, undoWireStep, wireClick, type WireDraft } from '../core/wiretool'
 import { orthogonalize } from '../core/orthogonalize'
@@ -132,6 +150,7 @@ import {
   chooseTool as nextTool,
   duplicateDragMoved,
   isDoublePress,
+  isTextEditingTarget,
   panOnDragButtons,
   nextEscapeAction,
   shouldBeginViewPan,
@@ -151,6 +170,7 @@ import SymbolPalette from './SymbolPalette.vue'
 type Tool = EditorTool
 type BendDrag = { segmentId: string; xEdge: number; yEdge: number; originX: number; originY: number; axis: 'x' | 'y' | null }
 type SpanDrag = { segmentId: string; edge: number; horizontal: boolean; origin: number; pointer: Point }
+type FreeEndDrag = { segmentId: string; which: 'start' | 'end' }
 type Drag = {
   origin: Map<string, Point>
   sourceIds: string[]
@@ -186,7 +206,54 @@ const selectedStroke = ref<string | null>(null)
 const preview = ref<Point[] | null>(null)
 const drawing = ref<Array<Point & { pressure: number }> | null>(null)
 const marquee = ref<Marquee | null>(null)
-const snapOn = ref(true)
+/** Canonical editor prefs (P4b) — not document state; localStorage for Diagram-Lab. */
+const prefs = ref<EditorPreferences>(loadEditorPreferences())
+const preferencesOpen = ref(false)
+/** Frozen snap policy for the open document gesture (P4b mid-gesture safety). */
+let gestureSnap: { enabled: boolean; spacing: number } | null = null
+
+const snapOn = computed({
+  get: () => prefs.value.snapEnabled,
+  set: (value: boolean) => patchPrefs({ snapEnabled: value }),
+})
+const showGrid = computed({
+  get: () => prefs.value.gridVisible,
+  set: (value: boolean) => patchPrefs({ gridVisible: value }),
+})
+
+function activeSnapEnabled(): boolean {
+  return gestureSnap?.enabled ?? prefs.value.snapEnabled
+}
+
+function activeSnapSpacing(): number {
+  return gestureSnap?.spacing ?? prefs.value.snapSpacing
+}
+
+function patchPrefs(patch: Partial<EditorPreferences>): void {
+  const next = sanitizeEditorPreferences({ ...prefs.value, ...patch })
+  prefs.value = next
+  saveEditorPreferences(next)
+}
+
+function resetPrefsToDefaults(): void {
+  prefs.value = { ...DEFAULT_EDITOR_PREFERENCES }
+  saveEditorPreferences(prefs.value)
+}
+
+function commitSpacingField(field: 'gridSpacing' | 'snapSpacing', event: Event): void {
+  const input = event.target as HTMLInputElement
+  const fallback = field === 'gridSpacing' ? prefs.value.gridSpacing : prefs.value.snapSpacing
+  const next = normalizeSpacing(input.value, fallback)
+  input.value = String(next)
+  patchPrefs({ [field]: next })
+  input.blur()
+}
+
+function commitPrefsFlag(field: 'gridVisible' | 'snapEnabled', event: Event): void {
+  const input = event.target as HTMLInputElement
+  patchPrefs({ [field]: input.checked })
+  input.blur()
+}
 const stageEl = ref<HTMLElement | null>(null)
 const fileEl = ref<HTMLInputElement | null>(null)
 const canUndo = ref(false)
@@ -251,10 +318,26 @@ const resizing = ref(false)
 let portDrag: { portId: string; side: PortSide; t: number; placed: boolean; cancelled: boolean } | null = null
 let bendDrag: BendDrag | null = null
 let spanDrag: SpanDrag | null = null
+let freeEndDrag: FreeEndDrag | null = null
 let junctionDrag: { id: string; originX: number; originY: number; pointer: Point } | null = null
 let labelDrag: {
   labelId: string
-  origin: { edge: number; distance: number; offset: number }
+  origin: {
+    edge: number
+    distance: number
+    offset: number
+    shiftX: number
+    shiftY: number
+  }
+  cancelled: boolean
+} | null = null
+/** P3a: drag of the P2 display-text group relative to the block centre. */
+let displayTextDrag: {
+  blockId: string
+  originX: number
+  originY: number
+  startClientX: number
+  startClientY: number
   cancelled: boolean
 } | null = null
 /** Prevents double commit/cancel from late pointerup / lostpointercapture (D5b.4). */
@@ -400,6 +483,13 @@ const flowNodes = computed(() =>
       height: block.height,
       symbolWidth: symbol?.width,
       symbolHeight: symbol?.height,
+      showName: block.showName !== false,
+      showPortNames: block.showPortNames !== false,
+      displayText: block.displayText ?? null,
+      showDisplayText: block.showDisplayText !== false,
+      displayTextOffsetX: block.displayTextOffset?.x ?? 0,
+      displayTextOffsetY: block.displayTextOffset?.y ?? 0,
+      appearance: block.style ?? null,
       ports: doc.value.ports
         .filter((port) => port.blockId === block.id)
         .map((port) => {
@@ -428,7 +518,9 @@ const flowNodes = computed(() =>
   }),
 )
 
-const wires = computed(() => doc.value.segments.map((segment) => ({ id: segment.id, points: segment.points })))
+const wires = computed(() =>
+  doc.value.segments.map((segment) => ({ id: segment.id, points: segment.points, start: segment.start, end: segment.end })),
+)
 
 const diagnostics = computed(() => symbolDiagnostics(doc.value))
 const updatePreview = ref<UpdatePreview | null>(null)
@@ -514,6 +606,7 @@ const labels = computed(() =>
     text: labelText(doc.value, label),
     at: labelPlacement(doc.value, label.id),
     fontSize: typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : null,
+    visible: label.visible !== false,
   })),
 )
 
@@ -529,18 +622,41 @@ const selectedNet = computed(() => {
   return segment ? doc.value.nets.find((net) => net.id === segment.netId) ?? null : null
 })
 
+/** Labels anchored on one segment (P1 visibility is per segment, not per named net). */
+function labelsForSegment(segmentId: string) {
+  return doc.value.labels.filter((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === segmentId)
+}
+
 /** Read-only summary when a wire is selected (D5c.4). */
 const wireInspectorSummary = computed(() => {
   const net = selectedNet.value
   if (!net) return ''
   const segments = doc.value.segments.filter((item) => item.netId === net.id)
   const ports = netPortIds(doc.value, net.id)
-  const labels = doc.value.labels.filter((label) => {
-    const anchor = label.anchor
-    if (anchor.kind !== 'segment') return false
-    return segments.some((segment) => segment.id === anchor.segmentId)
-  })
+  const segmentIds = new Set(segments.map((item) => item.id))
+  const labels = doc.value.labels.filter((label) => label.anchor.kind === 'segment' && segmentIds.has(label.anchor.segmentId))
   return `${segments.length} segment${segments.length === 1 ? '' : 's'}, ${ports.length} port${ports.length === 1 ? '' : 's'}, ${labels.length} label${labels.length === 1 ? '' : 's'}`
+})
+
+/** Name labels on the selected segment (P5b: at most one expected). */
+function nameLabelsForSegment(segmentId: string) {
+  return labelsForSegment(segmentId).filter((label) => isNameLabel(label))
+}
+
+/** True when the selected segment already has a name label (visible or hidden). */
+const selectedSegmentHasNameLabel = computed(() => {
+  const segmentId = selectedSegment.value
+  if (!segmentId) return false
+  return nameLabelsForSegment(segmentId).length > 0
+})
+
+/** True when the selected segment has no name labels or at least one drawn label (P1 / P5b). */
+const selectedSegmentLabelsVisible = computed(() => {
+  const segmentId = selectedSegment.value
+  if (!segmentId) return true
+  const labels = nameLabelsForSegment(segmentId)
+  if (labels.length === 0) return true
+  return labels.some((label) => label.visible !== false)
 })
 
 /** Legacy / accidental duplicate display names on this sheet (D5c.5). */
@@ -554,9 +670,12 @@ const selectedNameCollision = computed(() => {
 
 const sheetNameCollisions = computed(() => nameCollisions(doc.value))
 
+/** Skip line generation when the grid is hidden; pitch from gridSpacing (P4b). */
 const gridLines = computed(() => {
+  if (!prefs.value.gridVisible) return []
+  const step = normalizeSpacing(prefs.value.gridSpacing)
   const lines: number[] = []
-  for (let value = 0; value <= 1600; value += GRID) lines.push(value)
+  for (let value = 0; value <= 1600; value += step) lines.push(value)
   return lines
 })
 
@@ -659,9 +778,35 @@ function clientPointToWorld(clientX: number, clientY: number): Point {
   }
 }
 
+/** P4a/P4b: grid-quantize a free point using active (or gesture-frozen) snap policy. */
+function gridSnapPoint(point: Point): Point {
+  const enabled = activeSnapEnabled()
+  const spacing = activeSnapSpacing()
+  return {
+    x: snapValue(point.x, enabled, spacing),
+    y: snapValue(point.y, enabled, spacing),
+  }
+}
+
+/**
+ * P4a: after connectivity hit-test, snap only free-space points.
+ * Port / junction / segment / end hits keep exact anchors (connectivity wins).
+ */
+function snapFreeHit(hit: SnapHit): SnapHit {
+  if (hit.kind !== 'free') return hit
+  return { kind: 'free', point: gridSnapPoint(hit.point) }
+}
+
+/** Rubber-band target while drawing: exact connection hit, else grid-snapped free point. */
+function wireHoverFromWorld(world: Point): Point {
+  const hit = snapTarget(doc.value, world)
+  if (hit.kind === 'free' || hit.kind === 'ambiguous') return gridSnapPoint(world)
+  return { ...hit.point }
+}
+
 function refreshWireHoverFromClient(): void {
   if (!wireDraft.value || !lastPointerClient) return
-  wireHover.value = clientPointToWorld(lastPointerClient.x, lastPointerClient.y)
+  wireHover.value = wireHoverFromWorld(clientPointToWorld(lastPointerClient.x, lastPointerClient.y))
 }
 
 function beginViewPan(event: PointerEvent): void {
@@ -807,16 +952,16 @@ function insideStage(client: Point): boolean {
 function clientToWorldPoint(client: Point): Point {
   const rect = stageEl.value?.getBoundingClientRect()
   return {
-    x: snapValue((client.x - (rect?.left ?? 0) - viewport.value.x) / viewport.value.zoom, snapOn.value),
-    y: snapValue((client.y - (rect?.top ?? 0) - viewport.value.y) / viewport.value.zoom, snapOn.value),
+    x: snapValue((client.x - (rect?.left ?? 0) - viewport.value.x) / viewport.value.zoom, activeSnapEnabled(), activeSnapSpacing()),
+    y: snapValue((client.y - (rect?.top ?? 0) - viewport.value.y) / viewport.value.zoom, activeSnapEnabled(), activeSnapSpacing()),
   }
 }
 
 function nextSymbolSlot(): Point {
   const count = doc.value.blocks.length
   return {
-    x: snapValue(80 + (count % 4) * 180, snapOn.value),
-    y: snapValue(80 + Math.floor(count / 4) * 140, snapOn.value),
+    x: snapValue(80 + (count % 4) * 180, activeSnapEnabled(), activeSnapSpacing()),
+    y: snapValue(80 + Math.floor(count / 4) * 140, activeSnapEnabled(), activeSnapSpacing()),
   }
 }
 
@@ -1165,6 +1310,7 @@ function clearUiGestureState(): void {
   if (portDrag) portDrag.cancelled = true
   if (drag) drag.cancelled = true
   if (labelDrag) labelDrag.cancelled = true
+  if (displayTextDrag) displayTextDrag.cancelled = true
   portPreview.value = null
   resizing.value = false
   resizeDrag = null
@@ -1172,9 +1318,13 @@ function clearUiGestureState(): void {
   drag = null
   bendDrag = null
   spanDrag = null
+  freeEndDrag = null
   junctionDrag = null
   labelDrag = null
+  displayTextDrag = null
+  gestureSnap = null
   stopLabelListeners()
+  stopDisplayTextListeners()
 }
 
 /**
@@ -1189,8 +1339,10 @@ function cancelActiveDocumentGesture(message?: string): boolean {
       drag ||
       bendDrag ||
       spanDrag ||
+      freeEndDrag ||
       junctionDrag ||
       labelDrag ||
+      displayTextDrag ||
       wireDraft.value ||
       drawing.value,
   )
@@ -1213,6 +1365,8 @@ function releaseGesture(): void {
 
 function beginDocumentGesture(): void {
   gestureLatch.reset()
+  // Freeze snap enable + spacing for the whole gesture (P4b).
+  gestureSnap = { enabled: prefs.value.snapEnabled, spacing: prefs.value.snapSpacing }
   edits().begin()
 }
 
@@ -1797,7 +1951,7 @@ function dropSymbolPin(): void {
 function addFrom(template: BlockTemplate): void {
   let id = ''
   edits().execute((draft) => {
-    id = placeTemplate(draft, template, snapOn.value)
+    id = placeTemplate(draft, template, activeSnapEnabled(), activeSnapSpacing())
   })
   selected.value = new Set([id])
   refreshHistory()
@@ -1861,7 +2015,7 @@ function onResizeMove(event: PointerEvent): void {
   if (!current || current.cancelled || gestureLatch.isClosing) return
   const world = clientToWorld(event)
   edits().preview((draft) => {
-    const box = resizeBox(current.origin, current.handle, world, snapOn.value)
+    const box = resizeBox(current.origin, current.handle, world, activeSnapEnabled(), activeSnapSpacing())
     setBlockFields(draft, current.blockId, box)
   })
 }
@@ -1986,7 +2140,7 @@ function onDragStop(): void {
       return
     }
     if (!edits().isGesturing) return
-    const recorded = commitDocumentGesture((draft) => snapBlocks(draft, ids, snapOn.value))
+    const recorded = commitDocumentGesture((draft) => snapBlocks(draft, ids, activeSnapEnabled(), activeSnapSpacing()))
     if (!recorded) return
     if (mode === 'duplicate') {
       selected.value = new Set(createdIds.filter((id) => doc.value.blocks.some((block) => block.id === id)))
@@ -2005,7 +2159,7 @@ function onNudge(id: string, dx: number, dy: number): void {
     for (const blockId of ids) {
       const block = draft.blocks.find((item) => item.id === blockId)
       if (!block) continue
-      moveBlock(draft, blockId, snapValue(block.x + dx, snapOn.value), snapValue(block.y + dy, snapOn.value))
+      moveBlock(draft, blockId, snapValue(block.x + dx, activeSnapEnabled(), activeSnapSpacing()), snapValue(block.y + dy, activeSnapEnabled(), activeSnapSpacing()))
     }
   })
   refreshHistory()
@@ -2046,10 +2200,10 @@ function duplicateSelection(): void {
   let created: string[] = []
   edits().execute((draft) => {
     if (group) {
-      const id = duplicateGroup(draft, group.id, GRID, GRID)
+      const id = duplicateGroup(draft, group.id, DUPLICATE_OFFSET, DUPLICATE_OFFSET)
       created = draft.groups.find((item) => item.id === id)?.blockIds ?? []
     } else {
-      created = [...duplicateBlocks(draft, ids, GRID, GRID).values()]
+      created = [...duplicateBlocks(draft, ids, DUPLICATE_OFFSET, DUPLICATE_OFFSET).values()]
     }
   })
   selected.value = new Set(created)
@@ -2075,8 +2229,8 @@ function paste(): void {
     return
   }
   clipPasteCount += 1
-  const dx = GRID * clipPasteCount
-  const dy = GRID * clipPasteCount
+  const dx = DUPLICATE_OFFSET * clipPasteCount
+  const dy = DUPLICATE_OFFSET * clipPasteCount
   let created: string[] = []
   const fragment = clip
   edits().execute((draft) => {
@@ -2262,7 +2416,7 @@ function onPortMove(event: PointerEvent): void {
   const port = doc.value.ports.find((item) => item.id === current.portId)
   const block = port ? doc.value.blocks.find((item) => item.id === port.blockId) : undefined
   if (!block) return
-  const place = borderPlacement(block, clientToWorld(event), snapOn.value)
+  const place = borderPlacement(block, clientToWorld(event), activeSnapEnabled(), activeSnapSpacing())
   edits().preview((draft) => placePort(draft, current.portId, place.side, place.t))
 }
 
@@ -2323,6 +2477,8 @@ function onLabelDown(labelId: string, event: PointerEvent): void {
       edge: label.anchor.edge,
       distance: label.anchor.distance,
       offset: label.anchor.offset,
+      shiftX: label.anchor.shift?.x ?? 0,
+      shiftY: label.anchor.shift?.y ?? 0,
     },
     cancelled: false,
   }
@@ -2370,7 +2526,9 @@ function onLabelEnd(): void {
         label.anchor.kind === 'segment' &&
         (label.anchor.edge !== snapshot.origin.edge ||
           Math.abs(label.anchor.distance - snapshot.origin.distance) > 1e-6 ||
-          Math.abs(label.anchor.offset - snapshot.origin.offset) > 1e-6),
+          Math.abs(label.anchor.offset - snapshot.origin.offset) > 1e-6 ||
+          Math.abs((label.anchor.shift?.x ?? 0) - snapshot.origin.shiftX) > 1e-6 ||
+          Math.abs((label.anchor.shift?.y ?? 0) - snapshot.origin.shiftY) > 1e-6),
     )
     commitDocumentGesture()
     if (changed) status.value = 'Label moved.'
@@ -2382,6 +2540,109 @@ function onLabelCancel(): void {
   cancelActiveDocumentGesture('Label move cancelled.')
 }
 
+function stopDisplayTextListeners(): void {
+  window.removeEventListener('pointermove', onDisplayTextMove)
+  window.removeEventListener('pointerup', onDisplayTextEnd)
+  window.removeEventListener('pointercancel', onDisplayTextCancel)
+}
+
+/**
+ * P3a: drag the multiline display-text group. Reuses label-drag history pattern
+ * (begin/preview/commit, window listeners, Escape cancel). Offset is centre-relative
+ * and not grid-snapped so presentation can be adjusted finely.
+ */
+function onDisplayTextDown(blockId: string, event: PointerEvent): void {
+  if (tool.value !== 'select' || event.button !== 0 || spaceHeld.value) return
+  event.stopPropagation()
+  event.preventDefault()
+  const block = doc.value.blocks.find((item) => item.id === blockId)
+  if (!block || !block.displayText || block.showDisplayText === false) return
+  if (edits().isGesturing) cancelActiveDocumentGesture()
+  displayTextDrag = {
+    blockId,
+    originX: block.displayTextOffset?.x ?? 0,
+    originY: block.displayTextOffset?.y ?? 0,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    cancelled: false,
+  }
+  beginDocumentGesture()
+  window.addEventListener('pointermove', onDisplayTextMove)
+  window.addEventListener('pointerup', onDisplayTextEnd)
+  window.addEventListener('pointercancel', onDisplayTextCancel)
+}
+
+function onDisplayTextMove(event: PointerEvent): void {
+  const current = displayTextDrag
+  if (!current || current.cancelled || gestureLatch.isClosing) return
+  const zoom = viewport.value.zoom > 0 ? viewport.value.zoom : 1
+  const dx = (event.clientX - current.startClientX) / zoom
+  const dy = (event.clientY - current.startClientY) / zoom
+  // Integer diagram units, no GRID snap — fine presentation placement (P3a).
+  const next = { x: Math.round(current.originX + dx), y: Math.round(current.originY + dy) }
+  edits().preview((draft) => {
+    setDisplayTextOffset(draft, current.blockId, next)
+  })
+}
+
+function onDisplayTextEnd(): void {
+  stopDisplayTextListeners()
+  const current = displayTextDrag
+  if (!current || current.cancelled || gestureLatch.isClosing) {
+    displayTextDrag = null
+    return
+  }
+  displayTextDrag = null
+  const lossAtStart = focusLossToken
+  const snapshot = { ...current }
+  requestAnimationFrame(() => {
+    if (gestureLatch.isClosing || lossAtStart !== focusLossToken) {
+      if (edits().isGesturing) cancelActiveDocumentGesture('Display text move cancelled.')
+      return
+    }
+    if (!document.hasFocus() || document.visibilityState === 'hidden') {
+      cancelActiveDocumentGesture('Display text move cancelled.')
+      return
+    }
+    if (!edits().isGesturing) return
+    const block = doc.value.blocks.find((item) => item.id === snapshot.blockId)
+    const ox = block?.displayTextOffset?.x ?? 0
+    const oy = block?.displayTextOffset?.y ?? 0
+    const changed = Math.abs(ox - snapshot.originX) > 1e-6 || Math.abs(oy - snapshot.originY) > 1e-6
+    commitDocumentGesture()
+    if (changed) status.value = 'Display text moved.'
+  })
+}
+
+function onDisplayTextCancel(): void {
+  if (!displayTextDrag || gestureLatch.isClosing) return
+  cancelActiveDocumentGesture('Display text move cancelled.')
+}
+
+function commitDisplayTextOffsetAxis(axis: 'x' | 'y', event: Event): void {
+  const block = oneBlock.value
+  if (!block) return
+  const input = event.target as HTMLInputElement
+  const parsed = Number(input.value)
+  if (!Number.isFinite(parsed)) return
+  const currentX = block.displayTextOffset?.x ?? 0
+  const currentY = block.displayTextOffset?.y ?? 0
+  const next = axis === 'x' ? { x: parsed, y: currentY } : { x: currentX, y: parsed }
+  if (Math.abs(next.x - currentX) < 1e-9 && Math.abs(next.y - currentY) < 1e-9) return
+  edits().execute((draft) => setDisplayTextOffset(draft, block.id, next))
+  refreshHistory()
+  input.blur()
+  status.value = 'Display text position updated.'
+}
+
+function resetDisplayTextPosition(): void {
+  const block = oneBlock.value
+  if (!block?.displayTextOffset) return
+  edits().execute((draft) => setDisplayTextOffset(draft, block.id, null))
+  refreshHistory()
+  status.value = 'Display text centred.'
+}
+
 function commitName(event: Event): void {
   const block = oneBlock.value
   if (!block) return
@@ -2389,6 +2650,130 @@ function commitName(event: Event): void {
   edits().execute((draft) => setBlockFields(draft, block.id, { name }))
   refreshHistory()
   status.value = 'Block updated.'
+}
+
+function commitBlockVisibility(field: 'showName' | 'showPortNames' | 'showDisplayText', event: Event): void {
+  const block = oneBlock.value
+  if (!block) return
+  const input = event.target as HTMLInputElement
+  const visible = input.checked
+  const currently = block[field] !== false
+  if (currently === visible) return
+  edits().execute((draft) => setBlockFields(draft, block.id, { [field]: visible }))
+  refreshHistory()
+  // Leave the checkbox so Ctrl+Z reaches document history (P1-Fix).
+  input.blur()
+  status.value = 'Block presentation updated.'
+}
+
+function commitDisplayText(event: Event): void {
+  const block = oneBlock.value
+  if (!block) return
+  const next = (event.target as HTMLTextAreaElement).value
+  const current = block.displayText ?? ''
+  if (next === current) return
+  edits().execute((draft) => setBlockFields(draft, block.id, { displayText: next }))
+  refreshHistory()
+  status.value = next.length > 0 ? 'Display text updated.' : 'Display text cleared.'
+}
+
+const FILL_PRESETS = ['#cfe8ff', '#d8f0d8', '#fff4cc', '#f0d4d4'] as const
+
+function blockFillPickerValue(block: { style?: { fill?: string; fillTransparent?: boolean } }): string {
+  if (block.style?.fillTransparent) return '#ffffff'
+  return block.style?.fill ?? '#ffffff'
+}
+
+function blockStrokePickerValue(block: { style?: { stroke?: string } }): string {
+  return block.style?.stroke ?? '#243140'
+}
+
+function blockTextPickerValue(block: { style?: { text?: string } }): string {
+  return block.style?.text ?? '#1c2430'
+}
+
+function commitBlockFill(event: Event): void {
+  const block = oneBlock.value
+  if (!block) return
+  const input = event.target as HTMLInputElement
+  const colour = input.value
+  const current = block.style?.fillTransparent ? '' : (block.style?.fill ?? '')
+  if (colour.toLowerCase() === current.toLowerCase() && !block.style?.fillTransparent) return
+  edits().execute((draft) => setBlockStyle(draft, block.id, { fill: colour, fillTransparent: false }))
+  refreshHistory()
+  input.blur()
+  status.value = 'Fill colour updated.'
+}
+
+function commitBlockFillTransparent(event: Event): void {
+  const block = oneBlock.value
+  if (!block) return
+  const input = event.target as HTMLInputElement
+  const transparent = input.checked
+  const currently = block.style?.fillTransparent === true
+  if (currently === transparent) return
+  edits().execute((draft) => setBlockStyle(draft, block.id, { fillTransparent: transparent }))
+  refreshHistory()
+  input.blur()
+  status.value = transparent ? 'Fill set to transparent.' : 'Transparent fill cleared.'
+}
+
+function applyFillPreset(colour: string): void {
+  const block = oneBlock.value
+  if (!block) return
+  if (block.style?.fill?.toLowerCase() === colour.toLowerCase() && !block.style.fillTransparent) return
+  edits().execute((draft) => setBlockStyle(draft, block.id, { fill: colour, fillTransparent: false }))
+  refreshHistory()
+  status.value = 'Fill colour updated.'
+}
+
+function commitBlockStroke(event: Event): void {
+  const block = oneBlock.value
+  if (!block) return
+  const input = event.target as HTMLInputElement
+  const colour = input.value
+  if ((block.style?.stroke ?? '#243140').toLowerCase() === colour.toLowerCase()) return
+  edits().execute((draft) => setBlockStyle(draft, block.id, { stroke: colour }))
+  refreshHistory()
+  input.blur()
+  status.value = 'Border colour updated.'
+}
+
+function commitBlockTextColour(event: Event): void {
+  const block = oneBlock.value
+  if (!block) return
+  const input = event.target as HTMLInputElement
+  const colour = input.value
+  if ((block.style?.text ?? '#1c2430').toLowerCase() === colour.toLowerCase()) return
+  edits().execute((draft) => setBlockStyle(draft, block.id, { text: colour }))
+  refreshHistory()
+  input.blur()
+  status.value = 'Text colour updated.'
+}
+
+function resetBlockAppearance(): void {
+  const block = oneBlock.value
+  if (!block || !block.style) return
+  edits().execute((draft) => resetBlockStyle(draft, block.id))
+  refreshHistory()
+  status.value = 'Appearance reset.'
+}
+
+function commitSegmentLabelsVisible(event: Event): void {
+  const segmentId = selectedSegment.value
+  if (!segmentId) return
+  const input = event.target as HTMLInputElement
+  const visible = input.checked
+  const labels = nameLabelsForSegment(segmentId)
+  if (labels.length === 0) return
+  const currently = labels.some((label) => label.visible !== false)
+  if (currently === visible) return
+  edits().execute((draft) => {
+    setSegmentLabelsVisible(draft, segmentId, visible)
+  })
+  refreshHistory()
+  input.blur()
+  status.value = visible ? 'Wire label shown.' : 'Wire label hidden.'
 }
 
 function commitNumber(field: 'x' | 'y' | 'width' | 'height', event: Event): void {
@@ -2428,7 +2813,7 @@ function onStagePointerDown(event: PointerEvent): void {
   if (!allowMarquee(tool.value, spaceHeld.value, event.button) || marquee.value) return
   const target = event.target
   if (!(target instanceof Element)) return
-  if (target.closest('.vue-flow__node, .bend, .ink, .hit, .junction, .label-group, .label-hit, .props, button, input')) return
+  if (target.closest('.vue-flow__node, .bend, .bend-hit, .free-end, .free-end-hit, .ink, .hit, .junction, .label-group, .label-hit, .props, button, input')) return
   const start = clientToWorld(event)
   marquee.value = { x: start.x, y: start.y, width: 0, height: 0, shift: event.shiftKey }
 }
@@ -2495,7 +2880,8 @@ function acceptWire(commit: { points: Point[]; start: Parameters<typeof commitWi
 function finishWireStubAt(world: Point): void {
   const draft = wireDraft.value
   if (!draft) return
-  acceptWire(finishFree(draft, world, { fromBeforeLastFreeBend: true }))
+  // P4a: free tip snaps; connectivity hits never reach this path.
+  acceptWire(finishFree(draft, gridSnapPoint(world), { fromBeforeLastFreeBend: true }))
 }
 
 /** S5a.1: pop one drawing step, or cancel when only the start anchor remains. */
@@ -2537,7 +2923,7 @@ function onPointerDown(event: PointerEvent): void {
   }
   if (event.button !== 0) return
   if (tool.value === 'port') {
-    const hit = nearestBlockBorder(doc.value.blocks, clientToWorld(event), snapOn.value, portReach())
+    const hit = nearestBlockBorder(doc.value.blocks, clientToWorld(event), activeSnapEnabled(), portReach(), activeSnapSpacing())
     portPreview.value = hit
     if (!hit) {
       status.value = 'Choose a point on a block edge.'
@@ -2548,7 +2934,8 @@ function onPointerDown(event: PointerEvent): void {
   }
   if (tool.value === 'wire') {
     const world = clientToWorld(event)
-    const hit = snapTarget(doc.value, world)
+    // Connectivity hit-test first; grid snap only free points (P4a).
+    const hit = snapFreeHit(snapTarget(doc.value, world))
     // D5c.5 / S5a: double-press on free space finishes an open stub (Port→free).
     // PointerEvent.detail is always 0 on pointerdown — use client-space timing instead.
     if (wireDraft.value && hit.kind === 'free') {
@@ -2556,7 +2943,7 @@ function onPointerDown(event: PointerEvent): void {
       const doubled = isDoublePress(wireFreePress, stamp) || event.detail >= 2
       wireFreePress = stamp
       if (doubled) {
-        finishWireStubAt(world)
+        finishWireStubAt(hit.point)
         return
       }
     } else {
@@ -2582,10 +2969,10 @@ function onPointerMove(event: PointerEvent): void {
   if (moveViewPan(event)) return
   const point = clientToWorld(event)
   if (tool.value === 'port') {
-    portPreview.value = nearestBlockBorder(doc.value.blocks, point, snapOn.value, portReach())
+    portPreview.value = nearestBlockBorder(doc.value.blocks, point, activeSnapEnabled(), portReach(), activeSnapSpacing())
     return
   }
-  if (tool.value === 'wire') wireHover.value = point
+  if (tool.value === 'wire') wireHover.value = wireHoverFromWorld(point)
   if (drawing.value) {
     drawing.value = [...drawing.value, { ...point, pressure: event.pressure || 0.5 }]
     return
@@ -2593,9 +2980,19 @@ function onPointerMove(event: PointerEvent): void {
   if (gestureLatch.isClosing) return
   if (junctionDrag) {
     const dragState = junctionDrag
-    edits().preview((draft) =>
-      moveJunction(draft, dragState.id, dragState.originX + point.x - dragState.pointer.x, dragState.originY + point.y - dragState.pointer.y),
-    )
+    // P4a: snap during preview so release does not jump.
+    const x = snapValue(dragState.originX + point.x - dragState.pointer.x, activeSnapEnabled(), activeSnapSpacing())
+    const y = snapValue(dragState.originY + point.y - dragState.pointer.y, activeSnapEnabled(), activeSnapSpacing())
+    edits().preview((draft) => moveJunction(draft, dragState.id, x, y))
+    return
+  }
+  if (freeEndDrag) {
+    const dragState = freeEndDrag
+    const at = {
+      x: snapValue(point.x, activeSnapEnabled(), activeSnapSpacing()),
+      y: snapValue(point.y, activeSnapEnabled(), activeSnapSpacing()),
+    }
+    edits().preview((draft) => placeFreeEnd(draft, dragState.segmentId, dragState.which, at))
     return
   }
   if (spanDrag) {
@@ -2612,8 +3009,14 @@ function onPointerMove(event: PointerEvent): void {
     if (Math.hypot(dx, dy) < 2) return
     dragState.axis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y'
   }
-  if (dragState.axis === 'x') edits().preview((draft) => placeSpan(draft, dragState.segmentId, dragState.xEdge, dragState.originX + dx))
-  else edits().preview((draft) => placeSpan(draft, dragState.segmentId, dragState.yEdge, dragState.originY + dy))
+  // P4a/P4b: preview-snap bend axis; commit keeps preview geometry.
+  if (dragState.axis === 'x') {
+    const coord = snapValue(dragState.originX + dx, activeSnapEnabled(), activeSnapSpacing())
+    edits().preview((draft) => placeSpan(draft, dragState.segmentId, dragState.xEdge, coord))
+  } else {
+    const coord = snapValue(dragState.originY + dy, activeSnapEnabled(), activeSnapSpacing())
+    edits().preview((draft) => placeSpan(draft, dragState.segmentId, dragState.yEdge, coord))
+  }
 }
 
 function onPointerUp(event: PointerEvent): void {
@@ -2641,6 +3044,31 @@ function onPointerUp(event: PointerEvent): void {
     status.value = 'Junction moved.'
     return
   }
+  if (freeEndDrag) {
+    if (gestureLatch.isClosing) {
+      freeEndDrag = null
+      return
+    }
+    const dragState = freeEndDrag
+    freeEndDrag = null
+    commitDocumentGesture((draft) => {
+      if (!activeSnapEnabled()) return
+      const spacing = activeSnapSpacing()
+      const segment = draft.segments.find((item) => item.id === dragState.segmentId)
+      if (!segment) return
+      const tip =
+        dragState.which === 'end'
+          ? segment.points[segment.points.length - 1]
+          : segment.points[0]
+      if (!tip) return
+      placeFreeEnd(draft, dragState.segmentId, dragState.which, {
+        x: snapValue(tip.x, true, spacing),
+        y: snapValue(tip.y, true, spacing),
+      })
+    })
+    status.value = 'Free end moved.'
+    return
+  }
   if (spanDrag) {
     if (gestureLatch.isClosing) {
       spanDrag = null
@@ -2649,11 +3077,12 @@ function onPointerUp(event: PointerEvent): void {
     const dragState = spanDrag
     spanDrag = null
     commitDocumentGesture((draft) => {
-      if (!snapOn.value) return
+      if (!activeSnapEnabled()) return
+      const spacing = activeSnapSpacing()
       const segment = draft.segments.find((item) => item.id === dragState.segmentId)
       const point = segment?.points[dragState.edge]
       if (!point) return
-      const coord = dragState.horizontal ? snapValue(point.y, true) : snapValue(point.x, true)
+      const coord = dragState.horizontal ? snapValue(point.y, true, spacing) : snapValue(point.x, true, spacing)
       placeSpan(draft, dragState.segmentId, dragState.edge, coord)
     })
     status.value = 'Segment moved.'
@@ -2676,7 +3105,7 @@ function onPointerCancel(event: PointerEvent): void {
     status.value = 'Stroke cancelled.'
     return
   }
-  if (bendDrag || spanDrag || junctionDrag || edits().isGesturing) {
+  if (bendDrag || spanDrag || freeEndDrag || junctionDrag || edits().isGesturing) {
     cancelActiveDocumentGesture('Gesture cancelled.')
   }
 }
@@ -2690,7 +3119,7 @@ function onLostPointerCapture(): void {
   // Expected after a normal commit that released capture — latch ignores duplicates.
   // Do not cancel on isGesturing alone: deferred commit clears UI drag state first (label/resize/port).
   if (gestureLatch.isClosing) return
-  if (bendDrag || spanDrag || junctionDrag || resizeDrag || portDrag || labelDrag) {
+  if (bendDrag || spanDrag || freeEndDrag || junctionDrag || resizeDrag || portDrag || labelDrag || displayTextDrag) {
     cancelActiveDocumentGesture('Gesture cancelled.')
   }
 }
@@ -2744,6 +3173,16 @@ function onSpanDown(segmentId: string, event: PointerEvent): void {
     return
   }
   const hit = snapTarget(doc.value, world)
+  // S5b: free-end hit must not fall through to span edge 0 (port dogleg / jump).
+  if (hit.kind === 'end' && hit.segmentId === segmentId) {
+    startFreeEnd(segmentId, hit.which, event)
+    return
+  }
+  const freeWhich = freeEndNear(segment, world, Math.max(10, 14 / Math.max(viewport.value.zoom, 0.25)))
+  if (freeWhich) {
+    startFreeEnd(segmentId, freeWhich, event)
+    return
+  }
   const edge = hit.kind === 'segment' && hit.segmentId === segmentId ? hit.edge : 0
   const from = segment.points[edge]
   const to = segment.points[edge + 1]
@@ -2755,6 +3194,34 @@ function onSpanDown(segmentId: string, event: PointerEvent): void {
   spanDrag = { segmentId, edge, horizontal, origin: horizontal ? from.y : from.x, pointer: world }
   if (edits().isGesturing) cancelActiveDocumentGesture()
   beginDocumentGesture()
+  ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
+}
+
+function freeEndNear(segment: { start: { kind: string; x?: number; y?: number }; end: { kind: string; x?: number; y?: number } }, world: Point, reach: number): 'start' | 'end' | null {
+  let best: { which: 'start' | 'end'; dist: number } | null = null
+  if (segment.start.kind === 'free' && typeof segment.start.x === 'number' && typeof segment.start.y === 'number') {
+    const dist = Math.hypot(segment.start.x - world.x, segment.start.y - world.y)
+    if (dist <= reach) best = { which: 'start', dist }
+  }
+  if (segment.end.kind === 'free' && typeof segment.end.x === 'number' && typeof segment.end.y === 'number') {
+    const dist = Math.hypot(segment.end.x - world.x, segment.end.y - world.y)
+    if (dist <= reach && (!best || dist < best.dist)) best = { which: 'end', dist }
+  }
+  return best?.which ?? null
+}
+
+function startFreeEnd(segmentId: string, which: 'start' | 'end', event: PointerEvent): void {
+  event.stopPropagation()
+  selected.value = new Set()
+  selectedSegment.value = segmentId
+  freeEndDrag = { segmentId, which }
+  if (edits().isGesturing) cancelActiveDocumentGesture()
+  beginDocumentGesture()
+  const at = {
+    x: snapValue(clientToWorld(event).x, activeSnapEnabled(), activeSnapSpacing()),
+    y: snapValue(clientToWorld(event).y, activeSnapEnabled(), activeSnapSpacing()),
+  }
+  edits().preview((draft) => placeFreeEnd(draft, segmentId, which, at))
   ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
 }
 
@@ -2838,10 +3305,53 @@ function mergeSelectedByName(): void {
 function addLabel(): void {
   const segmentId = selectedSegment.value
   if (!segmentId) return
+  if (nameLabelsForSegment(segmentId).length > 0) {
+    status.value = 'This segment already has a name label.'
+    return
+  }
   edits().execute((draft) => addNameLabel(draft, segmentId, selectedEdge.value, 16, 14))
   refreshHistory()
-  status.value = 'Label added. It shows the net name.'
+  status.value = 'Name label added.'
 }
+
+/** P5b: delete the visual name-label instance(s) on the selected segment. Net unchanged. */
+function removeSelectedNameLabel(): void {
+  const segmentId = selectedSegment.value
+  if (!segmentId) return
+  if (nameLabelsForSegment(segmentId).length === 0) return
+  let removed = false
+  edits().execute((draft) => {
+    removed = removeSegmentNameLabels(draft, segmentId)
+  })
+  refreshHistory()
+  status.value = removed ? 'Name label removed.' : 'No name label to remove.'
+}
+
+/** P5a: clear free shift; restore default normal offset on the current attachment. */
+function resetSelectedLabelPosition(): void {
+  const segmentId = selectedSegment.value
+  if (!segmentId) return
+  const labels = nameLabelsForSegment(segmentId)
+  if (labels.length === 0) return
+  let changed = false
+  edits().execute((draft) => {
+    for (const label of labels) {
+      if (resetLabelPosition(draft, label.id)) changed = true
+    }
+  })
+  refreshHistory()
+  status.value = changed ? 'Label position reset.' : 'Label already at default position.'
+}
+
+const selectedSegmentHasLabelShift = computed(() => {
+  const segmentId = selectedSegment.value
+  if (!segmentId) return false
+  return nameLabelsForSegment(segmentId).some((label) => {
+    if (label.anchor.kind !== 'segment') return false
+    if (label.anchor.shift) return true
+    return label.anchor.offset !== 14
+  })
+})
 
 function beginMerge(): void {
   const net = selectedNet.value
@@ -2894,7 +3404,7 @@ function confirmPreview(): void {
 
 function undo(): void {
   symbolEditor.value?.abandonGesture()
-  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag || labelDrag) {
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || freeEndDrag || junctionDrag || labelDrag || displayTextDrag) {
     // First Undo during a gesture only cancels — no history step.
     cancelActiveDocumentGesture('Gesture cancelled.')
     preview.value = null
@@ -2913,7 +3423,7 @@ function undo(): void {
 
 function redo(): void {
   symbolEditor.value?.abandonGesture()
-  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag || labelDrag) {
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || freeEndDrag || junctionDrag || labelDrag || displayTextDrag) {
     // D5b.4: redo refuses while gesturing; history and gesture stay as they are.
     void actionForRedoWhileGesturing()
     status.value = 'Finish or cancel the drag before redo.'
@@ -2941,7 +3451,7 @@ function download(filename: string, text: string): void {
 
 async function save(): Promise<void> {
   // D5b.4: cancel any open gesture so a preview is never marked saved.
-  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag || labelDrag) {
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || freeEndDrag || junctionDrag || labelDrag || displayTextDrag) {
     cancelActiveDocumentGesture()
   }
   const current = project.value
@@ -3046,14 +3556,19 @@ function checkRoundTrip(): void {
   status.value = roundTrip()
 }
 
+/** Text fields only — checkboxes must not block document Undo (P1-Fix). */
 function typingTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+  return isTextEditingTarget(target)
 }
 
 function onKey(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     event.preventDefault()
     // Overlays / symbol polygon draft consume Esc before the Select stack (D5c.2).
+    if (preferencesOpen.value) {
+      preferencesOpen.value = false
+      return
+    }
     if (openAsBlock.value || contextMenu.value) {
       dismissOpenAs()
       return
@@ -3080,8 +3595,10 @@ function onKey(event: KeyboardEvent): void {
         drag ||
         bendDrag ||
         spanDrag ||
+        freeEndDrag ||
         junctionDrag ||
-        labelDrag,
+        labelDrag ||
+        displayTextDrag,
     )
     const hasSelection =
       selected.value.size > 0 ||
@@ -3098,14 +3615,17 @@ function onKey(event: KeyboardEvent): void {
       const wasResize = resizeDrag !== null
       const wasPort = portDrag !== null
       const wasLabel = labelDrag !== null
+      const wasDisplayText = displayTextDrag !== null
       cancelActiveDocumentGesture(
-        wasLabel
-          ? 'Label move cancelled.'
-          : wasPort
-            ? 'Port move cancelled.'
-            : wasResize
-              ? 'Resize cancelled.'
-              : 'Cancelled.',
+        wasDisplayText
+          ? 'Display text move cancelled.'
+          : wasLabel
+            ? 'Label move cancelled.'
+            : wasPort
+              ? 'Port move cancelled.'
+              : wasResize
+                ? 'Resize cancelled.'
+                : 'Cancelled.',
       )
       return
     }
@@ -3130,6 +3650,7 @@ function onKey(event: KeyboardEvent): void {
   if (event.key === 'Enter' && wireDraft.value) {
     event.preventDefault()
     wireFreePress = null
+    // wireHover is already free-snapped / target-exact via wireHoverFromWorld (P4a).
     acceptWire(finishFree(wireDraft.value, wireHover.value))
     return
   }
@@ -3237,12 +3758,28 @@ function bends(points: Point[]): Point[] {
   return points.slice(1, -1)
 }
 
+/** Convert constant screen pixels to world units under the current viewport scale (P0). */
+function chromeWorld(screenPx: number): number {
+  const zoom = viewport.value.zoom > 0 ? viewport.value.zoom : 1
+  return screenPx / zoom
+}
+
+const bendHandleSize = computed(() => chromeWorld(6))
+const bendHitR = computed(() => chromeWorld(8))
+const freeEndTipR = computed(() => chromeWorld(2.5))
+const freeEndHandleR = computed(() => chromeWorld(5))
+const freeEndHitR = computed(() => chromeWorld(9))
+
+function wireSelected(wireId: string): boolean {
+  return wireId === selectedSegment.value
+}
+
 function onWindowBlur(): void {
   focusLossToken += 1
   spaceHeld.value = false
   spacePanMoved = false
   viewPan = null
-  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || junctionDrag || labelDrag) {
+  if (edits().isGesturing || resizeDrag || portDrag || drag || bendDrag || spanDrag || freeEndDrag || junctionDrag || labelDrag || displayTextDrag) {
     cancelActiveDocumentGesture('Gesture cancelled.')
   }
 }
@@ -3404,8 +3941,53 @@ defineExpose({ roundTrip, doc })
         <button type="button" class="tool-btn" :disabled="selected.size === 0 && !selectedPort && !selectedStroke && !selectedSegment" title="Delete — Del" aria-label="Delete" @click="removeSelection">
           <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h10M6 5V3.5h4V5m-.5 0v8h-5V5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
         </button>
-        <button type="button" class="tool-btn" :class="{ on: snapOn }" title="Snap" aria-label="Snap" :aria-pressed="snapOn" @click="snapOn = !snapOn">
+        <button
+          type="button"
+          class="tool-btn"
+          data-show-grid
+          :class="{ on: showGrid }"
+          :title="showGrid ? 'Hide grid' : 'Show grid'"
+          :aria-label="showGrid ? 'Hide grid' : 'Show grid'"
+          :aria-pressed="showGrid"
+          @click="showGrid = !showGrid"
+        >
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="2.5" y="2.5" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.2" />
+            <path d="M2.5 6.5h11M2.5 9.5h11M6.5 2.5v11M9.5 2.5v11" fill="none" stroke="currentColor" stroke-width="1.1" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="tool-btn"
+          data-snap
+          :class="{ on: snapOn }"
+          :title="snapOn ? 'Disable snapping' : 'Enable snapping'"
+          :aria-label="snapOn ? 'Disable snapping' : 'Enable snapping'"
+          :aria-pressed="snapOn"
+          @click="snapOn = !snapOn"
+        >
           <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zm9 0h3v3h-3zM2 11h3v3H2zm9 0h3v3h-3zM5 3.5h6M3.5 5v6M12.5 5v6M5 12.5h6" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+        <button
+          type="button"
+          class="tool-btn"
+          data-preferences
+          :class="{ on: preferencesOpen }"
+          title="Editor preferences"
+          aria-label="Editor preferences"
+          :aria-pressed="preferencesOpen"
+          @click="preferencesOpen = !preferencesOpen"
+        >
+          <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" stroke-width="1.3" />
+            <path
+              d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.1 3.1l1.1 1.1M11.8 11.8l1.1 1.1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.2"
+              stroke-linecap="round"
+            />
+          </svg>
         </button>
         <button type="button" class="tool-btn" title="Convert" aria-label="Convert" @click="convertSelected">
           <svg class="tool-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5c2-3 8-3 10 0M13 3v3h-3M13 11c-2 3-8 3-10 0M3 13v-3h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -3548,6 +4130,13 @@ defineExpose({ roundTrip, doc })
       @contextmenu="onStageContextMenu"
       @wheel.capture="onStageWheel"
     >
+      <!-- P0b/P4: grid under Vue Flow; visibility independent of snapOn -->
+      <svg class="world-grid" aria-hidden="true" :style="worldStyle">
+        <g v-if="showGrid" class="grid">
+          <line v-for="value in gridLines" :key="`x-${value}`" :x1="value" y1="0" :x2="value" y2="1600" />
+          <line v-for="value in gridLines" :key="`y-${value}`" x1="0" :y1="value" x2="1600" :y2="value" />
+        </g>
+      </svg>
       <VueFlow
         :nodes="flowNodes"
         :edges="[]"
@@ -3588,6 +4177,13 @@ defineExpose({ roundTrip, doc })
             :symbol-height="nodeProps.data.symbolHeight"
             :ports-live="nodeProps.data.portsLive"
             :selected-port="nodeProps.data.selectedPort"
+            :show-name="nodeProps.data.showName"
+            :show-port-names="nodeProps.data.showPortNames"
+            :display-text="nodeProps.data.displayText"
+            :show-display-text="nodeProps.data.showDisplayText"
+            :display-text-offset-x="nodeProps.data.displayTextOffsetX"
+            :display-text-offset-y="nodeProps.data.displayTextOffsetY"
+            :appearance="nodeProps.data.appearance"
             @nudge="onNudge"
             @context="onBlockContext"
             @resize-start="onResizeStart"
@@ -3595,6 +4191,7 @@ defineExpose({ roundTrip, doc })
             @resize-end="onResizeEnd"
             @resize-cancel="onResizeCancel"
             @port-down="onPortDown"
+            @display-text-down="onDisplayTextDown"
           />
         </template>
         <FlowBridge ref="flowBridge" :port-count="doc.ports.length" :ids="doc.blocks.map((block) => block.id)" :fit-token="fitToken" :pin-key="pinKey" :zoom-token="zoomToken" :frame="frame" @viewport="onViewport" />
@@ -3610,10 +4207,6 @@ defineExpose({ roundTrip, doc })
         @lostpointercapture="onLostPointerCapture"
         @dblclick="onWorldDblClick"
       >
-        <g v-if="snapOn" class="grid">
-          <line v-for="value in gridLines" :key="`x-${value}`" :x1="value" y1="0" :x2="value" y2="1600" />
-          <line v-for="value in gridLines" :key="`y-${value}`" x1="0" :y1="value" x2="1600" :y2="value" />
-        </g>
         <polyline
           v-for="wire in wires"
           :key="`${wire.id}-hit`"
@@ -3635,15 +4228,56 @@ defineExpose({ roundTrip, doc })
           @pointerdown="onJunctionDown(junction.id, $event)"
         />
         <template v-for="wire in wires" :key="`${wire.id}-handles`">
-          <circle
-            v-for="(bend, index) in bends(wire.points)"
-            :key="`${wire.id}-${index}`"
-            class="bend"
-            :cx="bend.x"
-            :cy="bend.y"
-            r="6"
-            @pointerdown="startBend(wire.id, index + 1, $event)"
-          />
+          <template v-if="wireSelected(wire.id)">
+            <g v-for="(bend, index) in bends(wire.points)" :key="`${wire.id}-bend-${index}`" class="bend-group">
+              <circle
+                class="bend-hit"
+                :cx="bend.x"
+                :cy="bend.y"
+                :r="bendHitR"
+                @pointerdown="startBend(wire.id, index + 1, $event)"
+              />
+              <rect
+                class="bend"
+                :x="bend.x - bendHandleSize / 2"
+                :y="bend.y - bendHandleSize / 2"
+                :width="bendHandleSize"
+                :height="bendHandleSize"
+              />
+            </g>
+          </template>
+          <g v-if="wire.start.kind === 'free'" class="free-end-group">
+            <circle
+              class="free-end-hit"
+              :cx="wire.start.x"
+              :cy="wire.start.y"
+              :r="freeEndHitR"
+              @pointerdown="startFreeEnd(wire.id, 'start', $event)"
+            />
+            <circle
+              class="free-end"
+              :class="{ tip: !wireSelected(wire.id) }"
+              :cx="wire.start.x"
+              :cy="wire.start.y"
+              :r="wireSelected(wire.id) ? freeEndHandleR : freeEndTipR"
+            />
+          </g>
+          <g v-if="wire.end.kind === 'free'" class="free-end-group">
+            <circle
+              class="free-end-hit"
+              :cx="wire.end.x"
+              :cy="wire.end.y"
+              :r="freeEndHitR"
+              @pointerdown="startFreeEnd(wire.id, 'end', $event)"
+            />
+            <circle
+              class="free-end"
+              :class="{ tip: !wireSelected(wire.id) }"
+              :cx="wire.end.x"
+              :cy="wire.end.y"
+              :r="wireSelected(wire.id) ? freeEndHandleR : freeEndTipR"
+            />
+          </g>
         </template>
         <path
           v-for="stroke in doc.strokes"
@@ -3658,7 +4292,7 @@ defineExpose({ roundTrip, doc })
         <g
           v-for="label in labels"
           :key="label.id"
-          v-show="label.at"
+          v-show="label.at && label.visible"
           class="label-group"
           @pointerdown="onLabelDown(label.id, $event)"
         >
@@ -3686,7 +4320,23 @@ defineExpose({ roundTrip, doc })
           class="hint"
           data-wire-name-collision
         >Name "{{ selectedNameCollision.name }}" is used {{ selectedNameCollision.count }} times on this sheet. Rename-join or merge to make one net.</p>
-        <button type="button" @click="addLabel">Add label</button>
+        <p class="hint">Name label</p>
+        <template v-if="selectedSegmentHasNameLabel">
+          <label class="check">
+            <input data-wire-show-label type="checkbox" :checked="selectedSegmentLabelsVisible" @change="commitSegmentLabelsVisible" />
+            Show label
+          </label>
+          <button type="button" data-remove-name-label @click="removeSelectedNameLabel">Remove name label</button>
+          <button
+            type="button"
+            data-reset-label-position
+            :disabled="!selectedSegmentHasLabelShift"
+            @click="resetSelectedLabelPosition"
+          >
+            Reset label position
+          </button>
+        </template>
+        <button v-else type="button" data-add-name-label @click="addLabel">Add name label</button>
         <button type="button" @click="beginMerge">Merge</button>
         <button
           v-if="selectedNameCollision"
@@ -3786,7 +4436,102 @@ defineExpose({ roundTrip, doc })
         <p class="hint">{{ activePort.placed ? 'This instance keeps its own position.' : 'The symbol pin supplies the position.' }}</p>
       </template>
       <template v-else-if="oneBlock">
-        <label>Name <input :value="oneBlock.name" @change="commitName" /></label>
+        <label>Name <input :value="oneBlock.name" data-block-name @change="commitName" /></label>
+        <label class="check">
+          <input data-block-show-name type="checkbox" :checked="oneBlock.showName !== false" @change="commitBlockVisibility('showName', $event)" />
+          Show instance name
+        </label>
+        <label>
+          Display text
+          <textarea
+            data-block-display-text
+            rows="3"
+            :value="oneBlock.displayText ?? ''"
+            @change="commitDisplayText"
+          />
+        </label>
+        <label class="check">
+          <input data-block-show-display type="checkbox" :checked="oneBlock.showDisplayText !== false" @change="commitBlockVisibility('showDisplayText', $event)" />
+          Show display text
+        </label>
+        <label>
+          Text offset X
+          <input
+            data-block-display-offset-x
+            type="number"
+            step="1"
+            :value="oneBlock.displayTextOffset?.x ?? 0"
+            :disabled="!oneBlock.displayText || oneBlock.showDisplayText === false"
+            @change="commitDisplayTextOffsetAxis('x', $event)"
+          />
+        </label>
+        <label>
+          Text offset Y
+          <input
+            data-block-display-offset-y
+            type="number"
+            step="1"
+            :value="oneBlock.displayTextOffset?.y ?? 0"
+            :disabled="!oneBlock.displayText || oneBlock.showDisplayText === false"
+            @change="commitDisplayTextOffsetAxis('y', $event)"
+          />
+        </label>
+        <button
+          type="button"
+          data-block-reset-display-position
+          :disabled="!oneBlock.displayTextOffset"
+          @click="resetDisplayTextPosition"
+        >
+          Reset text position
+        </button>
+        <p class="hint">Drag display text on a selected block to reposition; reset restores centre.</p>
+        <label class="check">
+          <input data-block-show-ports type="checkbox" :checked="oneBlock.showPortNames !== false" @change="commitBlockVisibility('showPortNames', $event)" />
+          Show port names
+        </label>
+        <p class="hint">Appearance</p>
+        <label class="colour">
+          Fill colour
+          <input
+            data-block-fill
+            type="color"
+            :value="blockFillPickerValue(oneBlock)"
+            :disabled="oneBlock.style?.fillTransparent === true"
+            @change="commitBlockFill"
+          />
+        </label>
+        <div class="colour-presets" role="group" aria-label="Fill presets">
+          <button
+            v-for="preset in FILL_PRESETS"
+            :key="preset"
+            type="button"
+            class="colour-swatch"
+            :style="{ background: preset }"
+            :title="preset"
+            :data-fill-preset="preset"
+            @click="applyFillPreset(preset)"
+          />
+        </div>
+        <label class="check">
+          <input
+            data-block-fill-transparent
+            type="checkbox"
+            :checked="oneBlock.style?.fillTransparent === true"
+            @change="commitBlockFillTransparent"
+          />
+          Transparent fill
+        </label>
+        <label class="colour">
+          Border colour
+          <input data-block-stroke type="color" :value="blockStrokePickerValue(oneBlock)" @change="commitBlockStroke" />
+        </label>
+        <label class="colour">
+          Text colour
+          <input data-block-text-colour type="color" :value="blockTextPickerValue(oneBlock)" @change="commitBlockTextColour" />
+        </label>
+        <button type="button" data-block-reset-appearance :disabled="!oneBlock.style" @click="resetBlockAppearance">
+          Reset appearance
+        </button>
         <label>X <input :value="oneBlock.x" type="number" @change="commitNumber('x', $event)" /></label>
         <label>Y <input :value="oneBlock.y" type="number" @change="commitNumber('y', $event)" /></label>
         <label>Width <input :value="oneBlock.width" type="number" @change="commitNumber('width', $event)" /></label>
@@ -3860,6 +4605,85 @@ defineExpose({ roundTrip, doc })
         <button type="button" data-open-as-vhdl disabled>VHDL text</button>
         <button type="button" data-open-as-sv disabled>SystemVerilog text</button>
         <button type="button" data-open-as-cancel @click="dismissOpenAs">Cancel</button>
+      </div>
+    </div>
+    <div v-if="preferencesOpen" class="menu-back" data-preferences-dialog @pointerdown.self="preferencesOpen = false">
+      <div class="prefs-dialog open-as" role="dialog" aria-label="Editor preferences" @pointerdown.stop>
+        <p class="benchgen-title">Editor Preferences</p>
+        <p class="hint">Grid &amp; Snapping</p>
+        <label class="check">
+          <input
+            data-prefs-grid-visible
+            type="checkbox"
+            :checked="prefs.gridVisible"
+            @change="commitPrefsFlag('gridVisible', $event)"
+          />
+          Show grid
+        </label>
+        <label class="benchgen-field">
+          Grid spacing
+          <input
+            data-prefs-grid-spacing
+            type="number"
+            min="5"
+            max="200"
+            step="1"
+            :value="prefs.gridSpacing"
+            @change="commitSpacingField('gridSpacing', $event)"
+          />
+        </label>
+        <div class="prefs-presets" role="group" aria-label="Grid spacing presets">
+          <button
+            v-for="preset in SPACING_PRESETS"
+            :key="`grid-${preset}`"
+            type="button"
+            class="prefs-preset"
+            :class="{ on: prefs.gridSpacing === preset }"
+            :data-prefs-grid-preset="preset"
+            @click="patchPrefs({ gridSpacing: preset })"
+          >
+            {{ preset }}
+          </button>
+        </div>
+        <label class="check">
+          <input
+            data-prefs-snap-enabled
+            type="checkbox"
+            :checked="prefs.snapEnabled"
+            @change="commitPrefsFlag('snapEnabled', $event)"
+          />
+          Snap to grid
+        </label>
+        <label class="benchgen-field">
+          Snap spacing
+          <input
+            data-prefs-snap-spacing
+            type="number"
+            min="5"
+            max="200"
+            step="1"
+            :value="prefs.snapSpacing"
+            @change="commitSpacingField('snapSpacing', $event)"
+          />
+        </label>
+        <div class="prefs-presets" role="group" aria-label="Snap spacing presets">
+          <button
+            v-for="preset in SPACING_PRESETS"
+            :key="`snap-${preset}`"
+            type="button"
+            class="prefs-preset"
+            :class="{ on: prefs.snapSpacing === preset }"
+            :data-prefs-snap-preset="preset"
+            @click="patchPrefs({ snapSpacing: preset })"
+          >
+            {{ preset }}
+          </button>
+        </div>
+        <p class="hint" data-prefs-summary>Grid: {{ prefs.gridSpacing }} · Snap: {{ prefs.snapSpacing }}</p>
+        <div class="benchgen-actions">
+          <button type="button" data-prefs-reset @click="resetPrefsToDefaults">Reset to defaults</button>
+          <button type="button" data-prefs-close @click="preferencesOpen = false">Close</button>
+        </div>
       </div>
     </div>
     <div v-if="benchGenOpen" class="menu-back" data-benchgen-dialog @pointerdown.self="dismissSyntheticBenchDialog">

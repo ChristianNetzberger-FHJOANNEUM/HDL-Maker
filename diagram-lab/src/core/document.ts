@@ -7,6 +7,21 @@ export type Point = { x: number; y: number }
 /** A corner the automatic router must keep. Absent means the point may move. */
 export type Waypoint = Point & { fixed?: boolean }
 
+/**
+ * Optional instance presentation overrides (P3). Absent object ⇒ application defaults.
+ * `fillTransparent: true` is an explicit no-fill, distinct from omitting `fill`.
+ */
+export type BlockStyle = {
+  /** CSS colour for closed body shapes / plain-block background. */
+  fill?: string
+  /** When true, body has no fill (grid may show through). */
+  fillTransparent?: boolean
+  /** CSS colour for plain-block border or closed-shape stroke. */
+  stroke?: string
+  /** CSS colour for P2 display text. */
+  text?: string
+}
+
 export type Block = {
   id: string
   name: string
@@ -24,6 +39,32 @@ export type Block = {
    */
   suppressedPins?: string[]
   parameters?: Record<string, string>
+  /**
+   * When false, the instance name is not drawn on the sheet.
+   * Omitted or true keeps today’s appearance. Logical `name` is unchanged (P1).
+   */
+  showName?: boolean
+  /**
+   * When false, port name glyphs are not drawn (marks stay).
+   * Omitted or true keeps today’s appearance. Port identity is unchanged (P1).
+   */
+  showPortNames?: boolean
+  /**
+   * Optional centred multiline caption inside the instance box (P2).
+   * Independent of logical `name`. Omitted = no display text (pre-P2 appearance).
+   */
+  displayText?: string
+  /**
+   * When false, `displayText` is not drawn. Omitted or true shows it when set (P2).
+   */
+  showDisplayText?: boolean
+  /**
+   * Offset of the P2 display-text group from the block centre, in diagram units (P3a).
+   * Omitted or `{ x: 0, y: 0 }` means automatic centring.
+   */
+  displayTextOffset?: Point
+  /** Instance-level appearance overrides (P3). Does not alter the symbol library. */
+  style?: BlockStyle
 }
 
 export type PortSide = 'left' | 'right' | 'top' | 'bottom'
@@ -151,7 +192,23 @@ export type Segment = {
 }
 
 export type LabelAnchor =
-  | { kind: 'segment'; segmentId: string; edge: number; distance: number; offset: number }
+  | {
+      kind: 'segment'
+      segmentId: string
+      edge: number
+      distance: number
+      /**
+       * Legacy signed normal offset from the on-wire attachment (pre-P5a).
+       * Used for drawing only when `shift` is absent — preserves old documents exactly.
+       */
+      offset: number
+      /**
+       * Free 2D offset from the on-wire attachment in diagram units (P5a).
+       * When present, drawing uses attachment(edge, distance) + shift and ignores `offset`.
+       * Omit ≡ legacy-offset drawing.
+       */
+      shift?: Point
+    }
   | { kind: 'free'; x: number; y: number }
 
 export type Label = {
@@ -164,6 +221,11 @@ export type Label = {
   role?: 'name' | 'note'
   /** Optional drawing size in CSS px. Omit for the stage default (~13px). */
   fontSize?: number
+  /**
+   * When false, the label is not painted. Omitted or true keeps today’s appearance.
+   * Net name and identity are unchanged (P1).
+   */
+  visible?: boolean
   anchor: LabelAnchor
 }
 

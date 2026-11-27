@@ -38,6 +38,15 @@ const props = defineProps<{
    * Pin names sit inside that outline. The symbol definition is not changed.
    */
   flushBody?: boolean
+  /** P1: when false, pin name glyphs are omitted; marks stay. Default true. */
+  showPortNames?: boolean
+  /**
+   * P3 instance fill for closed shapes (rect / ellipse / polygon).
+   * `null` = explicit transparent; `undefined` = CSS default (typically none).
+   */
+  bodyFill?: string | null
+  /** P3 instance stroke for closed shapes. `undefined` = CSS default. */
+  bodyStroke?: string
 }>()
 
 const emit = defineEmits<{
@@ -76,6 +85,15 @@ function hrefFor(assetId: string): string | null {
   return asset ? assetDataUrl(asset) : null
 }
 
+/** Inline style beats `.sym-shape { fill: none }` (presentation attrs lose to CSS). */
+const closedPaintStyle = computed(() => {
+  const style: Record<string, string> = {}
+  if (props.bodyFill === null) style.fill = 'none'
+  else if (typeof props.bodyFill === 'string') style.fill = props.bodyFill
+  if (typeof props.bodyStroke === 'string') style.stroke = props.bodyStroke
+  return Object.keys(style).length > 0 ? style : undefined
+})
+
 function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle' | 'end' } {
   if (pin.free) return { x: pin.x, y: pin.y - 8, anchor: 'middle' }
   if (props.flushBody) {
@@ -105,6 +123,7 @@ function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle
         :height="shape.height"
         :rx="shape.rx ?? 0"
         :ry="shape.rx ?? 0"
+        :style="closedPaintStyle"
       />
       <ellipse
         v-else-if="shape.kind === 'ellipse'"
@@ -114,6 +133,7 @@ function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle
         :cy="shape.y + shape.height / 2"
         :rx="Math.abs(shape.width) / 2"
         :ry="Math.abs(shape.height) / 2"
+        :style="closedPaintStyle"
       />
       <line
         v-else-if="shape.kind === 'line'"
@@ -129,6 +149,7 @@ function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle
         class="sym-shape"
         :class="{ selected: selectedShape === index }"
         :points="pointsAttr(shape.points)"
+        :style="closedPaintStyle"
       />
       <template v-else-if="shape.kind === 'image'">
         <image
@@ -166,7 +187,12 @@ function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle
     >
       <circle v-if="interactivePins" class="sym-pin-hit" :cx="pin.x" :cy="pin.y" :r="hitRadius ?? 8" />
       <circle class="sym-pin-mark" :cx="pin.x" :cy="pin.y" :r="markRadius ?? 4" />
-      <text :x="nameAt(pin).x" :y="nameAt(pin).y" :text-anchor="nameAt(pin).anchor">{{ pin.name }}</text>
+      <text
+        v-if="showPortNames !== false"
+        :x="nameAt(pin).x"
+        :y="nameAt(pin).y"
+        :text-anchor="nameAt(pin).anchor"
+      >{{ pin.name }}</text>
     </g>
   </g>
 </template>

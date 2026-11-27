@@ -1,4 +1,16 @@
-import { createId, type Block, type BlockGroup, type DiagramDocument, type Endpoint, type Label, type Net, type Point, type Port, type Segment } from './document'
+import {
+  createId,
+  type Block,
+  type BlockGroup,
+  type BlockStyle,
+  type DiagramDocument,
+  type Endpoint,
+  type Label,
+  type Net,
+  type Point,
+  type Port,
+  type Segment,
+} from './document'
 import {
   capturePortAnchors,
   isBlockAttachedStub,
@@ -11,8 +23,19 @@ import {
   translateAttachedStubsByPortDeltas,
 } from './geometry'
 import { ensureNetByName, reassignComponents } from './nets'
+import { DEFAULT_SNAP_SPACING, normalizeSpacing } from './preferences'
 
-export const GRID = 20
+/** Fixed minimum block edge (P4b) — independent of snap/grid spacing. */
+export const MIN_BLOCK_SIZE = 20
+/** Fixed duplicate / paste step (P4b) — independent of snap spacing. */
+export const DUPLICATE_OFFSET = 20
+/** Fixed keyboard nudge step (P4b) — independent of snap spacing for now. */
+export const NUDGE_DISTANCE = 20
+/**
+ * Legacy alias kept at 20 for callers that used GRID as a fixed geometry step
+ * (duplicate offset, min size, tests). Prefer MIN_BLOCK_SIZE / DUPLICATE_OFFSET.
+ */
+export const GRID = MIN_BLOCK_SIZE
 
 export type BlockTemplate = { name: string; width: number; height: number }
 
@@ -42,9 +65,14 @@ export function emptyDocument(): DiagramDocument {
   }
 }
 
-export function snapValue(value: number, enabled: boolean): number {
+/**
+ * Round to the nearest multiple of `spacing` when enabled (P4b).
+ * Spacing defaults to 20; callers pass editor `snapSpacing`.
+ */
+export function snapValue(value: number, enabled: boolean, spacing: number = DEFAULT_SNAP_SPACING): number {
   if (!enabled) return value
-  return Math.round(value / GRID) * GRID
+  const step = normalizeSpacing(spacing, DEFAULT_SNAP_SPACING)
+  return Math.round(value / step) * step
 }
 
 function clampUnit(value: number): number {
@@ -56,9 +84,10 @@ export function borderPlacement(
   block: { x: number; y: number; width: number; height: number },
   pointer: Point,
   snap: boolean,
+  spacing: number = DEFAULT_SNAP_SPACING,
 ): { side: Port['side']; t: number } {
-  const x = snapValue(pointer.x, snap)
-  const y = snapValue(pointer.y, snap)
+  const x = snapValue(pointer.x, snap, spacing)
+  const y = snapValue(pointer.y, snap, spacing)
   return pinOnBorder(block.width, block.height, x - block.x, y - block.y)
 }
 
@@ -76,12 +105,13 @@ export function nearestBlockBorder(
   pointer: Point,
   snap: boolean,
   radius: number,
+  spacing: number = DEFAULT_SNAP_SPACING,
 ): { blockId: string; side: Port['side']; t: number; x: number; y: number } | null {
   let best: { blockId: string; side: Port['side']; t: number; x: number; y: number; gap: number } | null = null
   for (const block of blocks) {
     const gap = borderGap(block.width, block.height, pointer.x - block.x, pointer.y - block.y)
     if (gap > radius || (best !== null && gap >= best.gap)) continue
-    const placed = borderPlacement(block, pointer, snap)
+    const placed = borderPlacement(block, pointer, snap, spacing)
     const local = pinLocal(block.width, block.height, placed.side, placed.t)
     best = { blockId: block.id, side: placed.side, t: placed.t, x: block.x + local.x, y: block.y + local.y, gap }
   }
@@ -183,6 +213,7 @@ export function resizeBox(
   handle: ResizeHandle,
   pointer: Point,
   snap: boolean,
+  spacing: number = DEFAULT_SNAP_SPACING,
 ): { x: number; y: number; width: number; height: number } {
   const right = origin.x + origin.width
   const bottom = origin.y + origin.height
@@ -194,54 +225,76 @@ export function resizeBox(
   let y = origin.y
   let width = origin.width
   let height = origin.height
-  if (east) width = Math.max(GRID, snapValue(pointer.x, snap) - origin.x)
+  // Min size uses MIN_BLOCK_SIZE — never snapSpacing (P4b).
+  if (east) width = Math.max(MIN_BLOCK_SIZE, snapValue(pointer.x, snap, spacing) - origin.x)
   if (west) {
-    const edge = Math.min(right - GRID, snapValue(pointer.x, snap))
+    const edge = Math.min(right - MIN_BLOCK_SIZE, snapValue(pointer.x, snap, spacing))
     x = edge
     width = right - edge
   }
-  if (south) height = Math.max(GRID, snapValue(pointer.y, snap) - origin.y)
+  if (south) height = Math.max(MIN_BLOCK_SIZE, snapValue(pointer.y, snap, spacing) - origin.y)
   if (north) {
-    const edge = Math.min(bottom - GRID, snapValue(pointer.y, snap))
+    const edge = Math.min(bottom - MIN_BLOCK_SIZE, snapValue(pointer.y, snap, spacing))
     y = edge
     height = bottom - edge
   }
   return { x, y, width, height }
 }
 
-export function addBlock(doc: DiagramDocument, template: BlockTemplate, at: Point, snap: boolean): string {
+export function addBlock(
+  doc: DiagramDocument,
+  template: BlockTemplate,
+  at: Point,
+  snap: boolean,
+  spacing: number = DEFAULT_SNAP_SPACING,
+): string {
   const id = createId('blk')
   const count = doc.blocks.filter((item) => item.name === template.name || item.name.startsWith(`${template.name} `)).length
   doc.blocks.push({
     id,
     name: count === 0 ? template.name : `${template.name} ${count + 1}`,
-    x: snapValue(at.x, snap),
-    y: snapValue(at.y, snap),
+    x: snapValue(at.x, snap, spacing),
+    y: snapValue(at.y, snap, spacing),
     width: template.width,
     height: template.height,
   })
   return id
 }
 
-export function placeTemplate(doc: DiagramDocument, template: BlockTemplate, snap: boolean): string {
+export function placeTemplate(
+  doc: DiagramDocument,
+  template: BlockTemplate,
+  snap: boolean,
+  spacing: number = DEFAULT_SNAP_SPACING,
+): string {
   const index = doc.blocks.length
-  return addBlock(doc, template, { x: 80 + (index % 5) * 40, y: 80 + Math.floor(index / 5) * 40 }, snap)
+  return addBlock(doc, template, { x: 80 + (index % 5) * 40, y: 80 + Math.floor(index / 5) * 40 }, snap, spacing)
 }
 
-export function snapBlocks(doc: DiagramDocument, blockIds: string[], enabled: boolean): void {
+export function snapBlocks(
+  doc: DiagramDocument,
+  blockIds: string[],
+  enabled: boolean,
+  spacing: number = DEFAULT_SNAP_SPACING,
+): void {
   if (!enabled) return
   for (const id of blockIds) {
     const block = doc.blocks.find((item) => item.id === id)
     if (!block) continue
     // Route through moveBlock so attached Port↔Free stubs follow the snap delta.
-    moveBlock(doc, id, snapValue(block.x, true), snapValue(block.y, true))
+    moveBlock(doc, id, snapValue(block.x, true, spacing), snapValue(block.y, true, spacing))
   }
 }
 
 export function setBlockFields(
   doc: DiagramDocument,
   blockId: string,
-  fields: Partial<Pick<DiagramDocument['blocks'][number], 'name' | 'x' | 'y' | 'width' | 'height'>>,
+  fields: Partial<
+    Pick<
+      DiagramDocument['blocks'][number],
+      'name' | 'x' | 'y' | 'width' | 'height' | 'showName' | 'showPortNames' | 'displayText' | 'showDisplayText'
+    >
+  >,
 ): void {
   const block = doc.blocks.find((item) => item.id === blockId)
   if (!block) return
@@ -251,11 +304,109 @@ export function setBlockFields(
   if (fields.name !== undefined) block.name = fields.name
   if (fields.x !== undefined) block.x = fields.x
   if (fields.y !== undefined) block.y = fields.y
-  if (fields.width !== undefined) block.width = Math.max(GRID, fields.width)
-  if (fields.height !== undefined) block.height = Math.max(GRID, fields.height)
+  if (fields.width !== undefined) block.width = Math.max(MIN_BLOCK_SIZE, fields.width)
+  if (fields.height !== undefined) block.height = Math.max(MIN_BLOCK_SIZE, fields.height)
+  if (fields.showName !== undefined) {
+    if (fields.showName) delete block.showName
+    else block.showName = false
+  }
+  if (fields.showPortNames !== undefined) {
+    if (fields.showPortNames) delete block.showPortNames
+    else block.showPortNames = false
+  }
+  if (fields.displayText !== undefined) {
+    // Preserve internal newlines; empty string clears the optional field.
+    if (fields.displayText.length === 0) delete block.displayText
+    else block.displayText = fields.displayText
+  }
+  if (fields.showDisplayText !== undefined) {
+    if (fields.showDisplayText) delete block.showDisplayText
+    else block.showDisplayText = false
+  }
   // Per-port Δ so east/west (or north/south) stubs move independently on resize (S4).
   if (before) translateAttachedStubsByPortDeltas(doc, portAnchorDeltas(doc, before))
   refreshAll(doc)
+}
+
+function pruneBlockStyle(style: BlockStyle): BlockStyle | undefined {
+  const next: BlockStyle = {}
+  if (typeof style.fill === 'string' && style.fill.length > 0) next.fill = style.fill
+  if (style.fillTransparent === true) next.fillTransparent = true
+  if (typeof style.stroke === 'string' && style.stroke.length > 0) next.stroke = style.stroke
+  if (typeof style.text === 'string' && style.text.length > 0) next.text = style.text
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
+/**
+ * Merge instance appearance overrides (P3). Pass `null` to clear all P3 style fields only.
+ * Does not touch P1 visibility or P2 display text.
+ */
+export function setBlockStyle(doc: DiagramDocument, blockId: string, patch: BlockStyle | null): void {
+  const block = doc.blocks.find((item) => item.id === blockId)
+  if (!block) return
+  if (patch === null) {
+    delete block.style
+    refreshAll(doc)
+    return
+  }
+  const merged: BlockStyle = { ...block.style }
+  if (patch.fill !== undefined) {
+    if (patch.fill.length === 0) delete merged.fill
+    else merged.fill = patch.fill
+  }
+  if (patch.fillTransparent !== undefined) {
+    if (patch.fillTransparent) merged.fillTransparent = true
+    else delete merged.fillTransparent
+  }
+  if (patch.stroke !== undefined) {
+    if (patch.stroke.length === 0) delete merged.stroke
+    else merged.stroke = patch.stroke
+  }
+  if (patch.text !== undefined) {
+    if (patch.text.length === 0) delete merged.text
+    else merged.text = patch.text
+  }
+  const pruned = pruneBlockStyle(merged)
+  if (pruned) block.style = pruned
+  else delete block.style
+  refreshAll(doc)
+}
+
+/** Clear P3 colour overrides only (atomic reset appearance). */
+export function resetBlockStyle(doc: DiagramDocument, blockId: string): void {
+  setBlockStyle(doc, blockId, null)
+}
+
+/**
+ * Set P2 display-text offset from the block centre (P3a).
+ * Pass `null` or `{ x: 0, y: 0 }` to restore automatic centring (deletes the field).
+ */
+export function setDisplayTextOffset(doc: DiagramDocument, blockId: string, offset: Point | null): void {
+  const block = doc.blocks.find((item) => item.id === blockId)
+  if (!block) return
+  if (!offset || (offset.x === 0 && offset.y === 0)) {
+    delete block.displayTextOffset
+  } else {
+    block.displayTextOffset = { x: offset.x, y: offset.y }
+  }
+}
+
+/**
+ * Show or hide labels anchored on one segment only (P1).
+ * Other segments on the same named net are unchanged. Net name and connectivity stay put.
+ * @returns true when at least one label visibility actually changed.
+ */
+export function setSegmentLabelsVisible(doc: DiagramDocument, segmentId: string, visible: boolean): boolean {
+  let changed = false
+  for (const label of doc.labels) {
+    if (label.anchor.kind !== 'segment' || label.anchor.segmentId !== segmentId) continue
+    const currently = label.visible !== false
+    if (currently === visible) continue
+    if (visible) delete label.visible
+    else label.visible = false
+    changed = true
+  }
+  return changed
 }
 
 export function deleteBlocks(doc: DiagramDocument, blockIds: string[]): void {
@@ -590,6 +741,7 @@ function copySegmentLabels(doc: DiagramDocument, sourceSegmentId: string, nextSe
       text: label.text,
       role: label.role,
       fontSize: label.fontSize,
+      visible: label.visible,
       anchor: { ...label.anchor, segmentId: nextSegmentId },
     })
   }

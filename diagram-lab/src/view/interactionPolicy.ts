@@ -60,6 +60,26 @@ export function isDoublePress(
 }
 
 /**
+ * Pure tag/type form of {@link isTextEditingTarget} for selfcheck without a DOM.
+ * Checkboxes/radios/buttons are not text entry — document Ctrl+Z must still run (P1-Fix).
+ */
+export function isTextEditingControl(tagName: string, inputType?: string, contentEditable = false): boolean {
+  if (contentEditable) return true
+  const tag = tagName.toUpperCase()
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (tag !== 'INPUT') return false
+  const type = (inputType || 'text').toLowerCase()
+  return type !== 'checkbox' && type !== 'radio' && type !== 'button' && type !== 'submit' && type !== 'reset' && type !== 'file' && type !== 'range' && type !== 'color'
+}
+
+/** True when document shortcuts must not steal keystrokes from a text field. */
+export function isTextEditingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const type = target instanceof HTMLInputElement ? target.type : undefined
+  return isTextEditingControl(target.tagName, type, target.isContentEditable)
+}
+
+/**
  * Keyboard while an unfinished wire draft owns the gesture (S5a.1).
  * Returns `pass` so callers keep the normal Select/history shortcuts.
  */

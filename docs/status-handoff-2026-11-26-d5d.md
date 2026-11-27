@@ -39,11 +39,26 @@ Earlier same-day baseline (D5b–D5c): [status-handoff-2026-11-26.md](status-han
 | **S4 Resize / Port Drag stubs** | **Resize accepted**; Port Drag pending confirmation | `d5d0a-s4-stub-resize-port-drag.md` |
 | **S5a Port-originated stub draw** | **Double-click stub accepted** (26 Nov) | `d5d0a-s5a-port-stub-draw.md` |
 | **S5a.1 Incremental drawing undo** | **Accepted** (26 Nov) | `d5d0a-s5a1-wire-drawing-undo.md` |
-| **S5b Stable free-endpoint drag** | Investigation only; **not released** | `d5d0a-s5b-endpoint-drag-investigation.md` |
+| **S5b Stable free-endpoint drag** | **Accepted** (26 Nov) | `d5d0a-s5b-stub-endpoint-drag.md` |
 | Geometry / style architecture | ADR recorded; no implement | `adr-diagram-geometry-routing-style.md` |
 | Animation / runtime (optional) | Linked ADR; no implement | `adr-diagram-animation-runtime.md` |
 | Strategic vision (F0–F11 orient.) | Vision only; not a work queue | `diagram-lab-strategic-vision.md` |
-| Application pilots A/B | Prep/investigation only | `diagram-lab-application-pilots.md` |
+| Application pilots A/B | Prep accepted; **A1 findings** filed (presentation; no implement) | `diagram-lab-application-pilots.md`, `diagram-lab-pilot-a1-presentation-findings.md` |
+| A1 presentation P0 | **Accepted** (visual) | `diagram-lab-pilot-a1-presentation-findings.md` |
+| A1 P0b grid stacking | **Accepted** (visual); live interaction **open** | `diagram-lab-pilot-a1-grid-stacking-findings.md`, `diagram-lab-pilot-a1-p0b-regression.md` |
+| A1 presentation P1 | **Fully accepted** (9/9) | `diagram-lab-pilot-a1-p1-visibility.md`, `diagram-lab-pilot-a1-p1-fix-undo.md` |
+| A1 presentation P2 | **Accepted** | `diagram-lab-pilot-a1-p2-display-text.md` |
+| A1 presentation P3 | **Function confirmed** (user) | `diagram-lab-pilot-a1-p3-block-appearance.md` |
+| A1 presentation P3a | **Accepted** (visual; persistence open if regressions) | `diagram-lab-pilot-a1-p3a-text-position.md` |
+| A1 presentation P4 | **Function confirmed** (4 combos, blocks+wires) | `diagram-lab-pilot-a1-p4-grid-snap.md` |
+| A1 presentation P4a | **Function confirmed** (consistent snap) | `diagram-lab-pilot-a1-p4a-geometry-snapping.md` |
+| A1 presentation P4b | **Accepted** (preferences available) | `diagram-lab-pilot-a1-p4b-preferences.md` |
+| A1 presentation P5 | Investigation accepted | `diagram-lab-pilot-a1-p5-wire-label-investigation.md` |
+| A1 presentation P5a | **Accepted** | `diagram-lab-pilot-a1-p5a-label-position.md` |
+| A1 presentation P5b | **Accepted** (Remove fix + user confirm) | `diagram-lab-pilot-a1-p5b-remove-label.md` |
+| **A1 final pilot evaluation** | **Formally closed** | `diagram-lab-pilot-a1-final-evaluation.md` |
+| A2 digital / baseband system | **Not released** — separate freigabe | `diagram-lab-application-pilots.md` |
+| Vertex-handle / edge / vertex drag (“S5a.2”) | Discussed only — **not** an open work package | needs separate freigabe |
 | D5d.0 performance campaign | **Not released** — after S5a/S5b | prep + generator docs |
 
 ---
@@ -65,7 +80,7 @@ Earlier same-day baseline (D5b–D5c): [status-handoff-2026-11-26.md](status-han
 | Copy / Paste / Duplicate / **Shift+Drag** | Implicit copy closure; labels included; **keep name → D5c.5 join** (**S3 done**) |
 | Resize / Port drag | Per-port Δ rigid stub translate (**S4**: resize accepted; port drag TBD) |
 | Port→Free draw (dblclick) | Checkpointed finish — no companion-bend knick (**S5a**) |
-| Free endpoint drag | **Broken / missing** until S5b (see investigation) |
+| Free endpoint drag | **S5b accepted** (`placeFreeEnd` + free-end gesture) |
 
 - Attachment = derived (`isBlockAttachedStub` / `attachedStubsForBlocks`) — **no ownership model**.
 - Explicit selection does **not** auto-include stubs.
@@ -126,15 +141,16 @@ Lab: typically `http://localhost:5174/`.
 | 2 | **S4** stub follow on Resize / Port Drag | **Resize accepted**; Port Drag TBD |
 | 3 | **S5a** Port-originated stub drawing | **Double-click accepted** |
 | 3b | **S5a.1** Incremental wire drawing undo | **Accepted** |
-| 4 | **S5b** Stable free-endpoint drag | After explicit release |
-| — | ADR geometry / style + animation runtime | Documented only — does not delay D5d |
-| 5 | D5d.0 performance campaign (B–D as freigegeben) | After S5a/S5b |
-| 6 | D5d.1+ optimisations | Only after measurements |
-| 7 | S1 mixed selection | Later |
-| 8 | S2 marquee + wires | Later |
-| 9 | D5c.7 wire-only copy | Remains deferred |
+| 4 | **S5b** Stable free-endpoint drag | **Accepted** |
+| 5 | Manual application pilots A1→A2→B2→B3→B1 | **A1 closed**; A2 separate freigabe (symbol focus); D5d independent… |
+| — | ADR geometry / style / animation; strategic vision | Documented only |
+| 6 | D5d.0 performance campaign (B–D as freigegeben) | Independent high priority |
+| 7 | D5d.1+ optimisations | Only after measurements |
+| 8 | S1 mixed selection | Later |
+| 9 | S2 marquee + wires | Later |
+| 10 | D5c.7 wire-only copy | Remains deferred |
 
-Do **not** reopen S1/S2 or D5c.7 under D5d.0-A. Do **not** start S5b or performance work without release.
+Do **not** reopen S1/S2, D5c.7, edge/vertex-drag (“S5a.2”), or style work without freigabe.
 
 ---
 
@@ -143,10 +159,10 @@ Do **not** reopen S1/S2 or D5c.7 under D5d.0-A. Do **not** start S5b or performa
 - **S4:** `capturePortAnchors`, `portAnchorDeltas`, `translateAttachedStubsByPortDeltas` in `geometry.ts`; wired into `moveBlock`, `setBlockFields`, `placePort`. Details: `d5d0a-s4-stub-resize-port-drag.md`.
 - **S5a:** `pointsBeforeFreeBend` + `finishFree({ fromBeforeLastFreeBend })` + `isDoublePress` (PointerEvent.detail is 0). Details: `d5d0a-s5a-port-stub-draw.md`.
 - **S5a.1:** `fixedSteps` / `undoWireStep`; Esc/Backspace/Ctrl+Z step-undo; Shift+Esc cancel. Details: `d5d0a-s5a1-wire-drawing-undo.md`.
-- **S5b:** RCA only — wrong edge / span-slide vs free-end drag. Details: `d5d0a-s5b-endpoint-drag-investigation.md`.
+- **S5b:** `placeFreeEnd` + free-end gesture/handles. Details: `d5d0a-s5b-stub-endpoint-drag.md`.
 
 ---
 
 ## 9. One-line summary
 
-**S3 accepted; S4 resize accepted (port drag TBD); S5a + S5a.1 accepted; style/geometry ADR on file (no implement); S5b after release; then D5d performance; S1/S2/D5c.7 deferred; no commit unless asked.**
+**S3/S5a/S5a.1/S5b accepted; A1 P0–P5b accepted and formally closed; A2 not released (symbol-library focus when freigegeben); S4 port drag TBD; D5d independent; no commit unless asked.**

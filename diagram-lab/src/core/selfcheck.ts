@@ -17,7 +17,7 @@ import {
   translateSegmentGeometry,
 } from './geometry'
 import { netFixture } from './fixture'
-import { addNameLabel, commitWire, crossings, deleteSegment, ensureNetByName, labelText, mergeNets, mergeNetsByName, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeLabelAt, placeSpan, probeWire, renameNet, setLabelOffset, setRouted } from './nets'
+import { addNameLabel, commitWire, crossings, deleteSegment, ensureNetByName, labelText, mergeNets, mergeNetsByName, moveJunction, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeFreeEnd, placeLabelAt, placeSpan, probeWire, renameNet, removeSegmentNameLabels, resetLabelPosition, setLabelOffset, setRouted, snapTarget } from './nets'
 import { canUndoWireStep, finishFree, stubGeometrySane, undoWireStep, wireClick, WIRE_DRAW_HINT } from './wiretool'
 import { symbolSheet } from './symbolsheet'
 import { addImageAsset, addSymbolLabel, addSymbolPort, addSymbolShape, applySymbol, defineSymbol, instantiateSymbol, moveFreeSymbolPort, moveSymbolPort, removeSymbolPort, setComponent, setSymbolSize, symbolDiagnostics } from './symbols'
@@ -39,6 +39,10 @@ import {
   pasteFragment,
   resizeBox,
   setBlockFields,
+  setBlockStyle,
+  resetBlockStyle,
+  setDisplayTextOffset,
+  setSegmentLabelsVisible,
   addPortAt,
   borderPlacement,
   nearestBlockBorder,
@@ -46,7 +50,21 @@ import {
   removeUnwiredPort,
   renameInstancePort,
   unusedPortName,
+  snapValue,
+  GRID,
+  MIN_BLOCK_SIZE,
+  DUPLICATE_OFFSET,
+  NUDGE_DISTANCE,
 } from './edit'
+import {
+  DEFAULT_EDITOR_PREFERENCES,
+  loadEditorPreferences,
+  normalizeSpacing,
+  sanitizeEditorPreferences,
+  saveEditorPreferences,
+  SPACING_MAX,
+  SPACING_MIN,
+} from './preferences'
 import { addPort } from './commands'
 import { EditSession } from './session'
 import { JsonRecordStorage } from './storage'
@@ -65,6 +83,7 @@ import {
   chooseTool,
   duplicateDragMoved,
   isDoublePress,
+  isTextEditingControl,
   nextEscapeAction,
   panOnDragButtons,
   shouldBeginViewPan,
@@ -4680,9 +4699,832 @@ function isPortFreeLike(segment: { start: { kind: string }; end: { kind: string 
   check(stubGeometrySane(snapCommit.points), 'S5a.1: snapped finish stays non-degenerate')
 }
 
+// --- S5b stable free-endpoint drag ---
+{
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }, eps = 1) => Math.hypot(a.x - b.x, a.y - b.y) < eps
+  const freeOf = (segment: { start: { kind: string; x?: number; y?: number }; end: { kind: string; x?: number; y?: number } }) => {
+    if (segment.end.kind === 'free') return { x: segment.end.x!, y: segment.end.y! }
+    if (segment.start.kind === 'free') return { x: segment.start.x!, y: segment.start.y! }
+    return null
+  }
+
+  const sheet = emptyDocument()
+  const blockId = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  sheet.blocks[0]!.x = 100
+  sheet.blocks[0]!.y = 100
+  const portId = addPortAt(sheet, blockId, 'right', 0.5) ?? ''
+  const portAt = portAnchor(sheet, portId)!
+
+  // Straight Port→Free stub.
+  commitWire(sheet, [portAt, { x: portAt.x + 60, y: portAt.y }], { kind: 'port', portId, point: portAt }, { kind: 'free', point: { x: portAt.x + 60, y: portAt.y } })
+  const straight = sheet.segments[0]!
+  const portBefore = { ...portAt }
+  const target = { x: portAt.x + 80, y: portAt.y + 40 }
+  check(placeFreeEnd(sheet, straight.id, 'end', target), 'S5b: placeFreeEnd moves a straight stub tip')
+  check(near(freeOf(straight)!, target), 'S5b: free tip follows the pointer target')
+  check(near(portAnchor(sheet, portId)!, portBefore), 'S5b: attached port stays fixed')
+  check(straight.start.kind === 'port' && straight.end.kind === 'free', 'S5b: Port→Free orientation preserved')
+  check(straight.netId.length > 0, 'S5b: net identity preserved')
+  check(stubGeometrySane(straight.points), 'S5b: straight drag stays non-degenerate')
+
+  // Idempotent preview at identical position.
+  const midPts = JSON.stringify(straight.points)
+  placeFreeEnd(sheet, straight.id, 'end', target)
+  check(JSON.stringify(straight.points) === midPts, 'S5b: repeated place at same point is stable')
+
+  // Direction reverse.
+  const back = { x: portAt.x + 40, y: portAt.y - 30 }
+  placeFreeEnd(sheet, straight.id, 'end', back)
+  check(near(freeOf(straight)!, back), 'S5b: tip follows reverse drag')
+  check(near(portAnchor(sheet, portId)!, portBefore), 'S5b: port still fixed after reverse')
+
+  // Multi-bend: preserve interior hinges; only terminal leg adjusts.
+  const multiDoc = emptyDocument()
+  const mBlock = placeTemplate(multiDoc, BLOCK_TEMPLATES[1], false)
+  const mPort = addPortAt(multiDoc, mBlock, 'right', 0.4) ?? ''
+  const mAt = portAnchor(multiDoc, mPort)!
+  const hinge = { x: mAt.x + 40, y: mAt.y }
+  const tip0 = { x: mAt.x + 40, y: mAt.y + 50 }
+  commitWire(
+    multiDoc,
+    [mAt, hinge, tip0],
+    { kind: 'port', portId: mPort, point: mAt },
+    { kind: 'free', point: tip0 },
+  )
+  const multi = multiDoc.segments[0]!
+  addNameLabel(multiDoc, multi.id, 0, 16, 14)
+  const labelBefore = multiDoc.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === multi.id)!
+  const tip1 = { x: mAt.x + 70, y: mAt.y + 50 }
+  placeFreeEnd(multiDoc, multi.id, 'end', tip1)
+  check(near(multi.points[0]!, mAt), 'S5b: multi-bend keeps port vertex')
+  check(near(multi.points[1]!, hinge) || multi.points.some((point) => near(point, hinge)), 'S5b: intentional hinge preserved when compatible')
+  check(near(freeOf(multi)!, tip1), 'S5b: multi-bend free tip moves')
+  check(stubGeometrySane(multi.points), 'S5b: multi-bend geometry sane')
+  check(multiDoc.labels.some((label) => label.id === labelBefore.id), 'S5b: label remains on the segment')
+
+  // Free→Port orientation.
+  const revDoc = emptyDocument()
+  const rBlock = placeTemplate(revDoc, BLOCK_TEMPLATES[1], false)
+  revDoc.blocks[0]!.x = 300
+  const rPort = addPortAt(revDoc, rBlock, 'left', 0.5) ?? ''
+  const rAt = portAnchor(revDoc, rPort)!
+  const freeStart = { x: rAt.x - 50, y: rAt.y }
+  commitWire(revDoc, [freeStart, rAt], { kind: 'free', point: freeStart }, { kind: 'port', portId: rPort, point: rAt })
+  const rev = revDoc.segments[0]!
+  const movedFree = { x: rAt.x - 70, y: rAt.y + 25 }
+  check(placeFreeEnd(revDoc, rev.id, 'start', movedFree), 'S5b: Free→Port start tip moves')
+  check(near(freeOf(rev)!, movedFree), 'S5b: Free→Port free tip updated')
+  check(rev.end.kind === 'port' && near(portAnchor(revDoc, rPort)!, rAt), 'S5b: Free→Port port stays fixed')
+
+  // Escape/cancel semantics via EditSession preview baseline.
+  let live = emptyDocument()
+  const lBlock = placeTemplate(live, BLOCK_TEMPLATES[1], false)
+  const lPort = addPortAt(live, lBlock, 'right', 0.5) ?? ''
+  const lAt = portAnchor(live, lPort)!
+  commitWire(live, [lAt, { x: lAt.x + 50, y: lAt.y }], { kind: 'port', portId: lPort, point: lAt }, { kind: 'free', point: { x: lAt.x + 50, y: lAt.y } })
+  const session = new EditSession(
+    () => live,
+    (next) => {
+      live = next
+    },
+  )
+  const before = serialize(live)
+  session.begin()
+  session.preview((doc) => {
+    placeFreeEnd(doc, doc.segments[0]!.id, 'end', { x: lAt.x + 90, y: lAt.y + 40 })
+  })
+  session.preview((doc) => {
+    placeFreeEnd(doc, doc.segments[0]!.id, 'end', { x: lAt.x + 100, y: lAt.y - 20 })
+  })
+  session.cancel()
+  check(serialize(live) === before, 'S5b: cancel restores original geometry')
+  session.begin()
+  session.preview((doc) => {
+    placeFreeEnd(doc, doc.segments[0]!.id, 'end', { x: lAt.x + 88, y: lAt.y + 24 })
+  })
+  session.commit()
+  check(serialize(live) !== before, 'S5b: commit keeps the drag')
+  session.undo()
+  check(serialize(live) === before, 'S5b: global undo restores the stub')
+  session.redo()
+  check(near(freeOf(live.segments[0]!)!, { x: lAt.x + 88, y: lAt.y + 24 }), 'S5b: redo restores dragged tip')
+
+  // Save/load.
+  const reloaded = parseDocument(serialize(live))
+  check(reloaded.segments[0]!.end.kind === 'free', 'S5b: save/load keeps free end')
+  check(near(freeOf(reloaded.segments[0]!)!, freeOf(live.segments[0]!)!), 'S5b: free tip survives reload')
+
+  // Snapping-style grid target.
+  const gridTip = { x: Math.round((lAt.x + 60) / 20) * 20, y: Math.round((lAt.y + 40) / 20) * 20 }
+  placeFreeEnd(live, live.segments[0]!.id, 'end', gridTip)
+  check(near(freeOf(live.segments[0]!)!, gridTip), 'S5b: snapped tip lands on grid point')
+}
+
+{
+  // --- P1 presentation visibility (names / ports / wire labels; segment-scoped labels) ---
+  let sheet = emptyDocument()
+  const a = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, false)
+  const b = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, false)
+  const c = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, false)
+  setBlockFields(sheet, a, { x: 40, y: 40 })
+  setBlockFields(sheet, b, { x: 240, y: 40 })
+  setBlockFields(sheet, c, { x: 440, y: 40 })
+  const blockA = sheet.blocks.find((item) => item.id === a)!
+  const blockB = sheet.blocks.find((item) => item.id === b)!
+  const blockC = sheet.blocks.find((item) => item.id === c)!
+  const portA = addPortAt(sheet, a, 'right', 0.5)!
+  const portBIn = addPortAt(sheet, b, 'left', 0.5)!
+  const portBOut = addPortAt(sheet, b, 'right', 0.5)!
+  const portC = addPortAt(sheet, c, 'left', 0.5)!
+  const seg1 = linkPorts(sheet, portA, portBIn, 'clk')
+  const seg2 = linkPorts(sheet, portBOut, portC, 'clk')
+  check(Boolean(seg1 && seg2), 'P1: two sample wires connect three blocks')
+  const merged = mergeNetsByName(sheet, 'clk')
+  check(merged.ok && netsNamed(sheet, 'clk').length === 1, 'P1: same named net after merge')
+  const label1 = addNameLabel(sheet, seg1!, 0, 0.5, 0)
+  const label2 = addNameLabel(sheet, seg2!, 0, 0.5, 0)
+  check(Boolean(label1 && label2), 'P1: one name label per segment')
+
+  const p1Session = new EditSession(
+    () => sheet,
+    (next) => {
+      sheet = next
+    },
+  )
+  const logicalName = blockA.name
+  check(
+    sheet.segments.find((item) => item.id === seg1)?.netId === sheet.segments.find((item) => item.id === seg2)?.netId,
+    'P1: merged segments share one net id',
+  )
+  p1Session.execute((draft) => setBlockFields(draft, a, { showName: false, showPortNames: false }))
+  check(sheet.blocks.find((item) => item.id === a)?.showName === false, 'P1: showName false persists on block')
+  check(sheet.blocks.find((item) => item.id === a)?.showPortNames === false, 'P1: showPortNames false persists on block')
+  check(sheet.blocks.find((item) => item.id === a)?.name === logicalName, 'P1: hiding name keeps logical name')
+  check(sheet.blocks.find((item) => item.id === b)?.showName === undefined, 'P1: other block stays default-visible')
+  check(Boolean(sheet.ports.find((port) => port.id === portA)), 'P1: port identity preserved when names hidden')
+  check(sheet.segments.some((segment) => segment.id === seg1) && sheet.segments.some((segment) => segment.id === seg2), 'P1: connectivity unchanged')
+  check(blockB.width > 0 && blockC.width > 0, 'P1: geometry of other blocks unchanged')
+
+  p1Session.execute((draft) => {
+    check(setSegmentLabelsVisible(draft, seg1!, false), 'P1: hiding seg1 labels reports change')
+  })
+  check(sheet.labels.find((label) => label.id === label1)?.visible === false, 'P1: seg1 label hidden')
+  check(sheet.labels.find((label) => label.id === label2)?.visible !== false, 'P1: seg2 label on same net stays visible')
+  check(!setSegmentLabelsVisible(sheet, seg1!, false), 'P1: repeated hide is a no-op')
+
+  const round = parseDocument(serialize(sheet))
+  check(round.blocks.find((item) => item.id === a)?.showName === false, 'P1: save/load keeps showName')
+  check(round.blocks.find((item) => item.id === a)?.showPortNames === false, 'P1: save/load keeps showPortNames')
+  check(round.labels.find((label) => label.id === label1)?.visible === false, 'P1: save/load keeps label.visible')
+  check(round.labels.find((label) => label.id === label2)?.visible !== false, 'P1: save/load keeps other segment label shown')
+
+  const map = duplicateBlocks(sheet, [a], 20, 20)
+  const dupId = map.get(a)!
+  check(sheet.blocks.find((item) => item.id === dupId)?.showName === false, 'P1: duplicate copies showName')
+  check(sheet.blocks.find((item) => item.id === dupId)?.showPortNames === false, 'P1: duplicate copies showPortNames')
+
+  p1Session.undo()
+  check(sheet.labels.find((label) => label.id === label1)?.visible !== false, 'P1: undo restores seg1 label visibility')
+  check(sheet.labels.find((label) => label.id === label2)?.visible !== false, 'P1: undo leaves seg2 label visible')
+  p1Session.undo()
+  check(sheet.blocks.find((item) => item.id === a)?.showName === undefined, 'P1: undo restores default name visibility')
+
+  const legacy = parseDocument(
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'p1_legacy',
+      blocks: [{ id: 'blk_l', name: 'L', x: 0, y: 0, width: 80, height: 40 }],
+      ports: [],
+      nets: [],
+      segments: [],
+      labels: [],
+    }),
+  )
+  check(legacy.blocks[0]!.showName === undefined && legacy.blocks[0]!.showPortNames === undefined, 'P1: legacy blocks omit visibility flags')
+  check(legacy.labels.every((label) => label.visible === undefined), 'P1: legacy labels default to visible')
+
+  // P1-Fix: history round-trips for all three attributes (sheet EditSession).
+  p1Session.execute((draft) => setBlockFields(draft, a, { showPortNames: false }))
+  check(sheet.blocks.find((item) => item.id === a)?.showPortNames === false, 'P1-Fix: hide port names')
+  p1Session.undo()
+  check(sheet.blocks.find((item) => item.id === a)?.showPortNames === undefined, 'P1-Fix: undo restores port names')
+  p1Session.redo()
+  check(sheet.blocks.find((item) => item.id === a)?.showPortNames === false, 'P1-Fix: redo hides port names again')
+  p1Session.execute((draft) => setBlockFields(draft, a, { showPortNames: true }))
+  check(sheet.blocks.find((item) => item.id === a)?.showPortNames === undefined, 'P1-Fix: show clears flag')
+  p1Session.undo()
+  check(sheet.blocks.find((item) => item.id === a)?.showPortNames === false, 'P1-Fix: undo after re-show restores hidden')
+  p1Session.execute((draft) => setBlockFields(draft, a, { showName: false }))
+  p1Session.execute((draft) => setSegmentLabelsVisible(draft, seg1!, false))
+  check(sheet.labels.find((label) => label.id === label1)?.visible === false, 'P1-Fix: hide wire label')
+  p1Session.undo()
+  check(sheet.labels.find((label) => label.id === label1)?.visible !== false, 'P1-Fix: undo wire label')
+  p1Session.redo()
+  check(sheet.labels.find((label) => label.id === label1)?.visible === false, 'P1-Fix: redo wire label')
+  // Mixed: geometry after visibility invalidates redo of a later undone step.
+  p1Session.execute((draft) => setBlockFields(draft, a, { x: 60 }))
+  check(sheet.blocks.find((item) => item.id === a)?.x === 60, 'P1-Fix: geometry after visibility')
+  p1Session.undo()
+  check(sheet.blocks.find((item) => item.id === a)?.x === 40, 'P1-Fix: undo geometry keeps presentation from prior steps')
+
+  // Project TransactionManager path (same serialize/parse as the open-project adapter).
+  let liveProj = createProject('p1_fix_tm')
+  const liveRoot = documentById(liveProj, liveProj.rootDocumentId)!
+  const tmBlock = placeTemplate(liveRoot, BLOCK_TEMPLATES[0]!, false)
+  const tm = new TransactionManager({
+    get: () => liveProj,
+    set: (next) => {
+      liveProj = next
+    },
+  })
+  const hideTm = tm.transact('hide-ports', (proj) => {
+    const sheetTm = documentById(proj, proj.rootDocumentId)!
+    setBlockFields(sheetTm, tmBlock, { showPortNames: false, showName: false })
+    return proj
+  })
+  check(hideTm.ok && tm.canUndo, 'P1-Fix: project transact records visibility')
+  check(documentById(liveProj, liveProj.rootDocumentId)!.blocks.find((item) => item.id === tmBlock)?.showPortNames === false, 'P1-Fix: project live shows hidden ports')
+  check(tm.undo().ok, 'P1-Fix: project undo ok')
+  check(documentById(liveProj, liveProj.rootDocumentId)!.blocks.find((item) => item.id === tmBlock)?.showPortNames === undefined, 'P1-Fix: project undo restores ports')
+  check(tm.redo().ok, 'P1-Fix: project redo ok')
+  check(documentById(liveProj, liveProj.rootDocumentId)!.blocks.find((item) => item.id === tmBlock)?.showPortNames === false, 'P1-Fix: project redo hides ports')
+
+  // Keyboard policy: checkbox focus must not block document shortcuts.
+  check(!isTextEditingControl('INPUT', 'checkbox'), 'P1-Fix: checkbox is not a text-editing control')
+  check(!isTextEditingControl('INPUT', 'radio'), 'P1-Fix: radio is not a text-editing control')
+  check(isTextEditingControl('INPUT', 'text'), 'P1-Fix: text input remains a text-editing control')
+  check(isTextEditingControl('TEXTAREA'), 'P1-Fix: textarea remains a text-editing control')
+}
+
+{
+  // --- P2 centred multiline display text ---
+  let sheet = emptyDocument()
+  const id = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, false)
+  setBlockFields(sheet, id, { x: 40, y: 40 })
+  const logical = sheet.blocks.find((item) => item.id === id)!.name
+  const p2 = new EditSession(
+    () => sheet,
+    (next) => {
+      sheet = next
+    },
+  )
+  check(sheet.blocks.find((item) => item.id === id)?.displayText === undefined, 'P2: absent displayText by default')
+  p2.execute((draft) => setBlockFields(draft, id, { displayText: 'Register\n4 Bit' }))
+  check(sheet.blocks.find((item) => item.id === id)?.displayText === 'Register\n4 Bit', 'P2: multiline displayText stored')
+  check(sheet.blocks.find((item) => item.id === id)?.name === logical, 'P2: logical name independent of displayText')
+  p2.execute((draft) => setBlockFields(draft, id, { showDisplayText: false }))
+  check(sheet.blocks.find((item) => item.id === id)?.showDisplayText === false, 'P2: hide display text')
+  check(sheet.blocks.find((item) => item.id === id)?.displayText === 'Register\n4 Bit', 'P2: hide keeps displayText value')
+  const round = parseDocument(serialize(sheet))
+  check(round.blocks.find((item) => item.id === id)?.displayText === 'Register\n4 Bit', 'P2: save/load keeps displayText')
+  check(round.blocks.find((item) => item.id === id)?.showDisplayText === false, 'P2: save/load keeps showDisplayText')
+  const map = duplicateBlocks(sheet, [id], 20, 20)
+  const dup = map.get(id)!
+  check(sheet.blocks.find((item) => item.id === dup)?.displayText === 'Register\n4 Bit', 'P2: duplicate copies displayText')
+  check(sheet.blocks.find((item) => item.id === dup)?.showDisplayText === false, 'P2: duplicate copies showDisplayText')
+  p2.undo()
+  check(sheet.blocks.find((item) => item.id === id)?.showDisplayText === undefined, 'P2: undo restores display visibility')
+  p2.undo()
+  check(sheet.blocks.find((item) => item.id === id)?.displayText === undefined, 'P2: undo clears displayText')
+  p2.redo()
+  check(sheet.blocks.find((item) => item.id === id)?.displayText === 'Register\n4 Bit', 'P2: redo restores displayText')
+  p2.execute((draft) => setBlockFields(draft, id, { displayText: '' }))
+  check(sheet.blocks.find((item) => item.id === id)?.displayText === undefined, 'P2: empty string clears displayText')
+  p2.execute((draft) => setBlockFields(draft, id, { width: 200, height: 120, displayText: 'Wide\nTitle' }))
+  check(sheet.blocks.find((item) => item.id === id)?.width === 200 && sheet.blocks.find((item) => item.id === id)?.displayText === 'Wide\nTitle', 'P2: resize + displayText in one edit')
+  const legacy = parseDocument(
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'p2_legacy',
+      blocks: [{ id: 'blk_l', name: 'L', x: 0, y: 0, width: 80, height: 40 }],
+      ports: [],
+      nets: [],
+      segments: [],
+      labels: [],
+    }),
+  )
+  check(legacy.blocks[0]!.displayText === undefined && legacy.blocks[0]!.showDisplayText === undefined, 'P2: legacy blocks omit display fields')
+}
+
+{
+  // --- P3 minimal block appearance ---
+  let sheet = emptyDocument()
+  const id = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, false)
+  setBlockFields(sheet, id, { x: 40, y: 40, displayText: 'Title\nLine', showName: false })
+  const p3 = new EditSession(
+    () => sheet,
+    (next) => {
+      sheet = next
+    },
+  )
+  check(sheet.blocks.find((item) => item.id === id)?.style === undefined, 'P3: no style by default')
+  p3.execute((draft) => setBlockStyle(draft, id, { fill: '#cfe8ff' }))
+  check(sheet.blocks.find((item) => item.id === id)?.style?.fill === '#cfe8ff', 'P3: fill stored')
+  p3.execute((draft) => setBlockStyle(draft, id, { stroke: '#1d6fd6' }))
+  check(sheet.blocks.find((item) => item.id === id)?.style?.fill === '#cfe8ff' && sheet.blocks.find((item) => item.id === id)?.style?.stroke === '#1d6fd6', 'P3: stroke merges with fill')
+  p3.execute((draft) => setBlockStyle(draft, id, { text: '#ffffff' }))
+  check(sheet.blocks.find((item) => item.id === id)?.style?.text === '#ffffff', 'P3: text colour stored')
+  p3.execute((draft) => setBlockStyle(draft, id, { fillTransparent: true }))
+  check(sheet.blocks.find((item) => item.id === id)?.style?.fillTransparent === true, 'P3: transparent fill flag')
+  check(sheet.blocks.find((item) => item.id === id)?.style?.fill === '#cfe8ff', 'P3: transparent keeps previous fill value for picker')
+  const round = parseDocument(serialize(sheet))
+  check(round.blocks.find((item) => item.id === id)?.style?.fillTransparent === true, 'P3: save/load keeps transparent')
+  check(round.blocks.find((item) => item.id === id)?.style?.stroke === '#1d6fd6', 'P3: save/load keeps stroke')
+  check(round.blocks.find((item) => item.id === id)?.displayText === 'Title\nLine', 'P3: styling leaves P2 displayText')
+  check(round.blocks.find((item) => item.id === id)?.showName === false, 'P3: styling leaves P1 showName')
+  const map = duplicateBlocks(sheet, [id], 20, 20)
+  const dup = map.get(id)!
+  check(sheet.blocks.find((item) => item.id === dup)?.style?.fill === '#cfe8ff', 'P3: duplicate copies style')
+  p3.execute((draft) => setBlockStyle(draft, dup, { fill: '#d8f0d8', fillTransparent: false }))
+  check(sheet.blocks.find((item) => item.id === id)?.style?.fill === '#cfe8ff', 'P3: original style independent of copy')
+  check(sheet.blocks.find((item) => item.id === dup)?.style?.fill === '#d8f0d8', 'P3: copy can restyle alone')
+  p3.undo()
+  check(sheet.blocks.find((item) => item.id === dup)?.style?.fill === '#cfe8ff', 'P3: undo restores copy style')
+  p3.execute((draft) => resetBlockStyle(draft, id))
+  check(sheet.blocks.find((item) => item.id === id)?.style === undefined, 'P3: reset clears style')
+  check(sheet.blocks.find((item) => item.id === id)?.displayText === 'Title\nLine', 'P3: reset keeps displayText')
+  check(sheet.blocks.find((item) => item.id === id)?.showName === false, 'P3: reset keeps showName')
+  p3.undo()
+  check(sheet.blocks.find((item) => item.id === id)?.style?.fillTransparent === true, 'P3: undo restores style after reset')
+  const legacy = parseDocument(
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'p3_legacy',
+      blocks: [{ id: 'blk_l', name: 'L', x: 0, y: 0, width: 80, height: 40 }],
+      ports: [],
+      nets: [],
+      segments: [],
+      labels: [],
+    }),
+  )
+  check(legacy.blocks[0]!.style === undefined, 'P3: legacy blocks omit style')
+}
+
+{
+  // --- P3a display text offset (centre-relative) ---
+  let sheet = emptyDocument()
+  const id = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, false)
+  setBlockFields(sheet, id, { x: 40, y: 40, width: 160, height: 100, displayText: 'Register\n4 Bit', showName: false })
+  const p3a = new EditSession(
+    () => sheet,
+    (next) => {
+      sheet = next
+    },
+  )
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset === undefined, 'P3a: absent offset means centre')
+  p3a.execute((draft) => setDisplayTextOffset(draft, id, { x: 12, y: -8 }))
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset?.x === 12, 'P3a: offset x stored')
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset?.y === -8, 'P3a: offset y stored')
+  check(sheet.blocks.find((item) => item.id === id)?.displayText === 'Register\n4 Bit', 'P3a: offset leaves displayText')
+  check(sheet.blocks.find((item) => item.id === id)?.width === 160, 'P3a: offset leaves block geometry')
+  const beforePorts = sheet.ports.filter((port) => port.blockId === id).map((port) => ({ ...port }))
+  p3a.execute((draft) => setDisplayTextOffset(draft, id, { x: 20, y: 4 }))
+  const afterPorts = sheet.ports.filter((port) => port.blockId === id)
+  check(
+    beforePorts.length === afterPorts.length &&
+      beforePorts.every((port, index) => {
+        const next = afterPorts[index]
+        return next && next.id === port.id && next.side === port.side && next.t === port.t
+      }),
+    'P3a: offset does not change ports',
+  )
+  p3a.execute((draft) => setBlockFields(draft, id, { width: 220, height: 140 }))
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset?.x === 20, 'P3a: resize preserves stored offset')
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset?.y === 4, 'P3a: resize does not clamp offset')
+  p3a.begin()
+  p3a.preview((draft) => setDisplayTextOffset(draft, id, { x: 30, y: 10 }))
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset?.x === 30, 'P3a: gesture preview applies offset')
+  p3a.cancel()
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset?.x === 20, 'P3a: gesture cancel restores offset')
+  p3a.begin()
+  p3a.preview((draft) => setDisplayTextOffset(draft, id, { x: 20, y: 4 }))
+  p3a.commit()
+  // Identical serialize vs gesture baseline → EditSession skips history push.
+  const offsetAfterNoop = sheet.blocks.find((item) => item.id === id)?.displayTextOffset
+  check(offsetAfterNoop?.x === 20 && offsetAfterNoop?.y === 4, 'P3a: noop commit keeps offset')
+  p3a.begin()
+  p3a.preview((draft) => setDisplayTextOffset(draft, id, { x: 5, y: -3 }))
+  p3a.commit()
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset?.x === 5, 'P3a: effective drag commits')
+  p3a.undo()
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset?.x === 20, 'P3a: undo restores prior offset')
+  p3a.redo()
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset?.x === 5, 'P3a: redo restores dragged offset')
+  const round = parseDocument(serialize(sheet))
+  check(round.blocks.find((item) => item.id === id)?.displayTextOffset?.x === 5, 'P3a: save/load keeps offset x')
+  check(round.blocks.find((item) => item.id === id)?.displayTextOffset?.y === -3, 'P3a: save/load keeps offset y')
+  check(round.blocks.find((item) => item.id === id)?.displayText === 'Register\n4 Bit', 'P3a: save/load keeps displayText')
+  check(round.blocks.find((item) => item.id === id)?.style === undefined, 'P3a: no accidental style')
+  const map = duplicateBlocks(sheet, [id], 40, 40)
+  const dup = map.get(id)!
+  check(sheet.blocks.find((item) => item.id === dup)?.displayTextOffset?.x === 5, 'P3a: duplicate copies offset')
+  check(sheet.blocks.find((item) => item.id === dup)?.displayTextOffset?.y === -3, 'P3a: duplicate copies offset y')
+  p3a.execute((draft) => setDisplayTextOffset(draft, dup, { x: 40, y: 0 }))
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset?.x === 5, 'P3a: original offset independent of copy')
+  const dupOff = sheet.blocks.find((item) => item.id === dup)?.displayTextOffset
+  check(dupOff !== undefined && dupOff.x === 40 && dupOff.y === 0, 'P3a: copy offset editable; only (0,0) clears field')
+  p3a.execute((draft) => setDisplayTextOffset(draft, id, null))
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset === undefined, 'P3a: reset clears offset')
+  check(sheet.blocks.find((item) => item.id === id)?.displayText === 'Register\n4 Bit', 'P3a: reset keeps displayText')
+  p3a.execute((draft) => setDisplayTextOffset(draft, id, { x: 0, y: 0 }))
+  check(sheet.blocks.find((item) => item.id === id)?.displayTextOffset === undefined, 'P3a: zero offset deletes field')
+  const frag = captureFragment(sheet, [dup])
+  const pasted = pasteFragment(sheet, frag, 20, 20)
+  const pastedId = pasted[0]!
+  check(sheet.blocks.find((item) => item.id === pastedId)?.displayTextOffset?.x === 40, 'P3a: paste preserves offset')
+  const legacy = parseDocument(
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'p3a_legacy',
+      blocks: [{ id: 'blk_l', name: 'L', x: 0, y: 0, width: 80, height: 40, displayText: 'Hi' }],
+      ports: [],
+      nets: [],
+      segments: [],
+      labels: [],
+    }),
+  )
+  check(legacy.blocks[0]!.displayTextOffset === undefined, 'P3a: legacy blocks omit offset')
+}
+
+{
+  // --- P4a consistent geometry snapping (canonical snapValue reuse) ---
+  check(snapValue(33, true) === 40 && snapValue(33, false) === 33, 'P4a: snapValue respects enabled flag')
+  check(GRID === 20, 'P4a: GRID remains 20')
+
+  let sheet = emptyDocument()
+  const blockId = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, true)
+  setBlockFields(sheet, blockId, { x: 100, y: 100, width: 120, height: 80 })
+  const portId = addPortAt(sheet, blockId, 'right', 0.37)!
+  check(Boolean(portId), 'P4a: added right port')
+  const anchor = portAnchor(sheet, portId)!
+  check(anchor.y % GRID !== 0, 'P4a: fixture port is off-grid')
+
+  // Free wire click path: snap free points before wireClick (UI contract).
+  const freeRaw = { x: 247, y: 133 }
+  const freeSnapped = { x: snapValue(freeRaw.x, true), y: snapValue(freeRaw.y, true) }
+  check(freeSnapped.x % GRID === 0 && freeSnapped.y % GRID === 0, 'P4a: free point snaps to GRID')
+  const startHit = { kind: 'port' as const, portId, point: { ...anchor } }
+  const draftStart = wireClick(null, startHit)
+  check(draftStart.draft !== null && draftStart.commit === null, 'P4a: wire starts on port without snap rewrite')
+  const bendStep = wireClick(draftStart.draft, { kind: 'free', point: freeSnapped })
+  check(bendStep.draft !== null, 'P4a: free bend accepted')
+  const bend = bendStep.draft!.points[bendStep.draft!.points.length - 1]!
+  check(bend.x === freeSnapped.x || bend.y === freeSnapped.y, 'P4a: orthogonal bend reaches snapped free coord')
+  const stub = finishFree(bendStep.draft!, { x: snapValue(291, true), y: snapValue(181, true) })
+  check(stub.end.kind === 'free' && stub.end.point.x % GRID === 0 && stub.end.point.y % GRID === 0, 'P4a: stub finish tip on grid')
+  check(stub.start.kind === 'port' && stub.start.point.x === anchor.x && stub.start.point.y === anchor.y, 'P4a: stub keeps exact port start')
+  const wired = commitWire(sheet, stub.points, stub.start, stub.end)
+  check(wired.ok, 'P4a: commitWire accepts snapped stub')
+  const seg = sheet.segments.find((item) => item.id === (wired.ok ? wired.segmentId : ''))
+  check(Boolean(seg && seg.start.kind === 'port'), 'P4a: segment stays port-bound')
+  check(Boolean(seg && seg.points[0] && Math.abs(seg.points[0].x - anchor.x) < 0.5 && Math.abs(seg.points[0].y - anchor.y) < 0.5), 'P4a: first point remains at off-grid port')
+  check(seg!.points.every((point, index) => index === 0 || index === seg!.points.length - 1 || (point.x === seg!.points[index - 1]!.x || point.y === seg!.points[index - 1]!.y)), 'P4a: path stays orthogonal')
+
+  // Connectivity hit before free snap: near-port world must still resolve to port.
+  const nearPort = snapTarget(sheet, { x: anchor.x + 3, y: anchor.y - 2 })
+  check(nearPort.kind === 'port' && nearPort.portId === portId, 'P4a: snapTarget prefers port over free')
+
+  // Bend / span axis snap via placeSpan on a free–free segment (no port re-anchor).
+  const freeSeg = commitWire(
+    sheet,
+    [
+      { x: 400, y: 400 },
+      { x: 480, y: 400 },
+      { x: 480, y: 460 },
+    ],
+    { kind: 'free', point: { x: 400, y: 400 } },
+    { kind: 'free', point: { x: 480, y: 460 } },
+  )
+  check(freeSeg.ok, 'P4a: free–free segment for bend snap')
+  const freeId = freeSeg.ok ? freeSeg.segmentId : ''
+  const snappedY = snapValue(400 + 27, true)
+  placeSpan(sheet, freeId, 0, snappedY)
+  check(sheet.segments.find((item) => item.id === freeId)!.points[0]!.y === snappedY, 'P4a: placeSpan accepts snapped axis')
+  check(sheet.segments.find((item) => item.id === freeId)!.points[1]!.y === snappedY, 'P4a: placeSpan keeps edge collinear')
+
+  // Junction drag snap.
+  const junc = { id: createId('jnc'), netId: seg!.netId, x: 200, y: 200 }
+  sheet.junctions.push(junc)
+  const p4a = new EditSession(
+    () => sheet,
+    (next) => {
+      sheet = next
+    },
+  )
+  p4a.begin()
+  p4a.preview((draft) => moveJunction(draft, junc.id, snapValue(213, true), snapValue(187, true)))
+  check(sheet.junctions.find((item) => item.id === junc.id)?.x === 220, 'P4a: junction preview snaps x')
+  check(sheet.junctions.find((item) => item.id === junc.id)?.y === 180, 'P4a: junction preview snaps y')
+  p4a.cancel()
+  check(sheet.junctions.find((item) => item.id === junc.id)?.x === 200, 'P4a: junction cancel restores')
+  p4a.execute((draft) => moveJunction(draft, junc.id, snapValue(213, true), snapValue(187, true)))
+  check(sheet.junctions.find((item) => item.id === junc.id)?.x === 220, 'P4a: junction commit snaps')
+
+  // snap off leaves raw values.
+  check(snapValue(213, false) === 213, 'P4a: snap off is identity')
+}
+
+{
+  // --- P4b editor preferences + independent spacings ---
+  check(MIN_BLOCK_SIZE === 20 && DUPLICATE_OFFSET === 20 && NUDGE_DISTANCE === 20 && GRID === 20, 'P4b: fixed geometry constants stay 20')
+  check(snapValue(33, true, 20) === 40, 'P4b: snapValue default spacing 20')
+  check(snapValue(33, true, 10) === 30, 'P4b: snapValue respects snapSpacing 10')
+  check(snapValue(33, true, 5) === 35, 'P4b: snapValue respects snapSpacing 5')
+  check(snapValue(33, false, 5) === 33, 'P4b: disabled snap ignores spacing')
+  const tiny = resizeBox({ x: 100, y: 80, width: 200, height: 100 }, 'e', { x: 105, y: 80 }, true, 5)
+  check(tiny.width === MIN_BLOCK_SIZE, 'P4b: min block size ignores snapSpacing=5')
+  const wideSnap = resizeBox({ x: 100, y: 80, width: 200, height: 100 }, 'e', { x: 333, y: 80 }, true, 100)
+  check(wideSnap.width === 200 || wideSnap.width % 100 === 0, 'P4b: resize snaps edges to snapSpacing')
+  check(wideSnap.width >= MIN_BLOCK_SIZE, 'P4b: resize still respects min size with large snap')
+
+  const defaults = sanitizeEditorPreferences(null)
+  check(
+    defaults.gridVisible &&
+      defaults.snapEnabled &&
+      defaults.gridSpacing === 20 &&
+      defaults.snapSpacing === 20,
+    'P4b: default preferences',
+  )
+  check(normalizeSpacing(0) === 20 && normalizeSpacing(-4) === 20, 'P4b: invalid spacing falls back')
+  check(normalizeSpacing(3) === SPACING_MIN, 'P4b: spacing clamped to min')
+  check(normalizeSpacing(999) === SPACING_MAX, 'P4b: spacing clamped to max')
+  const mixed = sanitizeEditorPreferences({
+    gridVisible: false,
+    snapEnabled: true,
+    gridSpacing: 40,
+    snapSpacing: 10,
+    extra: 'ignore',
+  })
+  check(mixed.gridVisible === false && mixed.gridSpacing === 40 && mixed.snapSpacing === 10, 'P4b: sanitize keeps independent spacings')
+  check(sanitizeEditorPreferences({ snapSpacing: 'nope' }).snapSpacing === 20, 'P4b: bad stored snapSpacing resets')
+
+  const memory: Record<string, string> = {}
+  const fakeStorage = {
+    getItem(key: string) {
+      return memory[key] ?? null
+    },
+    setItem(key: string, value: string) {
+      memory[key] = value
+    },
+  }
+  saveEditorPreferences(mixed, fakeStorage)
+  const restored = loadEditorPreferences(fakeStorage)
+  check(restored.gridSpacing === 40 && restored.snapSpacing === 10 && restored.gridVisible === false, 'P4b: persistence round-trip')
+  saveEditorPreferences(DEFAULT_EDITOR_PREFERENCES, fakeStorage)
+  check(loadEditorPreferences(fakeStorage).snapSpacing === 20, 'P4b: reset defaults persist')
+  check(loadEditorPreferences({ getItem: () => 'not-json' }).gridSpacing === 20, 'P4b: corrupt storage yields defaults')
+
+  // Grid spacing change must not alter snap math; snap spacing must not alter min size.
+  check(snapValue(47, true, 20) === 40 && snapValue(47, true, 10) === 50, 'P4b: independent snap steps')
+  let sheet = emptyDocument()
+  const id = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, true, 10)
+  const placed = sheet.blocks.find((item) => item.id === id)!
+  check(placed.x % 10 === 0 && placed.y % 10 === 0, 'P4b: placeTemplate uses snapSpacing')
+  setBlockFields(sheet, id, { width: 12 })
+  check(sheet.blocks.find((item) => item.id === id)!.width === MIN_BLOCK_SIZE, 'P4b: setBlockFields min size fixed')
+}
+
+{
+  // --- P5a free 2D wire-label shift ---
+  let sheet = emptyDocument()
+  const blockId = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, false)
+  setBlockFields(sheet, blockId, { x: 100, y: 100, width: 120, height: 80 })
+  const portId = addPortAt(sheet, blockId, 'bottom', 0.5)!
+  const at = portAnchor(sheet, portId)!
+  // Vertical stub downward.
+  const wired = commitWire(
+    sheet,
+    [at, { x: at.x, y: at.y + 60 }],
+    { kind: 'port', portId, point: at },
+    { kind: 'free', point: { x: at.x, y: at.y + 60 } },
+  )
+  check(wired.ok, 'P5a: vertical stub wire')
+  const segId = wired.ok ? wired.segmentId : ''
+  const labelId = sheet.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === segId)?.id
+  check(Boolean(labelId), 'P5a: name label created')
+  const legacyBefore = labelPlacement(sheet, labelId!)
+  check(Boolean(legacyBefore), 'P5a: legacy placement resolves')
+  // Round-trip serialize without shift keeps position.
+  const round = parseDocument(serialize(sheet))
+  const legacyAfter = labelPlacement(round, labelId!)
+  check(
+    Boolean(legacyAfter && legacyBefore && Math.abs(legacyAfter.x - legacyBefore.x) < 0.5 && Math.abs(legacyAfter.y - legacyBefore.y) < 0.5),
+    'P5a: legacy offset position unchanged after save/load',
+  )
+  check(round.labels.find((label) => label.id === labelId)?.anchor.kind === 'segment' && !(round.labels.find((label) => label.id === labelId)!.anchor as { shift?: unknown }).shift, 'P5a: legacy docs omit shift')
+
+  const p5a = new EditSession(
+    () => sheet,
+    (next) => {
+      sheet = next
+    },
+  )
+  // Place freely below and beside the stub tip (beyond endpoint).
+  const freeAt = { x: at.x + 40, y: at.y + 90 }
+  p5a.execute((draft) => placeLabelAt(draft, labelId!, freeAt))
+  const moved = labelPlacement(sheet, labelId!)
+  check(Boolean(moved && Math.abs(moved.x - freeAt.x) < 0.5 && Math.abs(moved.y - freeAt.y) < 0.5), 'P5a: free 2D placement beyond tip')
+  const anch = sheet.labels.find((label) => label.id === labelId)!.anchor
+  check(anch.kind === 'segment' && Boolean(anch.shift), 'P5a: shift stored')
+  check(anch.kind === 'segment' && anch.offset === 0, 'P5a: offset cleared when shift set')
+
+  // Rigid stub translate: move block; label follows with same shift.
+  const beforeMove = labelPlacement(sheet, labelId!)!
+  p5a.execute((draft) => moveBlock(draft, blockId, 140, 100))
+  const afterMove = labelPlacement(sheet, labelId!)!
+  check(Math.abs(afterMove.x - (beforeMove.x + 40)) < 1 && Math.abs(afterMove.y - beforeMove.y) < 1, 'P5a: rigid move keeps relative shift')
+
+  const map = duplicateBlocks(sheet, [blockId], 20, 20)
+  const dupBlock = map.get(blockId)!
+  const dupSeg = sheet.segments.find((segment) => {
+    const startPort = segment.start.kind === 'port' ? segment.start.portId : null
+    const endPort = segment.end.kind === 'port' ? segment.end.portId : null
+    return (
+      Boolean(startPort && sheet.ports.some((port) => port.id === startPort && port.blockId === dupBlock)) ||
+      Boolean(endPort && sheet.ports.some((port) => port.id === endPort && port.blockId === dupBlock))
+    )
+  })
+  check(Boolean(dupSeg), 'P5a: duplicate keeps stub')
+  const dupLabel = sheet.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === dupSeg!.id)
+  check(Boolean(dupLabel?.anchor.kind === 'segment' && dupLabel.anchor.shift), 'P5a: duplicate copies shift')
+
+  p5a.execute((draft) => resetLabelPosition(draft, labelId!))
+  const resetAnch = sheet.labels.find((label) => label.id === labelId)!.anchor
+  check(resetAnch.kind === 'segment' && !resetAnch.shift && resetAnch.offset === 14, 'P5a: reset clears shift and restores default offset')
+  p5a.undo()
+  const undone = sheet.labels.find((label) => label.id === labelId)!.anchor
+  check(undone.kind === 'segment' && Boolean(undone.shift), 'P5a: undo restores shift')
+
+  // Horizontal free placement.
+  let sheetH = emptyDocument()
+  const b2 = placeTemplate(sheetH, BLOCK_TEMPLATES[0]!, false)
+  setBlockFields(sheetH, b2, { x: 200, y: 200, width: 100, height: 60 })
+  const pRight = addPortAt(sheetH, b2, 'right', 0.5)!
+  const aR = portAnchor(sheetH, pRight)!
+  const w2 = commitWire(
+    sheetH,
+    [aR, { x: aR.x + 80, y: aR.y }],
+    { kind: 'port', portId: pRight, point: aR },
+    { kind: 'free', point: { x: aR.x + 80, y: aR.y } },
+  )
+  const hLabel = sheetH.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === (w2.ok ? w2.segmentId : ''))!.id
+  placeLabelAt(sheetH, hLabel, { x: aR.x + 40, y: aR.y + 35 })
+  const hAt = labelPlacement(sheetH, hLabel)!
+  check(Math.abs(hAt.y - (aR.y + 35)) < 0.5, 'P5a: horizontal wire allows vertical free offset')
+}
+
+{
+  // --- P5b-Fix: remove name label (distinct from hide) ---
+  let sheet = emptyDocument()
+  const a = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, false)
+  const b = placeTemplate(sheet, BLOCK_TEMPLATES[0]!, false)
+  setBlockFields(sheet, a, { x: 40, y: 40, width: 100, height: 60 })
+  setBlockFields(sheet, b, { x: 280, y: 40, width: 100, height: 60 })
+  const pa = addPortAt(sheet, a, 'right', 0.5)!
+  const pb = addPortAt(sheet, b, 'left', 0.5)!
+  const aa = portAnchor(sheet, pa)!
+  const ab = portAnchor(sheet, pb)!
+  const mid = { x: (aa.x + ab.x) / 2, y: aa.y }
+  // Two segments joined by a junction on one named net (independent labels).
+  const left = commitWire(
+    sheet,
+    [aa, mid],
+    { kind: 'port', portId: pa, point: aa },
+    { kind: 'free', point: mid },
+  )
+  check(left.ok, 'P5b: left wire')
+  const right = commitWire(
+    sheet,
+    [mid, ab],
+    { kind: 'free', point: mid },
+    { kind: 'port', portId: pb, point: ab },
+  )
+  check(right.ok, 'P5b: right wire')
+  const seg1 = left.ok ? left.segmentId : ''
+  const seg2 = right.ok ? right.segmentId : ''
+  // Join into one net via rename.
+  const net1 = sheet.segments.find((segment) => segment.id === seg1)!.netId
+  const net2 = sheet.segments.find((segment) => segment.id === seg2)!.netId
+  renameNet(sheet, net1, 'Q')
+  renameNet(sheet, net2, 'Q')
+  const netId = sheet.segments.find((segment) => segment.id === seg1)!.netId
+  check(sheet.segments.find((segment) => segment.id === seg2)!.netId === netId, 'P5b: both segments share net Q')
+  check(sheet.nets.find((net) => net.id === netId)?.name === 'Q', 'P5b: net named Q')
+
+  let label1 = sheet.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === seg1)!
+  let label2 = sheet.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === seg2)!
+  check(Boolean(label1 && label2), 'P5b: each segment starts with a name label')
+
+  const session = new EditSession(
+    () => sheet,
+    (next) => {
+      sheet = next
+    },
+  )
+
+  // Position + hide on seg1, then remove while hidden.
+  session.execute((draft) => placeLabelAt(draft, label1.id, { x: aa.x + 20, y: aa.y + 30 }))
+  const placed = labelPlacement(sheet, label1.id)!
+  session.execute((draft) => setSegmentLabelsVisible(draft, seg1, false))
+  check(sheet.labels.find((label) => label.id === label1.id)?.visible === false, 'P5b: hide keeps label instance')
+  const portsBefore = netPortIds(sheet, netId).slice().sort()
+  const netNameBefore = sheet.nets.find((net) => net.id === netId)!.name
+  const segCountBefore = sheet.segments.filter((segment) => segment.netId === netId).length
+  session.execute((draft) => removeSegmentNameLabels(draft, seg1))
+  check(!sheet.labels.some((label) => label.id === label1.id), 'P5b: remove deletes hidden label')
+  check(sheet.labels.some((label) => label.id === label2.id), 'P5b: other segment label unchanged')
+  check(sheet.nets.find((net) => net.id === netId)?.name === netNameBefore, 'P5b: remove keeps net name')
+  check(sheet.segments.filter((segment) => segment.netId === netId).length === segCountBefore, 'P5b: remove keeps segments')
+  check(JSON.stringify(netPortIds(sheet, netId).slice().sort()) === JSON.stringify(portsBefore), 'P5b: remove keeps connectivity')
+
+  // Undo restores exact position + visibility.
+  session.undo()
+  const restored = sheet.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === seg1)
+  check(Boolean(restored), 'P5b: undo restores label')
+  check(restored?.visible === false, 'P5b: undo restores hidden visibility')
+  const restoredAt = restored ? labelPlacement(sheet, restored.id) : null
+  check(
+    Boolean(restoredAt && Math.abs(restoredAt.x - placed.x) < 0.5 && Math.abs(restoredAt.y - placed.y) < 0.5),
+    'P5b: undo restores exact position',
+  )
+  session.redo()
+  check(!sheet.labels.some((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === seg1), 'P5b: redo removes again')
+
+  // Re-add uses canonical name + default placement.
+  session.execute((draft) => addNameLabel(draft, seg1, 0, 16, 14))
+  const readded = sheet.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === seg1)!
+  check(labelText(sheet, readded) === 'Q', 'P5b: re-add shows canonical net name')
+  check(readded.anchor.kind === 'segment' && !readded.anchor.shift && readded.anchor.offset === 14, 'P5b: re-add uses default position')
+
+  // Remove last label of the named net — net and connectivity remain.
+  session.execute((draft) => removeSegmentNameLabels(draft, seg1))
+  session.execute((draft) => removeSegmentNameLabels(draft, seg2))
+  check(!sheet.labels.some((label) => label.anchor.kind === 'segment' && (label.anchor.segmentId === seg1 || label.anchor.segmentId === seg2)), 'P5b: both labels removed')
+  check(sheet.nets.find((net) => net.id === netId)?.name === 'Q', 'P5b: last-label remove keeps net name')
+  check(JSON.stringify(netPortIds(sheet, netId).slice().sort()) === JSON.stringify(portsBefore), 'P5b: last-label remove keeps connectivity')
+
+  // Three states round-trip: absent / visible / hidden.
+  session.execute((draft) => addNameLabel(draft, seg1, 0, 16, 14))
+  const visId = sheet.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === seg1)!.id
+  session.execute((draft) => placeLabelAt(draft, visId, { x: aa.x + 10, y: aa.y - 25 }))
+  session.execute((draft) => addNameLabel(draft, seg2, 0, 16, 14))
+  const hidId = sheet.labels.find((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === seg2)!.id
+  session.execute((draft) => setSegmentLabelsVisible(draft, seg2, false))
+  // Leave a third segment without a label by using only these two.
+  const three = parseDocument(serialize(sheet))
+  check(three.labels.some((label) => label.id === visId && label.visible !== false), 'P5b: save/load visible state')
+  check(three.labels.some((label) => label.id === hidId && label.visible === false), 'P5b: save/load hidden state')
+  check(three.nets.find((net) => net.id === netId)?.name === 'Q', 'P5b: save/load keeps net')
+
+  // Legacy pre-P5 document: 1D offset only, no shift — position must match after parse.
+  const legacyRaw = {
+    schemaVersion: 1,
+    id: 'p5_legacy_labels',
+    blocks: [{ id: 'blk_l', name: 'Counter', x: 100, y: 100, width: 120, height: 80 }],
+    ports: [{ id: 'prt_l', blockId: 'blk_l', name: 'Q', side: 'right', t: 0.5 }],
+    nets: [{ id: 'net_l', name: 'Q' }],
+    junctions: [],
+    segments: [
+      {
+        id: 'seg_l',
+        netId: 'net_l',
+        points: [
+          { x: 220, y: 140 },
+          { x: 280, y: 140 },
+        ],
+        start: { kind: 'port', portId: 'prt_l' },
+        end: { kind: 'free', x: 280, y: 140 },
+        routed: 'manual',
+      },
+    ],
+    labels: [
+      {
+        id: 'lbl_l',
+        text: 'Q',
+        role: 'name',
+        anchor: { kind: 'segment', segmentId: 'seg_l', edge: 0, distance: 30, offset: 14 },
+      },
+    ],
+    strokes: [],
+    symbols: [],
+    assets: [],
+    groups: [],
+  }
+  const legacyDoc = parseDocument(JSON.stringify(legacyRaw))
+  const legacyLabel = legacyDoc.labels.find((label) => label.id === 'lbl_l')!
+  check(legacyLabel.anchor.kind === 'segment' && !legacyLabel.anchor.shift, 'P5b: legacy fixture omits shift')
+  const legacyAt = labelPlacement(legacyDoc, 'lbl_l')!
+  // Horizontal rightward wire: normal offset +14 is upward (−y in diagram? pointOnEdge: -dx*offset for y with dx=1 → y - 14)
+  check(Math.abs(legacyAt.x - 250) < 0.5 && Math.abs(legacyAt.y - 126) < 0.5, 'P5b: legacy 1D offset position exact')
+  const legacyRound = parseDocument(serialize(legacyDoc))
+  const roundAt = labelPlacement(legacyRound, 'lbl_l')!
+  check(Math.abs(roundAt.x - legacyAt.x) < 0.5 && Math.abs(roundAt.y - legacyAt.y) < 0.5, 'P5b: legacy position survives round-trip')
+}
+
 if (failures.length) {
   throw new Error(failures.join('\n'))
 }
 console.log('selfcheck ok')
+
 
 

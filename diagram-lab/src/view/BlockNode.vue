@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ImageAsset, Port, SymbolLabel, SymbolShape } from '../core/document'
+import type { BlockStyle, ImageAsset, Port, SymbolLabel, SymbolShape } from '../core/document'
 import { portsOnSide } from '../core/geometry'
 import { RESIZE_HANDLES, type ResizeHandle } from '../core/edit'
 import SymbolFace, { type FacePin } from './SymbolFace.vue'
@@ -21,6 +21,19 @@ const props = defineProps<{
   symbolHeight?: number
   portsLive?: boolean
   selectedPort?: string | null
+  /** P1: omit/true draws the instance name; false hides the glyph only. */
+  showName?: boolean
+  /** P1: omit/true draws port name glyphs; false keeps pin marks. */
+  showPortNames?: boolean
+  /** P2: centred multiline caption; independent of `name`. */
+  displayText?: string | null
+  /** P2: omit/true draws display text when set; false hides it. */
+  showDisplayText?: boolean
+  /** P3a: offset from block centre in diagram units; omit/0 = centred. */
+  displayTextOffsetX?: number
+  displayTextOffsetY?: number
+  /** P3: optional instance appearance overrides. */
+  appearance?: BlockStyle | null
 }>()
 
 const emit = defineEmits<{
@@ -31,6 +44,7 @@ const emit = defineEmits<{
   resizeEnd: []
   resizeCancel: []
   portDown: [blockId: string, portId: string, event: PointerEvent]
+  displayTextDown: [blockId: string, event: PointerEvent]
 }>()
 
 const handleLayout: Record<ResizeHandle, { x: string; y: string; cursor: string }> = {
@@ -56,6 +70,44 @@ const markPx = computed(() => {
 
 const hitPx = computed(() => Math.max(handlePx.value, 8) * 2)
 
+const displayLines = computed(() => {
+  const text = props.displayText
+  if (!text || props.showDisplayText === false) return []
+  return text.split('\n')
+})
+
+const appearance = computed(() => props.appearance ?? null)
+
+/** Closed-shape fill for SymbolFace: null = explicit transparent; undefined = default. */
+const bodyFill = computed((): string | null | undefined => {
+  const style = appearance.value
+  if (!style) return undefined
+  if (style.fillTransparent) return null
+  if (typeof style.fill === 'string' && style.fill.length > 0) return style.fill
+  return undefined
+})
+
+const bodyStroke = computed(() => {
+  const stroke = appearance.value?.stroke
+  return typeof stroke === 'string' && stroke.length > 0 ? stroke : undefined
+})
+
+const displayColor = computed(() => {
+  const text = appearance.value?.text
+  return typeof text === 'string' && text.length > 0 ? text : undefined
+})
+
+/** P3a: centre + optional offset; (0,0) keeps P2 automatic centring. */
+const displayStyle = computed(() => {
+  const ox = props.displayTextOffsetX ?? 0
+  const oy = props.displayTextOffsetY ?? 0
+  const css: Record<string, string> = {
+    transform: `translate(calc(-50% + ${ox}px), calc(-50% + ${oy}px))`,
+  }
+  if (displayColor.value) css.color = displayColor.value
+  return css
+})
+
 /**
  * Blocks without a symbol (Boundary, and plain blocks that gained ports) draw through SymbolFace.
  * One flush rectangle puts the pin names inside the outline, the same way a functional rectangle does.
@@ -64,6 +116,18 @@ const drawnShapes = computed((): SymbolShape[] | null => {
   if (props.shapes) return props.shapes
   if (props.ports.length === 0) return null
   return [{ kind: 'rect', x: 0, y: 0, width: props.width, height: props.height, rx: 4 }]
+})
+
+/** Plain CSS box (no SymbolFace): background / border from P3. */
+const plainBoxStyle = computed(() => {
+  if (drawnShapes.value !== null) return {}
+  const style = appearance.value
+  if (!style) return {}
+  const css: Record<string, string> = {}
+  if (style.fillTransparent) css.background = 'transparent'
+  else if (typeof style.fill === 'string' && style.fill.length > 0) css.background = style.fill
+  if (typeof style.stroke === 'string' && style.stroke.length > 0) css.borderColor = style.stroke
+  return css
 })
 
 const flushBody = computed(() => drawnShapes.value?.length === 1 && drawnShapes.value[0].kind === 'rect' && props.ports.length > 0)
@@ -131,6 +195,15 @@ function onPortDown(portId: string, event: PointerEvent): void {
   emit('portDown', props.blockId, portId, event)
 }
 
+/** Selected-only: nodrag/nopan + stop so Vue Flow does not start a block drag (P3a). */
+function onDisplayTextDown(event: PointerEvent): void {
+  if (!props.selected || displayLines.value.length === 0) return
+  if (event.button !== 0) return
+  event.stopPropagation()
+  event.preventDefault()
+  emit('displayTextDown', props.blockId, event)
+}
+
 function onKey(event: KeyboardEvent): void {
   const step = 20
   if (event.key === 'ArrowRight') emit('nudge', props.blockId, step, 0)
@@ -143,8 +216,27 @@ function onKey(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="block" :class="{ selected, symbol: drawnShapes !== null }" role="group" tabindex="0" :aria-label="name" :style="{ width: `${width}px`, height: `${height}px`, '--port-mark': `${markPx * 2}px` }" @contextmenu="onContext">
-    <button type="button" class="block-name" @keydown="onKey">{{ name }}</button>
+  <div
+    class="block"
+    :class="{ selected, symbol: drawnShapes !== null }"
+    role="group"
+    tabindex="0"
+    :aria-label="name"
+    :style="{ width: `${width}px`, height: `${height}px`, '--port-mark': `${markPx * 2}px`, ...plainBoxStyle }"
+    @contextmenu="onContext"
+    @keydown="onKey"
+  >
+    <button v-show="showName !== false" type="button" class="block-name">{{ name }}</button>
+    <div
+      v-if="displayLines.length"
+      class="block-display nodrag nopan"
+      :class="{ movable: selected }"
+      aria-hidden="true"
+      :style="displayStyle"
+      @pointerdown="onDisplayTextDown"
+    >
+      <span v-for="(line, index) in displayLines" :key="index" class="block-display-line">{{ line.length ? line : '\u00a0' }}</span>
+    </div>
     <svg v-if="drawnShapes" class="symbol-node" :viewBox="`0 0 ${width} ${height}`" :width="width" :height="height">
       <SymbolFace
         :width="width"
@@ -161,6 +253,9 @@ function onKey(event: KeyboardEvent): void {
         :mark-radius="markPx"
         :flush-body="flushBody"
         :selected-pin="selectedPort"
+        :show-port-names="showPortNames !== false"
+        :body-fill="bodyFill"
+        :body-stroke="bodyStroke"
         @port-down="onPortDown"
       />
     </svg>

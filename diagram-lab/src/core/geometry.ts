@@ -1,4 +1,17 @@
-import type { Block, DiagramDocument, Endpoint, Point, Port, PortSide, Segment, SymbolDefinition, SymbolLabel, SymbolShape, Waypoint } from './document'
+import type {
+  Block,
+  DiagramDocument,
+  Endpoint,
+  LabelAnchor,
+  Point,
+  Port,
+  PortSide,
+  Segment,
+  SymbolDefinition,
+  SymbolLabel,
+  SymbolShape,
+  Waypoint,
+} from './document'
 
 export function polylineLength(points: Point[]): number {
   let total = 0
@@ -283,6 +296,19 @@ export function setTrunkX(segment: Segment, x: number): void {
   segment.points = pts
 }
 
+/**
+ * World position of a segment label (P5a).
+ * Legacy: attachment + 1D normal `offset`.
+ * With `shift`: attachment (offset ignored) + free (Δx, Δy).
+ */
+export function segmentLabelPoint(points: Point[], anchor: Extract<LabelAnchor, { kind: 'segment' }>): Point | null {
+  const useShift = Boolean(anchor.shift)
+  const base = pointOnEdge(points, anchor.edge, anchor.distance, useShift ? 0 : anchor.offset)
+  if (!base) return null
+  if (!anchor.shift) return base
+  return { x: base.x + anchor.shift.x, y: base.y + anchor.shift.y }
+}
+
 export function labelPlacement(doc: DiagramDocument, labelId: string, origins?: Map<string, Point>): Point | null {
   const label = doc.labels.find((item) => item.id === labelId)
   if (!label) return null
@@ -291,7 +317,7 @@ export function labelPlacement(doc: DiagramDocument, labelId: string, origins?: 
   const segment = doc.segments.find((item) => item.id === anchor.segmentId)
   if (!segment) return null
   const points = segmentWithLiveEnds(doc, segment, origins)
-  return pointOnEdge(points, anchor.edge, anchor.distance, anchor.offset)
+  return segmentLabelPoint(points, anchor)
 }
 
 export function segmentWithLiveEnds(doc: DiagramDocument, segment: Segment, origins?: Map<string, Point>): Point[] {
