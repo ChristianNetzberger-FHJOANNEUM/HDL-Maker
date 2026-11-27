@@ -1,6 +1,6 @@
 # A2-P4 — Markdown + inline math
 
-**Status:** **Implemented — A2-P4-Fix2 applied — manual retest pending** (27 Nov 2026).  
+**Status:** **Closed / accepted** (27 Nov 2026, visual aggregate acceptance).  
 **Baseline:** [A2-P3](diagram-lab-pilot-a2-p3-latex-labels.md) + [A2-P3a](diagram-lab-pilot-a2-p3a-block-latex.md) closed; shared `mathRender.ts` + Fix1.  
 **Related:** [scientific investigation](diagram-lab-pilot-a2-scientific-presentation-investigation.md) §5, [pilots](diagram-lab-application-pilots.md).  
 **Gates:** S5b / D5d independent. D5e export not implemented in this package.
@@ -62,7 +62,7 @@ Source (persisted)
   → formattedTextParse.ts (state-based tokenizer)
   → formattedTextRender.ts (layout + bbox, LRU by source+em)
   → mathRender.ts (unchanged, Fix1)
-  → SVG <g class="formatted-text"> …
+  → root <svg> + formatted-text group + nested MathJax <svg>
 ```
 
 Consumers share one pipeline: wire label on canvas, block caption (`BlockNode.vue`), inspector previews (`DiagramStage.vue`).
@@ -107,43 +107,41 @@ Display math line height follows tallest/deepest element per row; prose and inli
 
 ## 7. Automated verification
 
-`npm run selfcheck` — `A2-P4:*` parser/persistence plus **`A2-P4-Fix1:*` layout regression** (four minimal cases, AWGN sample, root `<svg>` wrapper, distinct text baselines, math glyph presence, bbox).
+`npm run selfcheck` — `A2-P4:*` parser/persistence; **`A2-P4-Fix1:*`** (line breaks, paragraphs, root `<svg>`); **`A2-P4-Fix2:*`** (nested MathJax, fraction bar, sqrt, display `$$`).
 
 `npm run check` — `vue-tsc --noEmit`.
 
-**Browser/DOM rendering:** not automated in this package; manual retest required after Fix1.
+**Browser/DOM:** validated by user acceptance (see §8, §11); not automated in CI.
 
-## 7.1 A2-P4-Fix1 (layout + invisible math)
+### 7.1 A2-P4-Fix1 (layout + invisible prose)
 
-**Root cause:** `renderFormattedText` emitted a bare `<g>` with SVG `<text>` / MathJax fragments. Block caption and inspector preview inject via HTML `v-html` on `<div>` — outside the SVG namespace, `y`/`transform` are ignored → lines concatenated, math invisible. Wire labels used an extra `translate(0,-ascent)` on top of what should match the LaTeX contract.
+**Root cause:** bare `<g>` + SVG `<text>` injected into HTML `<div>` hosts — no SVG namespace → concatenated lines. Fixed line stepping in `buildLayout`; full root `<svg>` wrapper; LaTeX-aligned placement.
 
-**Correction:** wrap layout in a self-contained root `<svg>` (same placement contract as `mathRender`, `y=-ascent`), fix multi-line vertical stepping in `buildLayout`, align wire/block/preview hosts with LaTeX (no double baseline shift), cache only successful layouts.
+### 7.2 A2-P4-Fix2 (invisible math)
 
-## 7.2 A2-P4-Fix2 (invisible math)
+**Root cause:** stripped MathJax `<svg>` + `scale(1,-1)` instead of full nested `<svg>` like A2-P3.
 
-**Root cause:** `formattedTextRender` stripped the outer MathJax `<svg>` and re-inserted the inner markup with `scale(1,-1)`. That diverged from the working LaTeX path (`mathRender` full `<svg>` with `y=-ascent`) and left inline/display glyphs effectively off-screen / not painted in nested SVG hosts.
-
-**Correction:** embed each math segment as a **full** MathJax `<svg>` at `translate(x, baselineY)` with `rewriteSvgIds` only — same composition contract as A2-P3 wire labels. Prose layout from Fix1 unchanged.
-
-**Browser verification:** not automated in CI; developer structural checks only (`selfcheck` nested `<svg>`, fraction `<rect>`, no `scale(1,-1)`). **Manual browser retest required.**
+**Correction:** embed full MathJax output at `translate(x, baselineY)` with `rewriteSvgIds` only.
 
 ---
 
 ## 8. Manual acceptance checklist
 
-Aggregate pass acceptable (as P3a). Suggested scenarios from freigabe §6:
+Aggregate pass **accepted** (27 Nov 2026) — user visual sign-off covering block captions, wire labels, mixed prose/math, display equations (incl. BPSK BER / `erfc`), coloured blocks, zoom readability. Per-item mapping:
 
-- [ ] **AWGN channel** — bold title, inline Gaussian, italic footnote (block markdown).  
-- [ ] **BPSK detector** — `cases` in display or inline math as authored.  
-- [ ] **Low-pass** — display `$$` + inline cutoff on following lines.  
-- [ ] **BER** — `erfc` display equation + italic caption.  
-- [ ] Same source on wire label (position, offset, colour).  
-- [ ] Inspector preview matches canvas (baseline/ascent).  
-- [ ] Undo, duplicate, fragment paste with `textFormat: markdown`.  
-- [ ] Plain + LaTeX regression unchanged; Fix1 fractions/sqrt/underline still correct inside `$…$`.  
-- [ ] Zoom/pan/drag without visible re-typeset flicker.
+| # | Scenario | Sign-off |
+| --- | --- | --- |
+| 1 | AWGN-style caption (bold, inline math, italic) | Covered by demonstrator |
+| 2 | BPSK / `cases` / decision logic | Covered by demonstrator |
+| 3 | Low-pass / display `$$` + inline follow-up | Covered in regression + pilot sheet |
+| 4 | BER / `erfc` display + italic caption | Covered by demonstrator |
+| 5 | Markdown on wire (multiline scientific label) | **Confirmed** on wire in acceptance capture |
+| 6 | Inspector preview ≈ canvas | Confirmed during Fix1/Fix2 retest |
+| 7 | Undo, duplicate, fragment paste (`markdown`) | `selfcheck` persistence; not re-run item-by-item at accept |
+| 8 | Plain + LaTeX regression | No regressions reported at accept |
+| 9 | Zoom/pan without re-typeset flicker | Acceptable at reduced zoom |
 
-**Progress:** 0 / 9 (pending user sign-off).
+**Progress:** 9 / 9 (aggregate visual acceptance).
 
 ---
 
@@ -152,14 +150,39 @@ Aggregate pass acceptable (as P3a). Suggested scenarios from freigabe §6:
 | Package | State |
 | --- | --- |
 | A2-P3 / A2-P3a | Closed |
-| A2-P4 | **Implemented — awaiting manual acceptance** |
-| A2-P5 | Gated on P4 acceptance |
-| D5e | Export boundary only; not in P4 |
-
-No commit/push from this close-out unless separately requested.
+| A2-P4 | **Closed / accepted** |
+| A2-P5 | Optional later (extract shared service, symbol labels) — not required for A2 pilot |
+| D5e | Export boundary; next on product roadmap |
 
 ---
 
 ## 10. Handoff
 
-Next after acceptance: complete BPSK pilot (A2) with scientific block captions; defer extra Markdown features until real pilot feedback. Object Snap / S5b / D5d remain independent.
+**Immediate:** complete **BPSK demonstrator** (A2 application pilot) using Markdown captions and wire labels.
+
+**Roadmap (unchanged gates):** S5b → D5d (performance) → **D5e** (SVG export, publication vectors) → **D5f** (reusable Vue surface). P4 layout + `mathRender` is the bridge toward Webskriptum-style scientific figures.
+
+Object Snap remains deferred. No commit/push from this close-out unless separately requested.
+
+---
+
+## 11. Demonstrator figure (publication-ready)
+
+User acceptance screenshot — scientific labels on blocks **and** wires, mixed Markdown + math (incl. nested fractions, roots, automatic delimiter sizing).
+
+![A2-P4 — Markdown + math on blocks and wire labels (acceptance capture, Nov 2026)](diagram-lab-demos/a2-p4-markdown-math-demonstrator.png)
+
+*Caption suggestion for papers:* “Diagram-Lab A2-P4: restricted Markdown with inline and display MathJax SVG on block display text and wire name labels; shared layout pipeline (`formattedTextParse` / `formattedTextRender` / `mathRender`).”
+
+Copy the accepted PNG into [`diagram-lab-demos/a2-p4-markdown-math-demonstrator.png`](diagram-lab-demos/a2-p4-markdown-math-demonstrator.png) when committing documentation assets (see [demos README](diagram-lab-demos/README.md)).
+
+---
+
+## 12. Deferred enhancements (not acceptance blockers)
+
+Recorded for future packages only — **do not implement** without separate freigabe:
+
+- Text alignment (left / centre / right).  
+- Per-label font size and line/paragraph spacing.  
+- Mixed font sizes within one Markdown field.  
+- Standalone scientific text objects (not tied to block or wire).

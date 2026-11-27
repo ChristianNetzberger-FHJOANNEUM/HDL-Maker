@@ -7,7 +7,7 @@
 **Focus:** Symbol definitions, primitives, import/export, instance behaviour, persistence, reuse — **not** new drawing features.  
 **Later (not this pilot):** the same BPSK sketch is a candidate for an executable Python dataflow prototype — [Python ADR](adr-executable-python-block-diagrams.md) — only after a separate freigabe; A2 stays graphics/library-first.
 
-**A2.1 presentation limits (user):** port–graphic gaps; missing scientific math — [investigation](diagram-lab-pilot-a2-scientific-presentation-investigation.md). **A2-P1 + A2-P2 closed** — [p1](diagram-lab-pilot-a2-p1-symbol-connections.md), [p2](diagram-lab-pilot-a2-p2-display-labels.md). **A2-P3/P3a** LaTeX **closed** (wire 14/14; block aggregate regression) — [p3](diagram-lab-pilot-a2-p3-latex-labels.md), [p3a](diagram-lab-pilot-a2-p3a-block-latex.md). **A2-P4** implemented — [p4](diagram-lab-pilot-a2-p4-markdown-math.md) (manual accept pending). Object Snap deferred.
+**A2.1 presentation limits (user):** port–graphic gaps; missing scientific math — [investigation](diagram-lab-pilot-a2-scientific-presentation-investigation.md). **A2-P1 + A2-P2 closed** — [p1](diagram-lab-pilot-a2-p1-symbol-connections.md), [p2](diagram-lab-pilot-a2-p2-display-labels.md). **A2-P3/P3a** LaTeX **closed** (wire 14/14; block aggregate regression) — [p3](diagram-lab-pilot-a2-p3-latex-labels.md), [p3a](diagram-lab-pilot-a2-p3a-block-latex.md). **A2-P4 closed** — [p4](diagram-lab-pilot-a2-p4-markdown-math.md) (Markdown+Math, visual accept). Object Snap deferred.
 
 ---
 
@@ -210,10 +210,10 @@ Distinguish **definition editing** (shared body) from **instance editing** (P1�
 
 ## 8. Scope honoured
 
-A2 execution kit + **A2-P1…P3a closed**. **A2-P4** implemented (manual accept). Library Manager, Symbol Designer, polygon guides, Object Snap, staging, commit, and push remain out of scope until separately released. S5b / D5d preserved.
+A2 execution kit + **A2-P1…P4 closed**. Library Manager, Symbol Designer, polygon guides, Object Snap, staging, commit, and push remain out of scope until separately released. S5b / D5d preserved; D5e/D5f on roadmap after BPSK demo.
 
 ---
 
 ## 9. Stop
 
-**A2-P1…P4 impl done (P4 accept pending).** Next: manual A2-P4 checklist, then BPSK pilot completion. Object Snap deferred.
+**A2-P1…P4 closed.** Next: **BPSK demonstrator** sheet; then roadmap S5b, D5d, D5e, D5f. Object Snap deferred.

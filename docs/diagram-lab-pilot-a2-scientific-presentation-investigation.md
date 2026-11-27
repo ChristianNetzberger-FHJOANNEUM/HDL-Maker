@@ -4,7 +4,7 @@
 **Trigger:** Manual A2.1 BPSK + AWGN drawing — port–graphic gaps; inadequate math notation on labels/block text.  
 **Related:** [a2-findings](diagram-lab-pilot-a2-findings.md), [a2-preparation](diagram-lab-pilot-a2-preparation.md), [p5a](diagram-lab-pilot-a1-p5a-label-position.md), [p2-display-text](diagram-lab-pilot-a1-p2-display-text.md), [geometry/style ADR](adr-diagram-geometry-routing-style.md), [D5e](diagram-editor-roadmap.md) (export specified, not started).
 
-Work-package ids: **A2-P1…P3a closed**; **A2-P4 spec** ([p4](diagram-lab-pilot-a2-p4-markdown-math.md)) — implementation gated; A2-P5 gated on P4.
+Work-package ids: **A2-P1…P4 closed** — [p4](diagram-lab-pilot-a2-p4-markdown-math.md); A2-P5 optional later.
 
 ---
 
@@ -211,7 +211,7 @@ No speculative optimisation now; D5d remains independent.
 | 2 | **A2-P2** | Optional wire **display** string ≠ `Net.name` | **Closed** — [p2](diagram-lab-pilot-a2-p2-display-labels.md) |
 | 3 | **A2-P3** | LaTeX wire labels | **Closed** — [p3](diagram-lab-pilot-a2-p3-latex-labels.md) |
 | 3a | **A2-P3a** | LaTeX block display text | **Closed** — [p3a](diagram-lab-pilot-a2-p3a-block-latex.md) |
-| 4 | **A2-P4** | Restricted Markdown + inline math | **Spec** — [p4](diagram-lab-pilot-a2-p4-markdown-math.md); impl gated |
+| 4 | **A2-P4** | Restricted Markdown + inline math | **Closed** — [p4](diagram-lab-pilot-a2-p4-markdown-math.md) |
 | 5 | **A2-P5** | Shared formatted-text architecture | Architecture |
 
 Suggested acceptance tests (when released):

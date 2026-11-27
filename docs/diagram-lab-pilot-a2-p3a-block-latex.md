@@ -1,7 +1,7 @@
 # A2-P3a — LaTeX on block display text
 
 **Status:** **Closed / accepted** (27 Nov 2026) — manual review via **aggregate regression** (see §8). Fix1 applied before final review.  
-**Baseline:** [A2-P3](diagram-lab-pilot-a2-p3-latex-labels.md) wire LaTeX closed. **A2-P4** spec — [p4](diagram-lab-pilot-a2-p4-markdown-math.md) (implementation gated).  
+**Baseline:** [A2-P3](diagram-lab-pilot-a2-p3-latex-labels.md) wire LaTeX closed. **A2-P4** — [p4](diagram-lab-pilot-a2-p4-markdown-math.md) **closed**.  
 **Multiline LaTeX:** Use AMS environments (`gathered`, `aligned`, …); **do not** convert textarea newlines to `\\`.  
 **Related:** A1-P2/P3/P3a block text, [A2-P3](diagram-lab-pilot-a2-p3-latex-labels.md), [pilots](diagram-lab-application-pilots.md).
 

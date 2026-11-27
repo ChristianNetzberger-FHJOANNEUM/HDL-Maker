@@ -182,4 +182,4 @@ Preserve S-series gates and D5d priorities.
 
 ## 10. Stop for review
 
-**A2-P1 → A2-P3a closed** — through [p3a](diagram-lab-pilot-a2-p3a-block-latex.md) (aggregate regression incl. Fix1). **A2-P4** Markdown+Math — [implemented, manual accept pending](diagram-lab-pilot-a2-p4-markdown-math.md). Keep **D5d** independent.
+**A2-P1 → A2-P4 closed** — through [p4](diagram-lab-pilot-a2-p4-markdown-math.md) (Markdown+Math, wire + block; visual accept Nov 2026). **Next:** BPSK demonstrator (A2 sheet). Keep **D5d** independent.

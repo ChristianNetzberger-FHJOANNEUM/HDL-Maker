@@ -1,7 +1,7 @@
 # A2-P3 — Scientific LaTeX labels (MathJax SVG)
 
 **Status:** **Closed / accepted** (27 Nov 2026) — manual checklist **14/14** (user acceptance).  
-**Baseline:** A2-P2 closed; [A2-P3a](diagram-lab-pilot-a2-p3a-block-latex.md) block LaTeX **closed** (aggregate regression). **A2-P4** — [spec](diagram-lab-pilot-a2-p4-markdown-math.md); implementation gated on architecture review.  
+**Baseline:** A2-P2 closed; [A2-P3a](diagram-lab-pilot-a2-p3a-block-latex.md) block LaTeX **closed**; [A2-P4](diagram-lab-pilot-a2-p4-markdown-math.md) Markdown **closed**.  
 **Related:** [a2-p2](diagram-lab-pilot-a2-p2-display-labels.md), [scientific investigation](diagram-lab-pilot-a2-scientific-presentation-investigation.md), [a2-findings](diagram-lab-pilot-a2-findings.md), [pilots](diagram-lab-application-pilots.md).
 
 ---
@@ -215,7 +215,7 @@ Manual re-test after fix: `\frac{1}{2}`, `\sqrt{x^2+y^2}`, `\underline{x+y}`, `\
 
 - Block LaTeX: [A2-P3a](diagram-lab-pilot-a2-p3a-block-latex.md). Port/symbol LaTeX not in scope.  
 - **Multiline LaTeX:** use AMS (`gathered`, `aligned`, …); Enter in the textarea is not a layout break.  
-- Markdown: [A2-P4 spec](diagram-lab-pilot-a2-p4-markdown-math.md) — not implemented.  
+- Markdown: [A2-P4](diagram-lab-pilot-a2-p4-markdown-math.md) — closed.  
 - No auto-detection of LaTeX in plain text.  
 - MathJax chunk is large; first LaTeX use pays load cost once.  
 - Complex macros outside `base`/`ams` are unsupported by design.  
