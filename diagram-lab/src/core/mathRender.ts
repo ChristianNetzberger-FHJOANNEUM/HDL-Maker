@@ -166,14 +166,14 @@ function finalizeSvg(
   const ascent = Math.max(0, (heightEx + valignEx) * ex)
   // Prefix IDs defensively in case a future fontCache mode reintroduces defs.
   const prefix = `mjx${Math.abs(hashString(`${em}|${rawSvg.length}|${widthEx}`)).toString(36)}_`
-  // Shift so baseline sits at y=0 when the group is translated to the label point.
-  const svg = rewriteSvgIds(rawSvg, prefix)
-    .replace(/\s(width|height)="[^"]*"/g, '')
-    .replace(/\sstyle="[^"]*"/, '')
-    .replace(
-      /^<svg\b/,
-      `<svg y="${fmt(-ascent)}" width="${fmt(width)}" height="${fmt(height)}" overflow="visible" style="color:currentColor"`,
-    )
+  // Strip MathJax ex sizing / vertical-align from the root <svg> only — inner <rect> rules
+  // (fraction bar, radical overline, underline, etc.) must keep their own width/height.
+  const svg = rewriteSvgIds(rawSvg, prefix).replace(/^<svg\b([^>]*)>/, (_match, attrs: string) => {
+    const rest = attrs
+      .replace(/\s(width|height)="[^"]*"/gi, '')
+      .replace(/\sstyle="[^"]*"/, '')
+    return `<svg y="${fmt(-ascent)}" width="${fmt(width)}" height="${fmt(height)}" overflow="visible" style="color:currentColor"${rest}>`
+  })
   return { svg, width, height, ascent }
 }
 

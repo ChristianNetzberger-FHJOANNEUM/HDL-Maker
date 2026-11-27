@@ -8,6 +8,7 @@ import {
   BLOCK_TEMPLATES,
   type BlockTemplate,
   type Fragment,
+  blockTextFormat,
   captureFragment,
   deleteBlocks,
   duplicateBlocks,
@@ -26,6 +27,7 @@ import {
   unusedPortName,
   resizeBox,
   setBlockFields,
+  setBlockTextFormat,
   setBlockStyle,
   resetBlockStyle,
   setDisplayTextOffset,
@@ -95,6 +97,10 @@ import {
   renderMath,
   type MathRenderResult,
 } from '../core/mathRender'
+import { renderFormattedText, type FormattedTextResult } from '../core/formattedTextRender'
+
+/** Matches `.block-display` font-size (A2-P3a). */
+const BLOCK_DISPLAY_MATH_EM = 12
 import { finishFree, undoWireStep, wireClick, type WireDraft } from '../core/wiretool'
 import { orthogonalize } from '../core/orthogonalize'
 import { sampleDocument } from '../core/sample'
@@ -520,6 +526,10 @@ const flowNodes = computed(() =>
       showName: block.showName !== false,
       showPortNames: block.showPortNames !== false,
       displayText: block.displayText ?? null,
+      displayTextFormat: blockTextFormat(block),
+      displayMath: blockTextFormat(block) === 'latex' ? mathByBlock.get(block.id) ?? null : null,
+      displayFormatted:
+        blockTextFormat(block) === 'markdown' ? formattedByBlock.get(block.id) ?? null : null,
       showDisplayText: block.showDisplayText !== false,
       displayTextOffsetX: block.displayTextOffset?.x ?? 0,
       displayTextOffsetY: block.displayTextOffset?.y ?? 0,
@@ -649,7 +659,14 @@ const bindings = computed(() =>
 
 /** Runtime MathJax SVG keyed by label id (A2-P3). Not part of the document. */
 const mathByLabel = reactive(new Map<string, MathRenderResult>())
+/** Runtime MathJax SVG keyed by block id (A2-P3a). */
+const mathByBlock = reactive(new Map<string, MathRenderResult>())
+const formattedByLabel = reactive(new Map<string, FormattedTextResult>())
+const formattedByBlock = reactive(new Map<string, FormattedTextResult>())
 const mathPreview = ref<MathRenderResult | null>(null)
+const blockMathPreview = ref<MathRenderResult | null>(null)
+const formattedPreview = ref<FormattedTextResult | null>(null)
+const blockFormattedPreview = ref<FormattedTextResult | null>(null)
 
 const labels = computed(() =>
   doc.value.labels.map((label) => {
@@ -657,11 +674,13 @@ const labels = computed(() =>
     const text = labelText(doc.value, label)
     const fontSize = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : null
     const math = format === 'latex' ? mathByLabel.get(label.id) ?? null : null
+    const formatted = format === 'markdown' ? formattedByLabel.get(label.id) ?? null : null
     return {
       id: label.id,
       text,
       format,
       math,
+      formatted,
       at: labelPlacement(doc.value, label.id),
       fontSize,
       visible: label.visible !== false,
@@ -712,6 +731,152 @@ watch(
       if (live.has(id)) continue
       mathByLabel.delete(id)
       endMathConsumer(id)
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () =>
+    doc.value.labels
+      .map((label) => {
+        const format = labelTextFormat(label)
+        if (format !== 'markdown' || label.visible === false) return ''
+        const em = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : MATH_RENDER_DEFAULT_EM
+        return `${label.id}\n${em}\n${labelText(doc.value, label)}`
+      })
+      .filter(Boolean)
+      .join('\0'),
+  (serialized) => {
+    const live = new Set<string>()
+    const items = serialized
+      ? serialized.split('\0').map((entry) => {
+          const [id, emText, ...rest] = entry.split('\n')
+          return { id: id!, em: Number(emText), text: rest.join('\n') }
+        })
+      : []
+    for (const item of items) {
+      live.add(item.id)
+      const existing = formattedByLabel.get(item.id)
+      if (existing && existing.ok && existing.source === item.text && existing.em === item.em) continue
+      const token = beginMathRequest(`md:${item.id}`)
+      void renderFormattedText(item.text, { em: item.em, idPrefix: `lbl${item.id}_` })
+        .then((result) => {
+          if (!isMathRequestCurrent(`md:${item.id}`, token)) return
+          formattedByLabel.set(item.id, result)
+        })
+        .catch((err) => {
+          if (!isMathRequestCurrent(`md:${item.id}`, token)) return
+          formattedByLabel.set(item.id, {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+            source: item.text,
+            em: item.em,
+            warnings: [],
+          })
+        })
+    }
+    for (const id of [...formattedByLabel.keys()]) {
+      if (live.has(id)) continue
+      formattedByLabel.delete(id)
+      endMathConsumer(`md:${id}`)
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () =>
+    doc.value.blocks
+      .map((block) => {
+        if (blockTextFormat(block) !== 'latex' || block.showDisplayText === false) return ''
+        const text = typeof block.displayText === 'string' ? block.displayText : ''
+        if (!text.trim()) return ''
+        return `${block.id}\n${BLOCK_DISPLAY_MATH_EM}\n${text}`
+      })
+      .filter(Boolean)
+      .join('\0'),
+  (serialized) => {
+    const live = new Set<string>()
+    const items = serialized
+      ? serialized.split('\0').map((entry) => {
+          const [id, emText, ...rest] = entry.split('\n')
+          return { id: id!, em: Number(emText), text: rest.join('\n') }
+        })
+      : []
+    for (const item of items) {
+      live.add(item.id)
+      const existing = mathByBlock.get(item.id)
+      if (existing && existing.source === item.text && existing.em === item.em) continue
+      const token = beginMathRequest(`block:${item.id}`)
+      void renderMath(item.text, { em: item.em, display: false })
+        .then((result) => {
+          if (!isMathRequestCurrent(`block:${item.id}`, token)) return
+          mathByBlock.set(item.id, result)
+        })
+        .catch((err) => {
+          if (!isMathRequestCurrent(`block:${item.id}`, token)) return
+          mathByBlock.set(item.id, {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+            source: item.text,
+            em: item.em,
+          })
+        })
+    }
+    for (const id of [...mathByBlock.keys()]) {
+      if (live.has(id)) continue
+      mathByBlock.delete(id)
+      endMathConsumer(`block:${id}`)
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () =>
+    doc.value.blocks
+      .map((block) => {
+        if (blockTextFormat(block) !== 'markdown' || block.showDisplayText === false) return ''
+        const text = typeof block.displayText === 'string' ? block.displayText : ''
+        if (!text.trim()) return ''
+        return `${block.id}\n${BLOCK_DISPLAY_MATH_EM}\n${text}`
+      })
+      .filter(Boolean)
+      .join('\0'),
+  (serialized) => {
+    const live = new Set<string>()
+    const items = serialized
+      ? serialized.split('\0').map((entry) => {
+          const [id, emText, ...rest] = entry.split('\n')
+          return { id: id!, em: Number(emText), text: rest.join('\n') }
+        })
+      : []
+    for (const item of items) {
+      live.add(item.id)
+      const existing = formattedByBlock.get(item.id)
+      if (existing && existing.ok && existing.source === item.text && existing.em === item.em) continue
+      const token = beginMathRequest(`md:block:${item.id}`)
+      void renderFormattedText(item.text, { em: item.em, idPrefix: `blk${item.id}_` })
+        .then((result) => {
+          if (!isMathRequestCurrent(`md:block:${item.id}`, token)) return
+          formattedByBlock.set(item.id, result)
+        })
+        .catch((err) => {
+          if (!isMathRequestCurrent(`md:block:${item.id}`, token)) return
+          formattedByBlock.set(item.id, {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+            source: item.text,
+            em: item.em,
+            warnings: [],
+          })
+        })
+    }
+    for (const id of [...formattedByBlock.keys()]) {
+      if (live.has(id)) continue
+      formattedByBlock.delete(id)
+      endMathConsumer(`md:block:${id}`)
     }
   },
   { immediate: true },
@@ -821,6 +986,47 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => {
+    const label = selectedNameLabel.value
+    if (!label || !selectedLabelUsesCustomDisplay.value) return ''
+    if (labelTextFormat(label) !== 'markdown') return ''
+    const em = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : MATH_RENDER_DEFAULT_EM
+    const text = typeof label.displayText === 'string' ? label.displayText : ''
+    if (!text.trim()) return ''
+    return `${em}\n${text}`
+  },
+  (serialized) => {
+    if (!serialized) {
+      formattedPreview.value = null
+      endMathConsumer('__fmt-preview__')
+      return
+    }
+    const newline = serialized.indexOf('\n')
+    const em = Number(serialized.slice(0, newline))
+    const text = serialized.slice(newline + 1)
+    const existing = formattedPreview.value
+    if (existing && existing.ok && existing.source === text && existing.em === em) return
+    const token = beginMathRequest('__fmt-preview__')
+    void renderFormattedText(text, { em, idPrefix: 'prev_' })
+      .then((result) => {
+        if (!isMathRequestCurrent('__fmt-preview__', token)) return
+        formattedPreview.value = result
+      })
+      .catch((err) => {
+        if (!isMathRequestCurrent('__fmt-preview__', token)) return
+        formattedPreview.value = {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          source: text,
+          em,
+          warnings: [],
+        }
+      })
+  },
+  { immediate: true },
+)
+
 /** True when the selected segment has no name labels or at least one drawn label (P1 / P5b). */
 const selectedSegmentLabelsVisible = computed(() => {
   const segmentId = selectedSegment.value
@@ -851,6 +1057,91 @@ const gridLines = computed(() => {
 })
 
 const oneBlock = computed(() => (selected.value.size === 1 ? doc.value.blocks.find((block) => selected.value.has(block.id)) ?? null : null))
+
+const selectedBlockTextFormat = computed(() => {
+  const block = oneBlock.value
+  return block ? blockTextFormat(block) : 'plain'
+})
+
+watch(
+  () => {
+    const block = oneBlock.value
+    if (!block) return ''
+    if (blockTextFormat(block) !== 'latex') return ''
+    const text = typeof block.displayText === 'string' ? block.displayText : ''
+    if (!text.trim()) return ''
+    return `${BLOCK_DISPLAY_MATH_EM}\n${text}`
+  },
+  (serialized) => {
+    if (!serialized) {
+      blockMathPreview.value = null
+      endMathConsumer('__block-preview__')
+      return
+    }
+    const newline = serialized.indexOf('\n')
+    const em = Number(serialized.slice(0, newline))
+    const text = serialized.slice(newline + 1)
+    const existing = blockMathPreview.value
+    if (existing && existing.source === text && existing.em === em) return
+    const token = beginMathRequest('__block-preview__')
+    void renderMath(text, { em, display: false })
+      .then((result) => {
+        if (!isMathRequestCurrent('__block-preview__', token)) return
+        blockMathPreview.value = result
+      })
+      .catch((err) => {
+        if (!isMathRequestCurrent('__block-preview__', token)) return
+        blockMathPreview.value = {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          source: text,
+          em,
+        }
+      })
+  },
+  { immediate: true },
+)
+
+watch(
+  () => {
+    const block = oneBlock.value
+    if (!block) return ''
+    if (blockTextFormat(block) !== 'markdown') return ''
+    const text = typeof block.displayText === 'string' ? block.displayText : ''
+    if (!text.trim()) return ''
+    return `${BLOCK_DISPLAY_MATH_EM}\n${text}`
+  },
+  (serialized) => {
+    if (!serialized) {
+      blockFormattedPreview.value = null
+      endMathConsumer('__block-fmt-preview__')
+      return
+    }
+    const newline = serialized.indexOf('\n')
+    const em = Number(serialized.slice(0, newline))
+    const text = serialized.slice(newline + 1)
+    const existing = blockFormattedPreview.value
+    if (existing && existing.ok && existing.source === text && existing.em === em) return
+    const token = beginMathRequest('__block-fmt-preview__')
+    void renderFormattedText(text, { em, idPrefix: 'bprev_' })
+      .then((result) => {
+        if (!isMathRequestCurrent('__block-fmt-preview__', token)) return
+        blockFormattedPreview.value = result
+      })
+      .catch((err) => {
+        if (!isMathRequestCurrent('__block-fmt-preview__', token)) return
+        blockFormattedPreview.value = {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          source: text,
+          em,
+          warnings: [],
+        }
+      })
+  },
+  { immediate: true },
+)
+
 const expandTarget = computed(() => {
   const block = oneBlock.value
   const current = project.value
@@ -2909,6 +3200,18 @@ function commitDisplayText(event: Event): void {
   status.value = next.length > 0 ? 'Display text updated.' : 'Display text cleared.'
 }
 
+function commitBlockTextFormat(event: Event): void {
+  const block = oneBlock.value
+  if (!block) return
+  const value = (event.target as HTMLSelectElement).value
+  const format = value === 'latex' ? 'latex' : value === 'markdown' ? 'markdown' : 'plain'
+  if (blockTextFormat(block) === format) return
+  edits().execute((draft) => setBlockTextFormat(draft, block.id, format))
+  refreshHistory()
+  status.value =
+    format === 'latex' ? 'Display format: LaTeX.' : format === 'markdown' ? 'Display format: Markdown.' : 'Display format: Plain Text.'
+}
+
 const FILL_PRESETS = ['#cfe8ff', '#d8f0d8', '#fff4cc', '#f0d4d4'] as const
 
 function blockFillPickerValue(block: { style?: { fill?: string; fillTransparent?: boolean } }): string {
@@ -3602,13 +3905,17 @@ function commitLabelDisplayMode(event: Event): void {
 function commitLabelTextFormat(event: Event): void {
   const label = selectedNameLabel.value
   if (!label || !selectedLabelUsesCustomDisplay.value) return
-  const format = (event.target as HTMLSelectElement).value === 'latex' ? 'latex' : 'plain'
+  const value = (event.target as HTMLSelectElement).value
+  const format: LabelTextFormat = value === 'latex' ? 'latex' : value === 'markdown' ? 'markdown' : 'plain'
   let changed = false
   edits().execute((draft) => {
     changed = setLabelTextFormat(draft, label.id, format)
   })
   refreshHistory()
-  if (changed) status.value = format === 'latex' ? 'Display format: LaTeX.' : 'Display format: Plain Text.'
+  if (changed) {
+    status.value =
+      format === 'latex' ? 'Display format: LaTeX.' : format === 'markdown' ? 'Display format: Markdown.' : 'Display format: Plain Text.'
+  }
 }
 
 function commitLabelDisplayText(event: Event): void {
@@ -4473,6 +4780,9 @@ defineExpose({ roundTrip, doc })
             :show-name="nodeProps.data.showName"
             :show-port-names="nodeProps.data.showPortNames"
             :display-text="nodeProps.data.displayText"
+            :display-text-format="nodeProps.data.displayTextFormat"
+            :display-math="nodeProps.data.displayMath"
+            :display-formatted="nodeProps.data.displayFormatted"
             :show-display-text="nodeProps.data.showDisplayText"
             :display-text-offset-x="nodeProps.data.displayTextOffsetX"
             :display-text-offset-y="nodeProps.data.displayTextOffsetY"
@@ -4597,12 +4907,19 @@ defineExpose({ roundTrip, doc })
             pointer-events="none"
             v-html="label.math.svg"
           />
+          <g
+            v-else-if="label.format === 'markdown' && label.formatted?.ok && label.at"
+            class="label formatted"
+            :transform="`translate(${label.at.x}, ${label.at.y})`"
+            pointer-events="none"
+            v-html="label.formatted.svg"
+          />
           <text
             v-else
             class="label"
             :class="{
               compact: Boolean(label.fontSize && label.fontSize < 12),
-              'math-fallback': label.format === 'latex',
+              'math-fallback': label.format === 'latex' || label.format === 'markdown',
             }"
             :x="label.at?.x"
             :y="label.at?.y"
@@ -4639,14 +4956,24 @@ defineExpose({ roundTrip, doc })
               <select data-wire-text-format :value="selectedLabelTextFormat" @change="commitLabelTextFormat">
                 <option value="plain">Plain Text</option>
                 <option value="latex">LaTeX</option>
+                <option value="markdown">Markdown</option>
               </select>
             </label>
             <label>
               Display text
+              <textarea
+                v-if="selectedLabelTextFormat !== 'plain'"
+                data-wire-display-text
+                :rows="selectedLabelTextFormat === 'latex' ? 2 : 5"
+                :value="selectedLabelDisplayText"
+                :placeholder="selectedLabelTextFormat === 'latex' ? '\\\\sqrt{2E_b/T_b}' : '**Title**\\n$x$'"
+                @change="commitLabelDisplayText"
+              />
               <input
+                v-else
                 data-wire-display-text
                 :value="selectedLabelDisplayText"
-                :placeholder="selectedLabelTextFormat === 'latex' ? '\\\\sqrt{2E_b/T_b}' : 'e.g. cos(ω₀t)'"
+                placeholder="e.g. cos(ω₀t)"
                 @change="commitLabelDisplayText"
               />
             </label>
@@ -4663,6 +4990,22 @@ defineExpose({ roundTrip, doc })
               />
               <p v-else-if="mathPreview && !mathPreview.ok" class="hint math-error" data-wire-math-error>
                 {{ mathPreview.error }}
+              </p>
+              <p v-else class="hint">Typesetting…</p>
+            </div>
+            <div
+              v-if="selectedLabelTextFormat === 'markdown' && selectedLabelDisplayText.trim().length > 0"
+              class="math-preview"
+              data-wire-formatted-preview
+            >
+              <p class="hint">Preview</p>
+              <div
+                v-if="formattedPreview?.ok"
+                class="math-preview-svg formatted-preview-host"
+                v-html="formattedPreview.svg"
+              />
+              <p v-else-if="formattedPreview && !formattedPreview.ok" class="hint math-error">
+                {{ formattedPreview.error }}
               </p>
               <p v-else class="hint">Typesetting…</p>
             </div>
@@ -4787,14 +5130,55 @@ defineExpose({ roundTrip, doc })
           Show instance name
         </label>
         <label>
+          Text format
+          <select data-block-text-format :value="selectedBlockTextFormat" @change="commitBlockTextFormat">
+            <option value="plain">Plain Text</option>
+            <option value="latex">LaTeX</option>
+            <option value="markdown">Markdown</option>
+          </select>
+        </label>
+        <label>
           Display text
           <textarea
             data-block-display-text
-            rows="3"
+            :rows="selectedBlockTextFormat === 'plain' ? 3 : 5"
             :value="oneBlock.displayText ?? ''"
+            :placeholder="selectedBlockTextFormat === 'latex' ? 'y(t)=K\\cdot x(t)' : selectedBlockTextFormat === 'markdown' ? '**Title**\\n$math$' : 'Multiline plain text'"
             @change="commitDisplayText"
           />
         </label>
+        <div
+          v-if="selectedBlockTextFormat === 'latex' && (oneBlock.displayText?.trim().length ?? 0) > 0"
+          class="math-preview"
+          data-block-math-preview
+        >
+          <p class="hint">Preview</p>
+          <div
+            v-if="blockMathPreview?.ok"
+            class="math-preview-svg"
+            v-html="blockMathPreview.svg"
+          />
+          <p v-else-if="blockMathPreview && !blockMathPreview.ok" class="hint math-error" data-block-math-error>
+            {{ blockMathPreview.error }}
+          </p>
+          <p v-else class="hint">Typesetting…</p>
+        </div>
+        <div
+          v-if="selectedBlockTextFormat === 'markdown' && (oneBlock.displayText?.trim().length ?? 0) > 0"
+          class="math-preview"
+          data-block-formatted-preview
+        >
+          <p class="hint">Preview</p>
+          <div
+            v-if="blockFormattedPreview?.ok"
+            class="math-preview-svg formatted-preview-host"
+            v-html="blockFormattedPreview.svg"
+          />
+          <p v-else-if="blockFormattedPreview && !blockFormattedPreview.ok" class="hint math-error">
+            {{ blockFormattedPreview.error }}
+          </p>
+          <p v-else class="hint">Typesetting…</p>
+        </div>
         <label class="check">
           <input data-block-show-display type="checkbox" :checked="oneBlock.showDisplayText !== false" @change="commitBlockVisibility('showDisplayText', $event)" />
           Show display text

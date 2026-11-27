@@ -397,6 +397,15 @@ button:disabled {
   font-style: italic;
 }
 
+.label.formatted {
+  color: #1c2430;
+  pointer-events: none;
+}
+
+.label.formatted .formatted-text {
+  pointer-events: none;
+}
+
 .math-preview {
   margin: 0.35rem 0 0.5rem;
 }
@@ -771,6 +780,62 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: pre;
+}
+
+.block-display.math {
+  padding: 2px 4px;
+}
+
+.block-display-math {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  color: inherit;
+  pointer-events: none;
+}
+
+.block-display-math svg {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.block-display-math-fallback {
+  font-style: italic;
+  color: #a33;
+}
+
+.block-display.formatted {
+  padding: 2px 4px;
+}
+
+.block-display-formatted {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  color: inherit;
+  pointer-events: none;
+}
+
+.block-display-formatted svg {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.formatted-preview-host svg {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.label.formatted svg {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.formatted-preview-host {
+  min-height: 2rem;
+  overflow: auto;
 }
 
 .port {

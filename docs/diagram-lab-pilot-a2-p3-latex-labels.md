@@ -1,7 +1,7 @@
 # A2-P3 — Scientific LaTeX labels (MathJax SVG)
 
-**Status:** Implemented — **awaiting manual A2-P3 acceptance** (0/14).  
-**Baseline:** A2-P2 closed. A2-P4 (Markdown) remains gated until P3 acceptance.  
+**Status:** **Closed / accepted** (27 Nov 2026) — manual checklist **14/14** (user acceptance).  
+**Baseline:** A2-P2 closed; [A2-P3a](diagram-lab-pilot-a2-p3a-block-latex.md) block LaTeX **closed** (aggregate regression). **A2-P4** — [spec](diagram-lab-pilot-a2-p4-markdown-math.md); implementation gated on architecture review.  
 **Related:** [a2-p2](diagram-lab-pilot-a2-p2-display-labels.md), [scientific investigation](diagram-lab-pilot-a2-scientific-presentation-investigation.md), [a2-findings](diagram-lab-pilot-a2-findings.md), [pilots](diagram-lab-application-pilots.md).
 
 ---
@@ -178,7 +178,7 @@ Covered: format semantics, Use-net-name clear, undo/redo, save/load (incl. backs
 
 ## 13. Manual acceptance checklist (A2-P3)
 
-0/14 until user confirmation:
+**14/14** — user acceptance 27 Nov 2026. Automated evidence: `npm run selfcheck` (A2-P3 cases) + `npm run check`.
 
 1. Greek + indices  
 2. Fractions + roots  
@@ -197,10 +197,25 @@ Covered: format semantics, Use-net-name clear, undo/redo, save/load (incl. backs
 
 ---
 
-## 14. Known limitations
+## 14. Defect fix (A2-P3/P3a-Fix1)
 
-- Wire labels only (no block/port/annotation LaTeX yet).  
-- No Markdown (A2-P4 gated).  
+**Symptom:** Missing fraction / radical bars; wrong underline/overline placement in block and wire LaTeX.
+
+**Cause:** `finalizeSvg()` in `mathRender.ts` removed **all** `width` / `height` attributes in the MathJax string, not only on the root `<svg>`. Inner `<rect>` rule geometry (mfrac, msqrt) and nested `<svg>` elements (munder/mover) lost dimensions.
+
+**Fix:** Strip `width` / `height` / root `style` only on the **outer** `<svg>` tag; preserve inner geometry.
+
+**Regression:** `npm run selfcheck` cases `A2-P3-Fix1:*`.
+
+Manual re-test after fix: `\frac{1}{2}`, `\sqrt{x^2+y^2}`, `\underline{x+y}`, `\overline{AB}`, nested fractions.
+
+---
+
+## 15. Known limitations
+
+- Block LaTeX: [A2-P3a](diagram-lab-pilot-a2-p3a-block-latex.md). Port/symbol LaTeX not in scope.  
+- **Multiline LaTeX:** use AMS (`gathered`, `aligned`, …); Enter in the textarea is not a layout break.  
+- Markdown: [A2-P4 spec](diagram-lab-pilot-a2-p4-markdown-math.md) — not implemented.  
 - No auto-detection of LaTeX in plain text.  
 - MathJax chunk is large; first LaTeX use pays load cost once.  
 - Complex macros outside `base`/`ams` are unsupported by design.  
@@ -208,7 +223,7 @@ Covered: format semantics, Use-net-name clear, undo/redo, save/load (incl. backs
 
 ---
 
-## 15. Changed files / dependency
+## 16. Changed files / dependency
 
 | Path | Change |
 | --- | --- |

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { BlockStyle, ImageAsset, Port, SymbolLabel, SymbolShape } from '../core/document'
+import type { FormattedTextResult } from '../core/formattedTextRender'
+import type { MathRenderResult } from '../core/mathRender'
 import { portsOnSide } from '../core/geometry'
 import { RESIZE_HANDLES, type ResizeHandle } from '../core/edit'
 import SymbolFace, { type FaceLead, type FacePin } from './SymbolFace.vue'
@@ -29,6 +31,12 @@ const props = defineProps<{
   showPortNames?: boolean
   /** P2: centred multiline caption; independent of `name`. */
   displayText?: string | null
+  /** A2-P3a: plain vs LaTeX for `displayText`. */
+  displayTextFormat?: 'plain' | 'latex' | 'markdown'
+  /** Runtime MathJax SVG for LaTeX display text (not persisted). */
+  displayMath?: MathRenderResult | null
+  /** Runtime formatted SVG for Markdown (A2-P4). */
+  displayFormatted?: FormattedTextResult | null
   /** P2: omit/true draws display text when set; false hides it. */
   showDisplayText?: boolean
   /** P3a: offset from block centre in diagram units; omit/0 = centred. */
@@ -72,9 +80,18 @@ const markPx = computed(() => {
 
 const hitPx = computed(() => Math.max(handlePx.value, 8) * 2)
 
+const displayFormat = computed(() => props.displayTextFormat ?? 'plain')
+
+const hasDisplayContent = computed(() => {
+  const text = props.displayText
+  if (!text || props.showDisplayText === false) return false
+  if (displayFormat.value === 'latex' || displayFormat.value === 'markdown') return text.trim().length > 0
+  return true
+})
+
 const displayLines = computed(() => {
   const text = props.displayText
-  if (!text || props.showDisplayText === false) return []
+  if (!text || props.showDisplayText === false || displayFormat.value !== 'plain') return []
   return text.split('\n')
 })
 
@@ -200,7 +217,7 @@ function onPortDown(portId: string, event: PointerEvent): void {
 
 /** Selected-only: nodrag/nopan + stop so Vue Flow does not start a block drag (P3a). */
 function onDisplayTextDown(event: PointerEvent): void {
-  if (!props.selected || displayLines.value.length === 0) return
+  if (!props.selected || !hasDisplayContent.value) return
   if (event.button !== 0) return
   event.stopPropagation()
   event.preventDefault()
@@ -231,14 +248,32 @@ function onKey(event: KeyboardEvent): void {
   >
     <button v-show="showName !== false" type="button" class="block-name">{{ name }}</button>
     <div
-      v-if="displayLines.length"
+      v-if="hasDisplayContent"
       class="block-display nodrag nopan"
-      :class="{ movable: selected }"
+      :class="{ movable: selected, math: displayFormat === 'latex', formatted: displayFormat === 'markdown' }"
       aria-hidden="true"
       :style="displayStyle"
       @pointerdown="onDisplayTextDown"
     >
-      <span v-for="(line, index) in displayLines" :key="index" class="block-display-line">{{ line.length ? line : '\u00a0' }}</span>
+      <template v-if="displayFormat === 'latex'">
+        <div
+          v-if="displayMath?.ok"
+          class="block-display-math"
+          v-html="displayMath.svg"
+        />
+        <span v-else class="block-display-line block-display-math-fallback">{{ displayText }}</span>
+      </template>
+      <template v-else-if="displayFormat === 'markdown'">
+        <div
+          v-if="displayFormatted?.ok"
+          class="block-display-formatted"
+          v-html="displayFormatted.svg"
+        />
+        <span v-else class="block-display-line block-display-math-fallback">{{ displayText }}</span>
+      </template>
+      <template v-else>
+        <span v-for="(line, index) in displayLines" :key="index" class="block-display-line">{{ line.length ? line : '\u00a0' }}</span>
+      </template>
     </div>
     <svg v-if="drawnShapes" class="symbol-node" :viewBox="`0 0 ${width} ${height}`" :width="width" :height="height">
       <SymbolFace

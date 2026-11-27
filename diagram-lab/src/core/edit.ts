@@ -307,13 +307,32 @@ export function snapBlocks(
   }
 }
 
+export type BlockTextFormat = 'plain' | 'latex' | 'markdown'
+
+/** Missing `textFormat` means plain. LaTeX applies only with non-empty `displayText` (A2-P3a). */
+export function blockTextFormat(block: Pick<DiagramDocument['blocks'][number], 'displayText' | 'textFormat'>): BlockTextFormat {
+  const text = typeof block.displayText === 'string' ? block.displayText.trim() : ''
+  if (!text) return 'plain'
+  if (block.textFormat === 'latex') return 'latex'
+  if (block.textFormat === 'markdown') return 'markdown'
+  return 'plain'
+}
+
+export function setBlockTextFormat(doc: DiagramDocument, blockId: string, format: BlockTextFormat): void {
+  const block = doc.blocks.find((item) => item.id === blockId)
+  if (!block) return
+  if (format === 'plain') delete block.textFormat
+  else block.textFormat = format
+  refreshAll(doc)
+}
+
 export function setBlockFields(
   doc: DiagramDocument,
   blockId: string,
   fields: Partial<
     Pick<
       DiagramDocument['blocks'][number],
-      'name' | 'x' | 'y' | 'width' | 'height' | 'showName' | 'showPortNames' | 'displayText' | 'showDisplayText'
+      'name' | 'x' | 'y' | 'width' | 'height' | 'showName' | 'showPortNames' | 'displayText' | 'showDisplayText' | 'textFormat'
     >
   >,
 ): void {
@@ -337,8 +356,14 @@ export function setBlockFields(
   }
   if (fields.displayText !== undefined) {
     // Preserve internal newlines; empty string clears the optional field.
-    if (fields.displayText.length === 0) delete block.displayText
-    else block.displayText = fields.displayText
+    if (fields.displayText.length === 0) {
+      delete block.displayText
+      delete block.textFormat
+    } else block.displayText = fields.displayText
+  }
+  if (fields.textFormat !== undefined) {
+    if (fields.textFormat === 'plain') delete block.textFormat
+    else block.textFormat = fields.textFormat
   }
   if (fields.showDisplayText !== undefined) {
     if (fields.showDisplayText) delete block.showDisplayText
@@ -640,7 +665,11 @@ export function pasteFragment(doc: DiagramDocument, fragment: Fragment, dx: numb
       text: label.text,
       role: label.role,
       ...(typeof label.displayText === 'string' ? { displayText: label.displayText } : {}),
-      ...(label.textFormat === 'latex' ? { textFormat: 'latex' as const } : {}),
+      ...(label.textFormat === 'latex'
+        ? { textFormat: 'latex' as const }
+        : label.textFormat === 'markdown'
+          ? { textFormat: 'markdown' as const }
+          : {}),
       fontSize: label.fontSize,
       visible: label.visible,
       anchor: { ...label.anchor, segmentId },
@@ -765,7 +794,11 @@ function copySegmentLabels(doc: DiagramDocument, sourceSegmentId: string, nextSe
       text: label.text,
       role: label.role,
       ...(typeof label.displayText === 'string' ? { displayText: label.displayText } : {}),
-      ...(label.textFormat === 'latex' ? { textFormat: 'latex' as const } : {}),
+      ...(label.textFormat === 'latex'
+        ? { textFormat: 'latex' as const }
+        : label.textFormat === 'markdown'
+          ? { textFormat: 'markdown' as const }
+          : {}),
       fontSize: label.fontSize,
       visible: label.visible,
       anchor: { ...label.anchor, segmentId: nextSegmentId },

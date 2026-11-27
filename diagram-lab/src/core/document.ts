@@ -63,6 +63,11 @@ export type Block = {
    * Omitted or `{ x: 0, y: 0 }` means automatic centring.
    */
   displayTextOffset?: Point
+  /**
+   * How to interpret `displayText` for the centred caption (A2-P3a).
+   * Omitted ≡ plain. LaTeX applies only when `displayText` is set.
+   */
+  textFormat?: 'plain' | 'latex' | 'markdown'
   /** Instance-level appearance overrides (P3). Does not alter the symbol library. */
   style?: BlockStyle
 }
@@ -271,7 +276,7 @@ export type Label = {
    * Omitted or `'plain'` → literal text. `'latex'` → MathJax SVG from the source (no $ delimiters).
    * Inherited net-name labels are always plain. Persist source + format only — never generated SVG.
    */
-  textFormat?: 'plain' | 'latex'
+  textFormat?: 'plain' | 'latex' | 'markdown'
   /** Optional drawing size in CSS px. Omit for the stage default (~13px). */
   fontSize?: number
   /**

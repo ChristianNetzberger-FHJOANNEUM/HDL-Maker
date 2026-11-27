@@ -25,6 +25,8 @@ import {
 } from './geometry'
 import { netFixture } from './fixture'
 import { addNameLabel, commitWire, crossings, deleteSegment, ensureNetByName, labelText, labelTextFormat, mergeNets, mergeNetsByName, moveJunction, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeFreeEnd, placeLabelAt, placeSpan, probeWire, renameNet, removeSegmentNameLabels, resetLabelPosition, setLabelDisplay, setLabelDisplayText, setLabelOffset, setLabelTextFormat, setRouted, snapTarget } from './nets'
+import { countMathSegments, parseFormattedText } from './formattedTextParse'
+import { clearFormattedTextLayoutCache, renderFormattedText } from './formattedTextRender'
 import {
   clearMathRenderCache,
   ensureMathEngine,
@@ -53,7 +55,9 @@ import {
   captureFragment,
   pasteFragment,
   resizeBox,
+  blockTextFormat,
   setBlockFields,
+  setBlockTextFormat,
   setBlockStyle,
   resetBlockStyle,
   setDisplayTextOffset,
@@ -6050,6 +6054,229 @@ function isPortFreeLike(segment: { start: { kind: string }; end: { kind: string 
   setLabelDisplayText(plainSheet, plainLabel.id, 'carrier_signal')
   check(labelTextFormat(plainLabel) === 'plain', 'A2-P3: plain custom needs no MathJax')
   check(labelText(plainSheet, plainLabel) === 'carrier_signal', 'A2-P3: plain fast path text')
+
+  // --- A2-P3a: LaTeX on block display text ---
+  let p3aSheet = emptyDocument()
+  const blkId = placeTemplate(p3aSheet, BLOCK_TEMPLATES[0]!, false)
+  setBlockFields(p3aSheet, blkId, { x: 80, y: 80 })
+  const p3a = new EditSession(
+    () => p3aSheet,
+    (next) => {
+      p3aSheet = next
+    },
+  )
+  const blk = () => p3aSheet.blocks.find((item) => item.id === blkId)!
+  check(blk().textFormat === undefined, 'A2-P3a: legacy block omits textFormat')
+  check(blockTextFormat(blk()) === 'plain', 'A2-P3a: default format plain')
+
+  p3a.execute((draft) => setBlockFields(draft, blkId, { displayText: 'AMPLIFIER\nGain = 10' }))
+  check(blockTextFormat(blk()) === 'plain', 'A2-P3a: multiline plain stays plain')
+  check(Boolean(blk().displayText?.includes('\n')), 'A2-P3a: multiline plain preserved')
+
+  p3a.execute((draft) => setBlockTextFormat(draft, blkId, 'latex'))
+  check(blk().textFormat === 'latex', 'A2-P3a: latex format stored')
+  check(blockTextFormat(blk()) === 'latex', 'A2-P3a: blockTextFormat reads latex')
+
+  p3a.execute((draft) => setBlockFields(draft, blkId, { displayText: String.raw`y(t)=K\cdot x(t)` }))
+  p3a.execute((draft) => setBlockTextFormat(draft, blkId, 'plain'))
+  check(blk().textFormat === undefined, 'A2-P3a: plain deletes textFormat')
+  check(blk().displayText === String.raw`y(t)=K\cdot x(t)`, 'A2-P3a: plain switch keeps source')
+
+  p3a.execute((draft) => {
+    setBlockFields(draft, blkId, { displayText: String.raw`P_b = Q(\sqrt{2E_b/T_b})` })
+    setBlockTextFormat(draft, blkId, 'latex')
+  })
+  check(blk().textFormat === 'latex', 'A2-P3a: combined edit stores format')
+
+  const p3aBeforeUndo = blk().displayText
+  p3a.execute((draft) => setBlockFields(draft, blkId, { displayText: 'carrier' }))
+  p3a.undo()
+  check(blk().displayText === p3aBeforeUndo, 'A2-P3a: undo restores latex source')
+  p3a.redo()
+  check(blk().displayText === 'carrier', 'A2-P3a: redo restores plain edit')
+
+  p3a.execute((draft) => setBlockFields(draft, blkId, { displayText: '' }))
+  check(blk().displayText === undefined && blk().textFormat === undefined, 'A2-P3a: clear removes format')
+
+  p3a.execute((draft) => {
+    setBlockFields(draft, blkId, { displayText: String.raw`\sigma^2` })
+    setBlockTextFormat(draft, blkId, 'latex')
+    setDisplayTextOffset(draft, blkId, { x: 4, y: -6 })
+  })
+  const roundP3a = parseDocument(serialize(p3aSheet))
+  const roundBlk = roundP3a.blocks.find((item) => item.id === blkId)!
+  check(roundBlk.textFormat === 'latex' && roundBlk.displayText === String.raw`\sigma^2`, 'A2-P3a: save/load keeps latex source')
+  check(roundBlk.displayTextOffset?.x === 4, 'A2-P3a: offset independent of format')
+
+  const dupMap = duplicateBlocks(p3aSheet, [blkId], DUPLICATE_OFFSET, DUPLICATE_OFFSET)
+  const dupId = dupMap.get(blkId)!
+  const dup = p3aSheet.blocks.find((item) => item.id === dupId)!
+  check(dup.textFormat === 'latex' && dup.displayText === String.raw`\sigma^2`, 'A2-P3a: duplicate copies format')
+  check(dup.displayTextOffset?.x === 4, 'A2-P3a: duplicate copies offset with format')
+
+  const statsBefore = getMathRenderStats().cacheHits
+  await renderMath(String.raw`y=K\cdot x`, { em: 12 })
+  const blockRender = await renderMath(String.raw`y=K\cdot x`, { em: 12 })
+  check(blockRender.ok, 'A2-P3a: block-sized em typesets')
+  const statsAfter = getMathRenderStats()
+  check(statsAfter.cacheHits > statsBefore, 'A2-P3a: shared cache used across consumers')
+
+  // A2-P3/P3a-Fix1: rule geometry (rect width/height) must survive root-SVG sizing only.
+  function mathRuleRectHasBox(svg: string): boolean {
+    const rects = svg.match(/<rect\b[^>]*>/g) ?? []
+    return rects.some((tag) => /width="/.test(tag) && /height="/.test(tag))
+  }
+  const fracRule = await renderMath(String.raw`\frac{1}{2}`, { em: 13 })
+  check(fracRule.ok && mathRuleRectHasBox(fracRule.svg), 'A2-P3-Fix1: fraction bar rect keeps width/height')
+  const sqrtRule = await renderMath(String.raw`\sqrt{x^2+y^2}`, { em: 13 })
+  check(sqrtRule.ok && mathRuleRectHasBox(sqrtRule.svg), 'A2-P3-Fix1: radical vinculum rect keeps width/height')
+  const nestedFrac = await renderMath(String.raw`H(s)=\frac{1}{1+sRC}`, { em: 13 })
+  check(nestedFrac.ok && mathRuleRectHasBox(nestedFrac.svg), 'A2-P3-Fix1: nested fraction keeps rule rects')
+  function nestedSvgsKeepBox(svg: string): boolean {
+    const tags = svg.match(/<svg\b[^>]*>/gi) ?? []
+    return tags.length >= 2 && tags.every((tag) => /width="/i.test(tag) && /height="/i.test(tag))
+  }
+  const underline = await renderMath(String.raw`\underline{x+y}`, { em: 13 })
+  check(underline.ok && nestedSvgsKeepBox(underline.svg), 'A2-P3-Fix1: underline nested svg keeps dimensions')
+  const overline = await renderMath(String.raw`\overline{AB}`, { em: 13 })
+  check(overline.ok && nestedSvgsKeepBox(overline.svg), 'A2-P3-Fix1: overline nested svg keeps dimensions')
+
+  // --- A2-P4: Markdown subset parser + formatted layout ---
+  const bold = parseFormattedText('**AWGN**')
+  const boldRun = bold.blocks[0]
+  check(
+    boldRun?.kind === 'paragraph' && boldRun.lines[0]?.[0]?.kind === 'text' && boldRun.lines[0][0].bold,
+    'A2-P4: ** bold',
+  )
+  const escapeDollar = parseFormattedText(String.raw`\$100`)
+  const escRun = escapeDollar.blocks[0]
+  check(
+    escRun?.kind === 'paragraph' && escRun.lines[0]?.[0]?.kind === 'text' && escRun.lines[0][0].text === '$100',
+    'A2-P4: escaped dollar',
+  )
+  const unclosed = parseFormattedText('x $y')
+  check(unclosed.warnings.some((w) => /Unclosed inline math/i.test(w)), 'A2-P4: unclosed $ warns')
+  const tagLit = parseFormattedText('<script>alert(1)</script>')
+  const tagLine = tagLit.blocks[0]
+  check(
+    tagLine?.kind === 'paragraph' &&
+      tagLine.lines[0]?.[0]?.kind === 'text' &&
+      tagLine.lines[0][0].text.includes('<script>'),
+    'A2-P4: HTML tag literal',
+  )
+  const codeDollar = parseFormattedText('`$a$`')
+  const codeRun = codeDollar.blocks[0]
+  check(codeRun?.kind === 'paragraph' && codeRun.lines[0]?.[0]?.kind === 'code', 'A2-P4: code no math in backticks')
+  const displayMd = parseFormattedText('$$\nH(s)=\\frac{1}{1+sRC}\n$$')
+  check(displayMd.blocks.some((b) => b.kind === 'display-math'), 'A2-P4: display $$ block')
+  check(countMathSegments(displayMd.blocks) === 1, 'A2-P4: display counts as one math segment')
+  const bi = parseFormattedText('***Important***')
+  const biRun = bi.blocks[0]
+  check(
+    biRun?.kind === 'paragraph' &&
+      biRun.lines[0]?.[0]?.kind === 'text' &&
+      biRun.lines[0][0].bold &&
+      biRun.lines[0][0].italic,
+    'A2-P4: *** bold+italic',
+  )
+
+  const mdSheet = netFixture()
+  const mdLabel = mdSheet.labels.find((item) => item.anchor.kind === 'segment')!
+  setLabelDisplayText(mdSheet, mdLabel.id, '**AWGN**\n$n\\sim\\mathcal{N}(0,\\sigma^2)$')
+  check(setLabelTextFormat(mdSheet, mdLabel.id, 'markdown'), 'A2-P4: label format markdown')
+  check(labelTextFormat(mdLabel) === 'markdown', 'A2-P4: label markdown stored')
+  check(Boolean(mdLabel.displayText?.includes('\n')), 'A2-P4: wire markdown multiline source')
+  const p4Round = parseDocument(serialize(mdSheet))
+  const p4Loaded = p4Round.labels.find((item) => item.id === mdLabel.id)!
+  check(p4Loaded.textFormat === 'markdown', 'A2-P4: wire markdown save/load')
+  check(setLabelTextFormat(mdSheet, mdLabel.id, 'plain'), 'A2-P4: wire markdown → plain')
+
+  setBlockFields(p3aSheet, blkId, {
+    displayText: '**BPSK**\n$\\hat b_k$',
+    textFormat: 'markdown',
+  })
+  check(blockTextFormat(blk()) === 'markdown', 'A2-P4: block markdown format')
+  const p4BlkRound = parseDocument(serialize(p3aSheet)).blocks.find((item) => item.id === blkId)!
+  check(
+    p4BlkRound.textFormat === 'markdown' && Boolean(p4BlkRound.displayText?.startsWith('**BPSK')),
+    'A2-P4: block markdown save/load',
+  )
+
+  clearFormattedTextLayoutCache()
+  await ensureMathEngine()
+  const fmt = await renderFormattedText('**x** $a^2$', { em: 13, idPrefix: 'sc-p4-' })
+  check(fmt.ok && fmt.svg.includes('formatted-text'), 'A2-P4: formatted layout emits svg group')
+  check(fmt.ok && fmt.svg.startsWith('<svg'), 'A2-P4-Fix1: root svg wrapper for HTML hosts')
+  const cached = await renderFormattedText('**x** $a^2$', { em: 13, idPrefix: 'sc-p4-' })
+  check(cached.ok && fmt.ok && cached.svg === fmt.svg, 'A2-P4: layout cache reuses svg')
+
+  const textYValues = (svg: string): number[] =>
+    [...svg.matchAll(/<text\b[^>]*\by="([^"]+)"/g)].map((m) => Number(m[1]))
+  const hasMathGlyph = (svg: string): boolean => /<path\b|<use\b/i.test(svg)
+  const layoutEm = 13
+
+  const threeLines = await renderFormattedText('Zeile 1\nZeile 2\nZeile 3', { em: layoutEm, idPrefix: 'p4f1-' })
+  check(threeLines.ok, 'A2-P4-Fix1: three lines typesets')
+  if (threeLines.ok) {
+    const ys = textYValues(threeLines.svg)
+    check(ys.length === 3, 'A2-P4-Fix1: three prose text nodes')
+    check(new Set(ys).size === 3, 'A2-P4-Fix1: three distinct baselines')
+    check(threeLines.height > layoutEm * 1.5, 'A2-P4-Fix1: multiline bbox height')
+  }
+
+  const twoParas = await renderFormattedText('Absatz 1\n\nAbsatz 2', { em: layoutEm, idPrefix: 'p4f2-' })
+  check(twoParas.ok, 'A2-P4-Fix1: two paragraphs typesets')
+  if (twoParas.ok) {
+    const ys = textYValues(twoParas.svg)
+    check(ys.length === 2, 'A2-P4-Fix1: two paragraph text nodes')
+    check(ys[1]! - ys[0]! > layoutEm * 0.9, 'A2-P4-Fix1: paragraph gap between baselines')
+  }
+
+  const mathOnly = await renderFormattedText(String.raw`$\frac{1}{2}$`, { em: layoutEm, idPrefix: 'p4f3-' })
+  check(mathOnly.ok, 'A2-P4-Fix1: inline math only typesets')
+  if (mathOnly.ok) {
+    check(hasMathGlyph(mathOnly.svg), 'A2-P4-Fix1: math-only svg contains glyphs')
+    check(mathOnly.width > 0 && mathOnly.height > 0, 'A2-P4-Fix1: math-only bbox')
+    check(
+      !/<g transform="translate\([^)]*\) scale\(1,-1\)/.test(mathOnly.svg),
+      'A2-P4-Fix2: layout group does not invert math',
+    )
+    check((mathOnly.svg.match(/<svg\b/g) ?? []).length >= 2, 'A2-P4-Fix2: nested MathJax svg preserved')
+    const fracBar = mathOnly.svg.match(/<rect\b[^>]*>/g) ?? []
+    check(fracBar.some((tag) => /width="/.test(tag) && /height="/.test(tag)), 'A2-P4-Fix2: fraction rule rect retained')
+  }
+
+  const sqrtMd = await renderFormattedText(String.raw`$\sqrt{x^2+y^2}$`, { em: layoutEm, idPrefix: 'p4f6-' })
+  check(sqrtMd.ok && hasMathGlyph(sqrtMd.svg), 'A2-P4-Fix2: sqrt inline math glyphs')
+
+  const displayRendered = await renderFormattedText('$$\nH(s)=\\frac{1}{1+sRC}\n$$', { em: layoutEm, idPrefix: 'p4f7-' })
+  check(displayRendered.ok && hasMathGlyph(displayRendered.svg), 'A2-P4-Fix2: display math glyphs')
+
+  const mixed = await renderFormattedText('Gain: $K=10$', { em: layoutEm, idPrefix: 'p4f4-' })
+  check(mixed.ok, 'A2-P4-Fix1: prose+inline math typesets')
+  if (mixed.ok) {
+    check(mixed.svg.includes('Gain:'), 'A2-P4-Fix1: prose visible in svg')
+    check(hasMathGlyph(mixed.svg), 'A2-P4-Fix1: inline math glyphs present')
+    check(mixed.width > measureProseWidthGuess('Gain: ', layoutEm), 'A2-P4-Fix1: mixed wider than prose only')
+  }
+
+  const awgn = await renderFormattedText(
+    String.raw`**AWGN Channel**
+
+$y(t)=x(t)+n(t)$ $n\sim\mathcal{N}(0,\sigma_n^2)$
+
+*Additive white Gaussian noise*`,
+    { em: layoutEm, idPrefix: 'p4f5-' },
+  )
+  check(awgn.ok, 'A2-P4-Fix1: AWGN sample typesets')
+  if (awgn.ok) {
+    check(hasMathGlyph(awgn.svg), 'A2-P4-Fix1: AWGN math visible in svg')
+    check(textYValues(awgn.svg).length >= 3, 'A2-P4-Fix1: AWGN multiline prose baselines')
+  }
+}
+
+function measureProseWidthGuess(text: string, em: number): number {
+  return text.length * em * 0.52
 }
 
 if (failures.length) {

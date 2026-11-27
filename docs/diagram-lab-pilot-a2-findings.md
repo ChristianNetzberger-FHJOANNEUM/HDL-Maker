@@ -7,7 +7,7 @@
 **Focus:** Symbol definitions, primitives, import/export, instance behaviour, persistence, reuse — **not** new drawing features.  
 **Later (not this pilot):** the same BPSK sketch is a candidate for an executable Python dataflow prototype — [Python ADR](adr-executable-python-block-diagrams.md) — only after a separate freigabe; A2 stays graphics/library-first.
 
-**A2.1 presentation limits (user):** port–graphic gaps; missing scientific math — [investigation](diagram-lab-pilot-a2-scientific-presentation-investigation.md). **A2-P1 + A2-P2 closed** — [p1](diagram-lab-pilot-a2-p1-symbol-connections.md), [p2](diagram-lab-pilot-a2-p2-display-labels.md). **A2-P3 LaTeX implemented — awaiting manual acceptance** — [p3](diagram-lab-pilot-a2-p3-latex-labels.md). A2-P4 gated until P3 acceptance. Object Snap deferred.
+**A2.1 presentation limits (user):** port–graphic gaps; missing scientific math — [investigation](diagram-lab-pilot-a2-scientific-presentation-investigation.md). **A2-P1 + A2-P2 closed** — [p1](diagram-lab-pilot-a2-p1-symbol-connections.md), [p2](diagram-lab-pilot-a2-p2-display-labels.md). **A2-P3/P3a** LaTeX **closed** (wire 14/14; block aggregate regression) — [p3](diagram-lab-pilot-a2-p3-latex-labels.md), [p3a](diagram-lab-pilot-a2-p3a-block-latex.md). **A2-P4** implemented — [p4](diagram-lab-pilot-a2-p4-markdown-math.md) (manual accept pending). Object Snap deferred.
 
 ---
 
@@ -203,17 +203,17 @@ Distinguish **definition editing** (shared body) from **instance editing** (P1�
 | --- | --- | --- |
 | A2.1-G1 | Port/wire gaps; static leads fail when ports move | **Closed in A2-P1** — guides + derived leads — [p1](diagram-lab-pilot-a2-p1-symbol-connections.md) |
 | A2.1-G2 | Adder/OSC ports not on snap grid | **Closed in A2-P1** — catalog geometry; Object Snap not required |
-| A2.1-T1 | Scientific glyphs on wires | **A2-P2 closed** (Unicode); **A2-P3** LaTeX awaiting accept |
+| A2.1-T1 | Scientific glyphs on wires / blocks | **P2–P3a closed**; LaTeX via `mathRender`; multiline via AMS; **P4** Markdown spec |
 | *(A2.2/A2.3)* | Fill during remaining manual runs | … |
 
 ---
 
 ## 8. Scope honoured
 
-A2 execution kit + **A2-P1/P2 closed**; **A2-P3 implemented (manual accept open)**. A2-P4, Library Manager, Symbol Designer, polygon guides, Object Snap, staging, commit, and push remain out of scope until separately released. S5b / D5d preserved.
+A2 execution kit + **A2-P1…P3a closed**. **A2-P4** implemented (manual accept). Library Manager, Symbol Designer, polygon guides, Object Snap, staging, commit, and push remain out of scope until separately released. S5b / D5d preserved.
 
 ---
 
 ## 9. Stop
 
-**A2-P1 + A2-P2 closed.** **A2-P3** awaiting manual acceptance — [p3](diagram-lab-pilot-a2-p3-latex-labels.md). Next after accept: **A2-P4** Markdown (gated). Object Snap deferred.
+**A2-P1…P4 impl done (P4 accept pending).** Next: manual A2-P4 checklist, then BPSK pilot completion. Object Snap deferred.

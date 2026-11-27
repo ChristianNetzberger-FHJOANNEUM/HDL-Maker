@@ -182,4 +182,4 @@ Preserve S-series gates and D5d priorities.
 
 ## 10. Stop for review
 
-**A2-P1 + A2-P2 closed** — [p1](diagram-lab-pilot-a2-p1-symbol-connections.md), [p2](diagram-lab-pilot-a2-p2-display-labels.md). **A2-P3 LaTeX** implemented — awaiting manual accept — [p3](diagram-lab-pilot-a2-p3-latex-labels.md); P4 gated. Keep **D5d** independent.
+**A2-P1 → A2-P3a closed** — through [p3a](diagram-lab-pilot-a2-p3a-block-latex.md) (aggregate regression incl. Fix1). **A2-P4** Markdown+Math — [implemented, manual accept pending](diagram-lab-pilot-a2-p4-markdown-math.md). Keep **D5d** independent.

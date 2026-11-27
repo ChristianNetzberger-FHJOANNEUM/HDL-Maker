@@ -15,7 +15,7 @@ export type WireResult =
   | { ok: true; netId: string; segmentId: string; createdNet: boolean }
   | { ok: false; reason: string; netIds: string[] }
 
-export type LabelTextFormat = 'plain' | 'latex'
+export type LabelTextFormat = 'plain' | 'latex' | 'markdown'
 
 /**
  * Resolve the string drawn for a label (A2-P2).
@@ -42,7 +42,9 @@ export function labelTextFormat(label: Label): LabelTextFormat {
   if (!isNameLabel(label)) return 'plain'
   const custom = typeof label.displayText === 'string' ? label.displayText.trim() : ''
   if (custom.length === 0) return 'plain'
-  return label.textFormat === 'latex' ? 'latex' : 'plain'
+  if (label.textFormat === 'latex') return 'latex'
+  if (label.textFormat === 'markdown') return 'markdown'
+  return 'plain'
 }
 
 /**
@@ -82,10 +84,11 @@ export function setLabelTextFormat(doc: DiagramDocument, labelId: string, format
   if (!label || !isNameLabel(label)) return false
   const custom = typeof label.displayText === 'string' ? label.displayText.trim() : ''
   if (custom.length === 0) return false
-  const before = label.textFormat === 'latex' ? 'latex' : 'plain'
+  const before: LabelTextFormat =
+    label.textFormat === 'latex' ? 'latex' : label.textFormat === 'markdown' ? 'markdown' : 'plain'
   if (before === format) return false
-  if (format === 'latex') label.textFormat = 'latex'
-  else delete label.textFormat
+  if (format === 'plain') delete label.textFormat
+  else label.textFormat = format
   return true
 }
 
