@@ -254,10 +254,24 @@ export type Label = {
   id: string
   text: string
   /**
-   * name: the drawing shows the net name. note: the drawing shows `text`.
+   * name: the drawing shows the net name (or `displayText` when set — A2-P2).
+   * note: the drawing shows `text`.
    * A missing role on a segment anchor is a name label, so older files keep their meaning.
    */
   role?: 'name' | 'note'
+  /**
+   * Optional per-label display override for name-role labels (A2-P2).
+   * When set (non-empty after trim), the drawing shows this string instead of `Net.name`.
+   * Omitted = inherit the logical net name. Empty / whitespace is normalized to omitted.
+   * Does not rename nets or change connectivity. Independent of `visible` and position.
+   */
+  displayText?: string
+  /**
+   * How to interpret `displayText` for name-role custom labels (A2-P3).
+   * Omitted or `'plain'` → literal text. `'latex'` → MathJax SVG from the source (no $ delimiters).
+   * Inherited net-name labels are always plain. Persist source + format only — never generated SVG.
+   */
+  textFormat?: 'plain' | 'latex'
   /** Optional drawing size in CSS px. Omit for the stage default (~13px). */
   fontSize?: number
   /**

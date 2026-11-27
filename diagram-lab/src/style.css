@@ -372,12 +372,54 @@ button:disabled {
 .label {
   font-size: 13px;
   fill: #1c2430;
+  color: #1c2430;
   pointer-events: none;
   user-select: none;
 }
 
 .label.compact {
   font-size: 9px;
+}
+
+.label.math {
+  fill: currentColor;
+  color: #1c2430;
+  pointer-events: none;
+}
+
+.label.math svg {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.label.math-fallback {
+  fill: #a33;
+  font-style: italic;
+}
+
+.math-preview {
+  margin: 0.35rem 0 0.5rem;
+}
+
+.math-preview-svg {
+  display: flex;
+  align-items: baseline;
+  min-height: 1.75rem;
+  padding: 0.35rem 0.4rem;
+  border: 1px solid #c8d0da;
+  border-radius: 4px;
+  background: #f7f9fb;
+  color: #1c2430;
+  overflow: auto;
+}
+
+.math-preview-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.math-error {
+  color: #a33;
 }
 
 .block {

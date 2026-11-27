@@ -17,7 +17,7 @@ A2-P1 delivered:
 
 **Automated:** `npm run selfcheck` ok; `npm run check` (`vue-tsc --noEmit`) ok — including cardinals, constant lead length 20, HV alignability, history/persistence, stale-embed compatibility.
 
-**Next gated packages:** A2-P2 (independent display labels), A2-P3 (LaTeX/MathJax), A2-P4 (Markdown). Object Snap / Smart Guides remain deferred. S5b and D5d gates preserved.
+**Later packages:** A2-P2 **closed**; A2-P3 LaTeX **implemented** (manual accept open) — [p3](diagram-lab-pilot-a2-p3-latex-labels.md); A2-P4 (Markdown) gated. Object Snap / Smart Guides remain deferred. S5b and D5d gates preserved.
 
 ---
 
@@ -158,4 +158,4 @@ No Object Snap / Smart Guides; no `resizePolicy`; no polygon guides; no Designer
 
 ## 9. Stop
 
-**A2-P1 closed.** Next separate freigabe: **A2-P2** independent display labels (logical net names stay machine-readable; scientific glyphs later via A2-P3). Preserve S5b / D5d.
+**A2-P1 closed** (A2-P2 also closed; A2-P3 awaiting accept). Preserve S5b / D5d.

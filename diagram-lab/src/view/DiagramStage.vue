@@ -1,7 +1,7 @@
 ﻿<script setup lang="ts">
 import { VueFlow, type NodeDragEvent, type ViewportTransform } from '@vue-flow/core'
 import { getStroke } from 'perfect-freehand'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { adoptWire, addStroke, removeStroke } from '../core/commands'
 import { parseDocument, serialize, type DiagramDocument, type Point, type PortSide, type SymbolDefinition } from '../core/document'
 import {
@@ -79,10 +79,22 @@ import {
   removeSegmentNameLabels,
   resetLabelPosition,
   isNameLabel,
+  labelTextFormat,
+  setLabelDisplayText,
+  setLabelTextFormat,
   setRouted,
   snapTarget,
+  type LabelTextFormat,
   type SnapHit,
 } from '../core/nets'
+import {
+  beginMathRequest,
+  endMathConsumer,
+  isMathRequestCurrent,
+  MATH_RENDER_DEFAULT_EM,
+  renderMath,
+  type MathRenderResult,
+} from '../core/mathRender'
 import { finishFree, undoWireStep, wireClick, type WireDraft } from '../core/wiretool'
 import { orthogonalize } from '../core/orthogonalize'
 import { sampleDocument } from '../core/sample'
@@ -635,14 +647,74 @@ const bindings = computed(() =>
     .join('|'),
 )
 
+/** Runtime MathJax SVG keyed by label id (A2-P3). Not part of the document. */
+const mathByLabel = reactive(new Map<string, MathRenderResult>())
+const mathPreview = ref<MathRenderResult | null>(null)
+
 const labels = computed(() =>
-  doc.value.labels.map((label) => ({
-    id: label.id,
-    text: labelText(doc.value, label),
-    at: labelPlacement(doc.value, label.id),
-    fontSize: typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : null,
-    visible: label.visible !== false,
-  })),
+  doc.value.labels.map((label) => {
+    const format = labelTextFormat(label)
+    const text = labelText(doc.value, label)
+    const fontSize = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : null
+    const math = format === 'latex' ? mathByLabel.get(label.id) ?? null : null
+    return {
+      id: label.id,
+      text,
+      format,
+      math,
+      at: labelPlacement(doc.value, label.id),
+      fontSize,
+      visible: label.visible !== false,
+    }
+  }),
+)
+
+watch(
+  () =>
+    doc.value.labels
+      .map((label) => {
+        const format = labelTextFormat(label)
+        if (format !== 'latex' || label.visible === false) return ''
+        const em = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : MATH_RENDER_DEFAULT_EM
+        return `${label.id}\n${em}\n${labelText(doc.value, label)}`
+      })
+      .filter(Boolean)
+      .join('\0'),
+  (serialized) => {
+    const live = new Set<string>()
+    const items = serialized
+      ? serialized.split('\0').map((entry) => {
+          const [id, emText, ...rest] = entry.split('\n')
+          return { id: id!, em: Number(emText), text: rest.join('\n') }
+        })
+      : []
+    for (const item of items) {
+      live.add(item.id)
+      const existing = mathByLabel.get(item.id)
+      if (existing && existing.source === item.text && existing.em === item.em) continue
+      const token = beginMathRequest(item.id)
+      void renderMath(item.text, { em: item.em, display: false })
+        .then((result) => {
+          if (!isMathRequestCurrent(item.id, token)) return
+          mathByLabel.set(item.id, result)
+        })
+        .catch((err) => {
+          if (!isMathRequestCurrent(item.id, token)) return
+          mathByLabel.set(item.id, {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+            source: item.text,
+            em: item.em,
+          })
+        })
+    }
+    for (const id of [...mathByLabel.keys()]) {
+      if (live.has(id)) continue
+      mathByLabel.delete(id)
+      endMathConsumer(id)
+    }
+  },
+  { immediate: true },
 )
 
 const wirePreview = computed(() => {
@@ -684,6 +756,70 @@ const selectedSegmentHasNameLabel = computed(() => {
   if (!segmentId) return false
   return nameLabelsForSegment(segmentId).length > 0
 })
+
+/** Primary name label on the selected segment (P5b: typically one). */
+const selectedNameLabel = computed(() => {
+  const segmentId = selectedSegment.value
+  if (!segmentId) return null
+  return nameLabelsForSegment(segmentId)[0] ?? null
+})
+
+/** A2-P2: custom display override present on the selected name label. */
+const selectedLabelUsesCustomDisplay = computed(() => {
+  const label = selectedNameLabel.value
+  return Boolean(label && typeof label.displayText === 'string' && label.displayText.trim().length > 0)
+})
+
+const selectedLabelDisplayText = computed(() => {
+  const label = selectedNameLabel.value
+  if (!label || typeof label.displayText !== 'string') return ''
+  return label.displayText
+})
+
+/** A2-P3: Plain Text vs LaTeX for the selected custom display label. */
+const selectedLabelTextFormat = computed((): LabelTextFormat => {
+  const label = selectedNameLabel.value
+  return label ? labelTextFormat(label) : 'plain'
+})
+
+watch(
+  () => {
+    const label = selectedNameLabel.value
+    if (!label || !selectedLabelUsesCustomDisplay.value) return ''
+    if (labelTextFormat(label) !== 'latex') return ''
+    const em = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : MATH_RENDER_DEFAULT_EM
+    const text = typeof label.displayText === 'string' ? label.displayText : ''
+    return `${em}\n${text}`
+  },
+  (serialized) => {
+    if (!serialized) {
+      mathPreview.value = null
+      endMathConsumer('__preview__')
+      return
+    }
+    const newline = serialized.indexOf('\n')
+    const em = Number(serialized.slice(0, newline))
+    const text = serialized.slice(newline + 1)
+    const existing = mathPreview.value
+    if (existing && existing.source === text && existing.em === em) return
+    const token = beginMathRequest('__preview__')
+    void renderMath(text, { em, display: false })
+      .then((result) => {
+        if (!isMathRequestCurrent('__preview__', token)) return
+        mathPreview.value = result
+      })
+      .catch((err) => {
+        if (!isMathRequestCurrent('__preview__', token)) return
+        mathPreview.value = {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          source: text,
+          em,
+        }
+      })
+  },
+  { immediate: true },
+)
 
 /** True when the selected segment has no name labels or at least one drawn label (P1 / P5b). */
 const selectedSegmentLabelsVisible = computed(() => {
@@ -3439,6 +3575,66 @@ function resetSelectedLabelPosition(): void {
   status.value = changed ? 'Label position reset.' : 'Label already at default position.'
 }
 
+/** A2-P2: inherit net name vs custom display text (one history entry on change). */
+function commitLabelDisplayMode(event: Event): void {
+  const label = selectedNameLabel.value
+  if (!label) return
+  const mode = (event.target as HTMLSelectElement).value
+  if (mode === 'net') {
+    let changed = false
+    edits().execute((draft) => {
+      changed = setLabelDisplayText(draft, label.id, null)
+    })
+    refreshHistory()
+    if (changed) status.value = 'Label shows the net name.'
+    return
+  }
+  if (mode === 'custom' && !selectedLabelUsesCustomDisplay.value) {
+    const seed = selectedNet.value?.name ?? 'label'
+    edits().execute((draft) => {
+      setLabelDisplayText(draft, label.id, seed)
+    })
+    refreshHistory()
+    status.value = 'Custom display label.'
+  }
+}
+
+function commitLabelTextFormat(event: Event): void {
+  const label = selectedNameLabel.value
+  if (!label || !selectedLabelUsesCustomDisplay.value) return
+  const format = (event.target as HTMLSelectElement).value === 'latex' ? 'latex' : 'plain'
+  let changed = false
+  edits().execute((draft) => {
+    changed = setLabelTextFormat(draft, label.id, format)
+  })
+  refreshHistory()
+  if (changed) status.value = format === 'latex' ? 'Display format: LaTeX.' : 'Display format: Plain Text.'
+}
+
+function commitLabelDisplayText(event: Event): void {
+  const label = selectedNameLabel.value
+  if (!label) return
+  const input = event.target as HTMLInputElement
+  const next = input.value
+  let changed = false
+  edits().execute((draft) => {
+    changed = setLabelDisplayText(draft, label.id, next)
+  })
+  refreshHistory()
+  if (!changed) {
+    input.value = selectedLabelDisplayText.value
+    return
+  }
+  status.value = selectedLabelUsesCustomDisplay.value ? 'Display label updated.' : 'Label shows the net name.'
+}
+
+function labelHitRadius(label: { fontSize: number | null; math: MathRenderResult | null }): number {
+  const base = label.fontSize ? Math.max(8, label.fontSize) : 12
+  const math = label.math
+  if (!math || !math.ok) return base
+  return Math.max(base, Math.min(48, Math.max(math.width, math.height) * 0.5))
+}
+
 const selectedSegmentHasLabelShift = computed(() => {
   const segmentId = selectedSegment.value
   if (!segmentId) return false
@@ -4393,10 +4589,21 @@ defineExpose({ roundTrip, doc })
           class="label-group"
           @pointerdown="onLabelDown(label.id, $event)"
         >
-          <circle class="label-hit" :cx="label.at?.x ?? 0" :cy="label.at?.y ?? 0" :r="label.fontSize ? Math.max(8, label.fontSize) : 12" />
+          <circle class="label-hit" :cx="label.at?.x ?? 0" :cy="label.at?.y ?? 0" :r="labelHitRadius(label)" />
+          <g
+            v-if="label.format === 'latex' && label.math?.ok && label.at"
+            class="label math"
+            :transform="`translate(${label.at.x}, ${label.at.y})`"
+            pointer-events="none"
+            v-html="label.math.svg"
+          />
           <text
+            v-else
             class="label"
-            :class="{ compact: Boolean(label.fontSize && label.fontSize < 12) }"
+            :class="{
+              compact: Boolean(label.fontSize && label.fontSize < 12),
+              'math-fallback': label.format === 'latex',
+            }"
             :x="label.at?.x"
             :y="label.at?.y"
             :style="label.fontSize ? { fontSize: `${label.fontSize}px` } : undefined"
@@ -4419,6 +4626,47 @@ defineExpose({ roundTrip, doc })
         >Name "{{ selectedNameCollision.name }}" is used {{ selectedNameCollision.count }} times on this sheet. Rename-join or merge to make one net.</p>
         <p class="hint">Name label</p>
         <template v-if="selectedSegmentHasNameLabel">
+          <label>
+            Display
+            <select data-wire-display-mode :value="selectedLabelUsesCustomDisplay ? 'custom' : 'net'" @change="commitLabelDisplayMode">
+              <option value="net">Use net name</option>
+              <option value="custom">Custom display label</option>
+            </select>
+          </label>
+          <template v-if="selectedLabelUsesCustomDisplay">
+            <label>
+              Text format
+              <select data-wire-text-format :value="selectedLabelTextFormat" @change="commitLabelTextFormat">
+                <option value="plain">Plain Text</option>
+                <option value="latex">LaTeX</option>
+              </select>
+            </label>
+            <label>
+              Display text
+              <input
+                data-wire-display-text
+                :value="selectedLabelDisplayText"
+                :placeholder="selectedLabelTextFormat === 'latex' ? '\\\\sqrt{2E_b/T_b}' : 'e.g. cos(ω₀t)'"
+                @change="commitLabelDisplayText"
+              />
+            </label>
+            <div
+              v-if="selectedLabelTextFormat === 'latex'"
+              class="math-preview"
+              data-wire-math-preview
+            >
+              <p class="hint">Preview</p>
+              <div
+                v-if="mathPreview?.ok"
+                class="math-preview-svg"
+                v-html="mathPreview.svg"
+              />
+              <p v-else-if="mathPreview && !mathPreview.ok" class="hint math-error" data-wire-math-error>
+                {{ mathPreview.error }}
+              </p>
+              <p v-else class="hint">Typesetting…</p>
+            </div>
+          </template>
           <label class="check">
             <input data-wire-show-label type="checkbox" :checked="selectedSegmentLabelsVisible" @change="commitSegmentLabelsVisible" />
             Show label

@@ -182,4 +182,4 @@ Preserve S-series gates and D5d priorities.
 
 ## 10. Stop for review
 
-Next human decision: review **port-guide ADR** ([adr](adr-symbol-geometry-and-port-guides.md)) and choose the minimal A2-P1 correction; P2–P4 gated. Keep **D5d** independent.
+**A2-P1 + A2-P2 closed** — [p1](diagram-lab-pilot-a2-p1-symbol-connections.md), [p2](diagram-lab-pilot-a2-p2-display-labels.md). **A2-P3 LaTeX** implemented — awaiting manual accept — [p3](diagram-lab-pilot-a2-p3-latex-labels.md); P4 gated. Keep **D5d** independent.

@@ -4,7 +4,7 @@
 **Trigger:** Manual A2.1 BPSK + AWGN drawing — port–graphic gaps; inadequate math notation on labels/block text.  
 **Related:** [a2-findings](diagram-lab-pilot-a2-findings.md), [a2-preparation](diagram-lab-pilot-a2-preparation.md), [p5a](diagram-lab-pilot-a1-p5a-label-position.md), [p2-display-text](diagram-lab-pilot-a1-p2-display-text.md), [geometry/style ADR](adr-diagram-geometry-routing-style.md), [D5e](diagram-editor-roadmap.md) (export specified, not started).
 
-Proposed work-package ids (**not released**): A2-P1 … A2-P5.
+Work-package ids: **A2-P1 + A2-P2 closed**; **A2-P3 implemented — awaiting manual acceptance**; A2-P4 … A2-P5 remain gated until separately released.
 
 ---
 
@@ -207,9 +207,9 @@ No speculative optimisation now; D5d remains independent.
 
 | Order | Package | Content | Priority |
 | --- | --- | --- | --- |
-| 1 | **A2-P1** | Catalog / comms-library port–lead/flush corrections | High |
-| 2 | **A2-P2** | Optional wire **display** string ≠ `Net.name` | High |
-| 3 | **A2-P3** | LaTeX via TeX→SVG (MathJax-class), cache, lazy load | High |
+| 1 | **A2-P1** | Guides + catalog geometry | **Closed** |
+| 2 | **A2-P2** | Optional wire **display** string ≠ `Net.name` | **Closed** — [p2](diagram-lab-pilot-a2-p2-display-labels.md) |
+| 3 | **A2-P3** | LaTeX via TeX→SVG (MathJax SVG), cache, lazy load | **Implemented** — [p3](diagram-lab-pilot-a2-p3-latex-labels.md); manual accept open |
 | 4 | **A2-P4** | Restricted Markdown + inline math | Medium |
 | 5 | **A2-P5** | Shared formatted-text architecture | Architecture |
 

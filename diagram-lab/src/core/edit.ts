@@ -639,7 +639,10 @@ export function pasteFragment(doc: DiagramDocument, fragment: Fragment, dx: numb
       id: createId('lbl'),
       text: label.text,
       role: label.role,
+      ...(typeof label.displayText === 'string' ? { displayText: label.displayText } : {}),
+      ...(label.textFormat === 'latex' ? { textFormat: 'latex' as const } : {}),
       fontSize: label.fontSize,
+      visible: label.visible,
       anchor: { ...label.anchor, segmentId },
     })
   }
@@ -761,6 +764,8 @@ function copySegmentLabels(doc: DiagramDocument, sourceSegmentId: string, nextSe
       id: createId('lbl'),
       text: label.text,
       role: label.role,
+      ...(typeof label.displayText === 'string' ? { displayText: label.displayText } : {}),
+      ...(label.textFormat === 'latex' ? { textFormat: 'latex' as const } : {}),
       fontSize: label.fontSize,
       visible: label.visible,
       anchor: { ...label.anchor, segmentId: nextSegmentId },

@@ -7,7 +7,7 @@
 **Focus:** Symbol definitions, primitives, import/export, instance behaviour, persistence, reuse — **not** new drawing features.  
 **Later (not this pilot):** the same BPSK sketch is a candidate for an executable Python dataflow prototype — [Python ADR](adr-executable-python-block-diagrams.md) — only after a separate freigabe; A2 stays graphics/library-first.
 
-**A2.1 presentation limits (user):** port–graphic gaps; missing scientific math — [investigation](diagram-lab-pilot-a2-scientific-presentation-investigation.md). **A2-P1 closed / accepted** (guides + catalog geometry; OSC–Adder–AWGN manual retest passed) — [p1](diagram-lab-pilot-a2-p1-symbol-connections.md). Object Snap deferred. **Next:** A2-P2 display labels (gated). A2-P3/P4 gated.
+**A2.1 presentation limits (user):** port–graphic gaps; missing scientific math — [investigation](diagram-lab-pilot-a2-scientific-presentation-investigation.md). **A2-P1 + A2-P2 closed** — [p1](diagram-lab-pilot-a2-p1-symbol-connections.md), [p2](diagram-lab-pilot-a2-p2-display-labels.md). **A2-P3 LaTeX implemented — awaiting manual acceptance** — [p3](diagram-lab-pilot-a2-p3-latex-labels.md). A2-P4 gated until P3 acceptance. Object Snap deferred.
 
 ---
 
@@ -168,7 +168,7 @@ Do not treat manual rows as passed until the user executes them.
 5. No Library Manager / multi-pack browser.  
 6. Symbol Editor exists but is **not** extended in this pilot.  
 7. **A2-P1 closed:** Guides + 120×120 circular Adder/Multiplier; OSC 160×120; grid-compatible Generic/Process. Manual OSC–Adder–AWGN HV wiring confirmed. Object Snap deferred.  
-8. **A2.1:** No LaTeX / markdown; name labels always show `Net.name` — **A2-P2/P3** next.
+8. **A2.1:** Plain/Unicode wire display labels done (A2-P2); LaTeX implemented awaiting accept (**A2-P3**); Markdown gated (**A2-P4**).
 
 ---
 
@@ -203,17 +203,17 @@ Distinguish **definition editing** (shared body) from **instance editing** (P1�
 | --- | --- | --- |
 | A2.1-G1 | Port/wire gaps; static leads fail when ports move | **Closed in A2-P1** — guides + derived leads — [p1](diagram-lab-pilot-a2-p1-symbol-connections.md) |
 | A2.1-G2 | Adder/OSC ports not on snap grid | **Closed in A2-P1** — catalog geometry; Object Snap not required |
-| A2.1-T1 | Cannot express \(b_k\), \(\cos(\omega_0 t)\), etc. | Remains open — **A2-P2/P3** |
+| A2.1-T1 | Scientific glyphs on wires | **A2-P2 closed** (Unicode); **A2-P3** LaTeX awaiting accept |
 | *(A2.2/A2.3)* | Fill during remaining manual runs | … |
 
 ---
 
 ## 8. Scope honoured
 
-A2 execution kit + **A2-P1 closed**. A2-P2…P4, Library Manager, Symbol Designer, polygon guides, Object Snap, wire re-router, staging, commit, and push remain out of scope until separately released. S5b / D5d preserved.
+A2 execution kit + **A2-P1/P2 closed**; **A2-P3 implemented (manual accept open)**. A2-P4, Library Manager, Symbol Designer, polygon guides, Object Snap, staging, commit, and push remain out of scope until separately released. S5b / D5d preserved.
 
 ---
 
 ## 9. Stop
 
-**A2-P1 closed.** Next freigabe: **A2-P2** independent display labels (logical `Net.name` unchanged; scientific glyphs via A2-P3). Object Snap deferred.
+**A2-P1 + A2-P2 closed.** **A2-P3** awaiting manual acceptance — [p3](diagram-lab-pilot-a2-p3-latex-labels.md). Next after accept: **A2-P4** Markdown (gated). Object Snap deferred.

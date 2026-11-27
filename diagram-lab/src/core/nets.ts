@@ -15,12 +15,99 @@ export type WireResult =
   | { ok: true; netId: string; segmentId: string; createdNet: boolean }
   | { ok: false; reason: string; netIds: string[] }
 
+export type LabelTextFormat = 'plain' | 'latex'
+
+/**
+ * Resolve the string drawn for a label (A2-P2).
+ * Note labels → `label.text`. Name labels → custom `displayText` when set, else `Net.name`.
+ * Empty/whitespace `displayText` is treated as absent (callers should delete it via `setLabelDisplayText`).
+ * For LaTeX labels this is the source text (SVG is a runtime artefact from the math service).
+ */
 export function labelText(doc: DiagramDocument, label: Label): string {
   const anchor = label.anchor
   if (anchor.kind !== 'segment' || label.role === 'note') return label.text
+  const custom = typeof label.displayText === 'string' ? label.displayText.trim() : ''
+  if (custom.length > 0) return custom
   const segment = doc.segments.find((item) => item.id === anchor.segmentId)
   const net = doc.nets.find((item) => item.id === segment?.netId)
   return net?.name ?? label.text
+}
+
+/**
+ * Effective text format for drawing (A2-P3).
+ * Inherited net-name labels and note labels are always plain.
+ * Missing `textFormat` means plain. LaTeX applies only with a custom `displayText`.
+ */
+export function labelTextFormat(label: Label): LabelTextFormat {
+  if (!isNameLabel(label)) return 'plain'
+  const custom = typeof label.displayText === 'string' ? label.displayText.trim() : ''
+  if (custom.length === 0) return 'plain'
+  return label.textFormat === 'latex' ? 'latex' : 'plain'
+}
+
+/**
+ * Set or clear a name-label display override (A2-P2).
+ * `null` / empty / whitespace → delete `displayText` and `textFormat` (inherit net name).
+ * Does not rename nets, change visibility, or move the label.
+ */
+export function setLabelDisplayText(doc: DiagramDocument, labelId: string, value: string | null): boolean {
+  const label = doc.labels.find((item) => item.id === labelId)
+  if (!label || !isNameLabel(label)) return false
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  const before = typeof label.displayText === 'string' ? label.displayText : undefined
+  if (trimmed.length === 0) {
+    let changed = false
+    if (before !== undefined) {
+      delete label.displayText
+      changed = true
+    }
+    if (label.textFormat !== undefined) {
+      delete label.textFormat
+      changed = true
+    }
+    return changed
+  }
+  if (before === trimmed) return false
+  label.displayText = trimmed
+  return true
+}
+
+/**
+ * Set Plain Text vs LaTeX for a custom name-label display (A2-P3).
+ * No-op when the label inherits the net name (no custom displayText).
+ * `'plain'` deletes `textFormat`; `'latex'` stores it. Preserves source text.
+ */
+export function setLabelTextFormat(doc: DiagramDocument, labelId: string, format: LabelTextFormat): boolean {
+  const label = doc.labels.find((item) => item.id === labelId)
+  if (!label || !isNameLabel(label)) return false
+  const custom = typeof label.displayText === 'string' ? label.displayText.trim() : ''
+  if (custom.length === 0) return false
+  const before = label.textFormat === 'latex' ? 'latex' : 'plain'
+  if (before === format) return false
+  if (format === 'latex') label.textFormat = 'latex'
+  else delete label.textFormat
+  return true
+}
+
+/**
+ * Set display text and/or format in one mutation (A2-P3 — single history entry).
+ * Clearing text also clears format (inherit net name as plain).
+ */
+export function setLabelDisplay(
+  doc: DiagramDocument,
+  labelId: string,
+  fields: { text?: string | null; format?: LabelTextFormat },
+): boolean {
+  const label = doc.labels.find((item) => item.id === labelId)
+  if (!label || !isNameLabel(label)) return false
+  let changed = false
+  if (fields.text !== undefined) {
+    if (setLabelDisplayText(doc, labelId, fields.text)) changed = true
+  }
+  if (fields.format !== undefined) {
+    if (setLabelTextFormat(doc, labelId, fields.format)) changed = true
+  }
+  return changed
 }
 
 export function netPortIds(doc: DiagramDocument, netId: string): string[] {

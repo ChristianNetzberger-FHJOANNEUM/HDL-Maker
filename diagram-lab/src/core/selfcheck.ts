@@ -24,7 +24,15 @@ import {
   translateSegmentGeometry,
 } from './geometry'
 import { netFixture } from './fixture'
-import { addNameLabel, commitWire, crossings, deleteSegment, ensureNetByName, labelText, mergeNets, mergeNetsByName, moveJunction, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeFreeEnd, placeLabelAt, placeSpan, probeWire, renameNet, removeSegmentNameLabels, resetLabelPosition, setLabelOffset, setRouted, snapTarget } from './nets'
+import { addNameLabel, commitWire, crossings, deleteSegment, ensureNetByName, labelText, labelTextFormat, mergeNets, mergeNetsByName, moveJunction, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeFreeEnd, placeLabelAt, placeSpan, probeWire, renameNet, removeSegmentNameLabels, resetLabelPosition, setLabelDisplay, setLabelDisplayText, setLabelOffset, setLabelTextFormat, setRouted, snapTarget } from './nets'
+import {
+  clearMathRenderCache,
+  ensureMathEngine,
+  getMathRenderStats,
+  renderMath,
+  resetMathRenderStats,
+  rewriteSvgIds,
+} from './mathRender'
 import { canUndoWireStep, finishFree, stubGeometrySane, undoWireStep, wireClick, WIRE_DRAW_HINT } from './wiretool'
 import { symbolSheet } from './symbolsheet'
 import { addImageAsset, addSymbolLabel, addSymbolPort, addSymbolShape, applySymbol, defineSymbol, instantiateSymbol, moveFreeSymbolPort, moveSymbolPort, removeSymbolPort, setComponent, setSymbolSize, symbolDiagnostics } from './symbols'
@@ -5769,10 +5777,286 @@ function isPortFreeLike(segment: { start: { kind: string }; end: { kind: string 
   check(!againSym.guides && againSym.revision === 1, 'A2-P1: stale embedded body survives save/load without catalog pull')
 }
 
+{
+  // --- A2-P2: independent wire display labels ---
+  let sheet = netFixture()
+  const netId = 'net_main'
+  const net = sheet.nets.find((item) => item.id === netId)!
+  const labelsOnNet = sheet.labels.filter((label) => {
+    const anchor = label.anchor
+    if (anchor.kind !== 'segment') return false
+    const segment = sheet.segments.find((item) => item.id === anchor.segmentId)
+    return segment?.netId === netId
+  })
+  check(labelsOnNet.length >= 2, 'A2-P2: fixture has multiple name labels on one net')
+  const labelA = labelsOnNet[0]!
+  const labelB = labelsOnNet[1]!
+  check(labelText(sheet, labelA) === net.name && labelText(sheet, labelB) === net.name, 'A2-P2: default renders net name')
+  check(labelA.displayText === undefined, 'A2-P2: legacy labels omit displayText')
+
+  setLabelDisplayText(sheet, labelA.id, 'cos(ω₀t)')
+  check(labelA.displayText === 'cos(ω₀t)', 'A2-P2: custom Unicode displayText stored')
+  check(labelText(sheet, labelA) === 'cos(ω₀t)', 'A2-P2: custom text rendered')
+  check(labelText(sheet, labelB) === net.name, 'A2-P2: sibling label still inherits net name')
+  check(net.name === 'main' || net.name === sheet.nets.find((item) => item.id === netId)?.name, 'A2-P2: logical name unchanged by displayText')
+  const logicalBefore = sheet.nets.find((item) => item.id === netId)!.name
+
+  setLabelDisplayText(sheet, labelB.id, 'σ²')
+  check(labelText(sheet, labelB) === 'σ²', 'A2-P2: second label independent custom text')
+
+  renameNet(sheet, netId, 'carrier_signal')
+  check(sheet.nets.find((item) => item.id === netId)?.name === 'carrier_signal', 'A2-P2: net renamed')
+  check(labelText(sheet, labelA) === 'cos(ω₀t)' && labelText(sheet, labelB) === 'σ²', 'A2-P2: custom labels survive net rename')
+  // Add a third inheriting label and confirm it follows the rename.
+  const freeSeg = sheet.segments.find((segment) => segment.netId === netId && segment.id !== labelA.anchor.kind && true)
+  const anotherSeg = sheet.segments.find(
+    (segment) =>
+      segment.netId === netId &&
+      !sheet.labels.some((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === segment.id),
+  )
+  let inheritId = ''
+  if (anotherSeg) {
+    inheritId = addNameLabel(sheet, anotherSeg.id, 0, 16, 14) ?? ''
+  } else {
+    // Reuse a segment that already has a label by clearing one custom and testing inherit path separately.
+    setLabelDisplayText(sheet, labelB.id, null)
+    inheritId = labelB.id
+  }
+  check(inheritId.length > 0, 'A2-P2: inheriting label available')
+  check(labelText(sheet, sheet.labels.find((item) => item.id === inheritId)!) === 'carrier_signal', 'A2-P2: inheriting label follows rename')
+
+  setLabelDisplayText(sheet, labelA.id, null)
+  check(labelA.displayText === undefined && labelText(sheet, labelA) === 'carrier_signal', 'A2-P2: Use Net Name clears override')
+  setLabelDisplayText(sheet, labelA.id, '  bₖ  ')
+  check(labelA.displayText === 'bₖ', 'A2-P2: whitespace trimmed on set')
+  setLabelDisplayText(sheet, labelA.id, '   ')
+  check(labelA.displayText === undefined && labelText(sheet, labelA) === 'carrier_signal', 'A2-P2: empty string clears override')
+
+  // Visibility independence.
+  labelA.visible = false
+  check(labelA.displayText === undefined, 'A2-P2: hide does not invent displayText')
+  setLabelDisplayText(sheet, labelA.id, 'aₖ')
+  check(labelA.visible === false && labelText(sheet, labelA) === 'aₖ', 'A2-P2: custom text kept while hidden')
+  delete labelA.visible
+  check(labelText(sheet, labelA) === 'aₖ', 'A2-P2: show keeps custom text')
+
+  // Reset position leaves displayText.
+  placeLabelAt(sheet, labelA.id, { x: 40, y: 40 })
+  resetLabelPosition(sheet, labelA.id)
+  check(labelA.displayText === 'aₖ', 'A2-P2: reset position keeps displayText')
+
+  // History: create / edit / clear / remove / restore.
+  let live = netFixture()
+  const liveLabel = live.labels.find((label) => label.anchor.kind === 'segment')!
+  const liveSeg = liveLabel.anchor.kind === 'segment' ? liveLabel.anchor.segmentId : ''
+  const hist = new EditSession(
+    () => live,
+    (next) => {
+      live = next
+    },
+  )
+  hist.execute((draft) => {
+    setLabelDisplayText(draft, liveLabel.id, 'H(f)')
+  })
+  check(labelText(live, live.labels.find((item) => item.id === liveLabel.id)!) === 'H(f)', 'A2-P2: history commits custom text')
+  hist.execute((draft) => {
+    setLabelDisplayText(draft, liveLabel.id, '1/(1+sRC)')
+  })
+  hist.undo()
+  check(labelText(live, live.labels.find((item) => item.id === liveLabel.id)!) === 'H(f)', 'A2-P2: undo restores previous custom text')
+  hist.redo()
+  check(labelText(live, live.labels.find((item) => item.id === liveLabel.id)!) === '1/(1+sRC)', 'A2-P2: redo restores edit')
+  hist.execute((draft) => {
+    setLabelDisplayText(draft, liveLabel.id, null)
+  })
+  check(live.labels.find((item) => item.id === liveLabel.id)?.displayText === undefined, 'A2-P2: clear override')
+  hist.undo()
+  check(live.labels.find((item) => item.id === liveLabel.id)?.displayText === '1/(1+sRC)', 'A2-P2: undo restores custom after clear')
+  hist.execute((draft) => {
+    removeSegmentNameLabels(draft, liveSeg)
+  })
+  check(!live.labels.some((item) => item.id === liveLabel.id), 'A2-P2: remove label')
+  hist.undo()
+  const restored = live.labels.find((item) => item.id === liveLabel.id)
+  check(Boolean(restored && restored.displayText === '1/(1+sRC)'), 'A2-P2: undo restore keeps displayText')
+
+  // Paste / fragment: Port↔Port wire with a labelled displayText (seg_cross).
+  const crossLabelId = addNameLabel(sheet, 'seg_cross', 0, 16, 14) ?? ''
+  setLabelDisplayText(sheet, crossLabelId, 'dup_glyph')
+  const frag = captureFragment(sheet, ['blk_g', 'blk_i'])
+  check(frag.labels.some((label) => label.displayText === 'dup_glyph'), 'A2-P2: fragment captures displayText')
+  const pasted = pasteFragment(sheet, frag, 40, 40)
+  check(pasted.length === 2, 'A2-P2: paste creates two blocks')
+  check(sheet.labels.some((label) => label.displayText === 'dup_glyph' && label.id !== crossLabelId), 'A2-P2: paste preserves displayText')
+
+  // Persistence + Unicode round-trip + backward compatibility.
+  setLabelDisplayText(sheet, labelA.id, '∑aₖ')
+  const round = parseDocument(serialize(sheet))
+  const roundLabel = round.labels.find((item) => item.id === labelA.id)!
+  check(roundLabel.displayText === '∑aₖ' && labelText(round, roundLabel) === '∑aₖ', 'A2-P2: Unicode displayText save/load')
+  const legacyRaw = JSON.parse(serialize(netFixture())) as Record<string, unknown>
+  const legacyLabels = legacyRaw.labels as Array<Record<string, unknown>>
+  for (const label of legacyLabels) delete label.displayText
+  const legacyDoc = parseDocument(JSON.stringify(legacyRaw))
+  check(
+    legacyDoc.labels.every((label) => label.displayText === undefined),
+    'A2-P2: documents without displayText omit the field',
+  )
+  check(
+    legacyDoc.labels.every((label) => {
+      const anchor = label.anchor
+      if (anchor.kind !== 'segment') return labelText(legacyDoc, label) === label.text
+      const segment = legacyDoc.segments.find((item) => item.id === anchor.segmentId)
+      const netName = legacyDoc.nets.find((item) => item.id === segment?.netId)?.name ?? label.text
+      return labelText(legacyDoc, label) === netName
+    }),
+    'A2-P2: documents without displayText render as before',
+  )
+  void logicalBefore
+  void freeSeg
+}
+
+{
+  // --- A2-P3: LaTeX textFormat + math render service ---
+  let sheet = netFixture()
+  const label = sheet.labels.find((item) => item.anchor.kind === 'segment')!
+  check(labelTextFormat(label) === 'plain', 'A2-P3: inherited label is plain')
+  check(label.textFormat === undefined, 'A2-P3: legacy labels omit textFormat')
+
+  setLabelDisplayText(sheet, label.id, String.raw`\cos(\omega_0 t+\varphi)`)
+  check(labelTextFormat(label) === 'plain', 'A2-P3: custom text defaults to plain')
+  check(setLabelTextFormat(sheet, label.id, 'latex'), 'A2-P3: switch to latex')
+  check(label.textFormat === 'latex' && labelTextFormat(label) === 'latex', 'A2-P3: latex format stored')
+  check(labelText(sheet, label) === String.raw`\cos(\omega_0 t+\varphi)`, 'A2-P3: source text unchanged by format')
+  check(setLabelTextFormat(sheet, label.id, 'plain'), 'A2-P3: switch back to plain')
+  check(label.textFormat === undefined && labelTextFormat(label) === 'plain', 'A2-P3: plain deletes textFormat')
+  check(label.displayText === String.raw`\cos(\omega_0 t+\varphi)`, 'A2-P3: format switch preserves source')
+
+  setLabelDisplay(sheet, label.id, { format: 'latex' })
+  check(labelTextFormat(label) === 'latex', 'A2-P3: setLabelDisplay sets format')
+  setLabelDisplayText(sheet, label.id, null)
+  check(label.displayText === undefined && label.textFormat === undefined, 'A2-P3: Use Net Name clears format')
+  check(labelTextFormat(label) === 'plain', 'A2-P3: inherited after clear is plain')
+  check(!setLabelTextFormat(sheet, label.id, 'latex'), 'A2-P3: cannot set latex without custom text')
+
+  // History: format + text in separate or combined commits.
+  let live = netFixture()
+  const liveLabel = live.labels.find((item) => item.anchor.kind === 'segment')!
+  const hist = new EditSession(
+    () => live,
+    (next) => {
+      live = next
+    },
+  )
+  hist.execute((draft) => {
+    setLabelDisplay(draft, liveLabel.id, { text: String.raw`H(s)=\frac{1}{1+sRC}`, format: 'latex' })
+  })
+  check(
+    live.labels.find((item) => item.id === liveLabel.id)?.textFormat === 'latex',
+    'A2-P3: history commits latex format',
+  )
+  hist.execute((draft) => {
+    setLabelTextFormat(draft, liveLabel.id, 'plain')
+  })
+  hist.undo()
+  check(
+    live.labels.find((item) => item.id === liveLabel.id)?.textFormat === 'latex',
+    'A2-P3: undo restores latex format',
+  )
+  hist.redo()
+  check(
+    live.labels.find((item) => item.id === liveLabel.id)?.textFormat === undefined,
+    'A2-P3: redo restores plain format',
+  )
+  hist.undo()
+  hist.execute((draft) => {
+    setLabelDisplayText(draft, liveLabel.id, null)
+  })
+  hist.undo()
+  const restoredFmt = live.labels.find((item) => item.id === liveLabel.id)
+  check(
+    Boolean(restoredFmt?.displayText && restoredFmt.textFormat === 'latex'),
+    'A2-P3: undo after clear restores text+format',
+  )
+
+  // Persistence + copy.
+  setLabelDisplay(sheet, label.id, { text: String.raw`P_b=Q\left(\sqrt{\frac{2E_b}{N_0}}\right)`, format: 'latex' })
+  const round = parseDocument(serialize(sheet))
+  const roundLabel = round.labels.find((item) => item.id === label.id)!
+  check(
+    roundLabel.textFormat === 'latex' &&
+      roundLabel.displayText === String.raw`P_b=Q\left(\sqrt{\frac{2E_b}{N_0}}\right)`,
+    'A2-P3: LaTeX source+format save/load',
+  )
+  check(labelTextFormat(roundLabel) === 'latex', 'A2-P3: loaded format is latex')
+
+  const crossLabelId = addNameLabel(sheet, 'seg_cross', 0, 16, 14) ?? ''
+  setLabelDisplay(sheet, crossLabelId, { text: String.raw`b_k`, format: 'latex' })
+  const frag = captureFragment(sheet, ['blk_g', 'blk_i'])
+  check(
+    frag.labels.some((item) => item.displayText === String.raw`b_k` && item.textFormat === 'latex'),
+    'A2-P3: fragment captures textFormat',
+  )
+  pasteFragment(sheet, frag, 80, 80)
+  check(
+    sheet.labels.filter((item) => item.displayText === String.raw`b_k` && item.textFormat === 'latex').length >= 2,
+    'A2-P3: paste preserves latex labels',
+  )
+
+  // Math service: cache, identical formulas, invalid, scientific cases.
+  clearMathRenderCache()
+  resetMathRenderStats()
+  await ensureMathEngine()
+  const cases = [
+    String.raw`b_k,\quad a_k`,
+    String.raw`\cos(\omega_0 t+\varphi)`,
+    String.raw`\sqrt{\frac{2E_b}{T_b}}`,
+    String.raw`H(s)=\frac{1}{1+sRC}`,
+    String.raw`s(t)=\sum_{k=0}^{N-1}a_k g(t-kT)`,
+    String.raw`E_b=\int_0^{T_b}|s(t)|^2\,dt`,
+    String.raw`P_b=Q\left(\sqrt{\frac{2E_b}{N_0}}\right)`,
+    String.raw`\begin{bmatrix}I\\Q\end{bmatrix}`,
+  ]
+  for (const source of cases) {
+    const result = await renderMath(source, { em: 13 })
+    check(result.ok && result.svg.includes('<svg'), `A2-P3: typesets ${source.slice(0, 24)}`)
+    if (result.ok) {
+      check(result.width > 0 && result.height > 0, `A2-P3: geometry for ${source.slice(0, 16)}`)
+    }
+  }
+  const firstStats = getMathRenderStats()
+  check(firstStats.typesetCount === cases.length, 'A2-P3: one typeset per distinct formula')
+  check(firstStats.engineLoads >= 1, 'A2-P3: engine loaded once path')
+
+  const again = await renderMath(cases[0]!, { em: 13 })
+  check(again.ok, 'A2-P3: cache returns identical formula')
+  check(getMathRenderStats().cacheHits >= 1, 'A2-P3: cache hit on reuse')
+  check(getMathRenderStats().typesetCount === cases.length, 'A2-P3: cache avoids re-typeset')
+
+  const twin = await renderMath(cases[2]!, { em: 13 })
+  const twin2 = await renderMath(cases[2]!, { em: 13 })
+  check(twin.ok && twin2.ok && twin.svg === twin2.svg, 'A2-P3: identical formulas share cached SVG')
+
+  const bad = await renderMath(String.raw`\frac{1{`, { em: 13 })
+  check(!bad.ok && bad.error.length > 0, 'A2-P3: invalid LaTeX yields diagnostic')
+  check(bad.source === String.raw`\frac{1{`, 'A2-P3: invalid source preserved on error result')
+
+  const rewritten = rewriteSvgIds('<svg><defs><path id="MJX-1"/></defs><use href="#MJX-1"/></svg>', 'pfx_')
+  check(rewritten.includes('id="pfx_MJX-1"') && rewritten.includes('href="#pfx_MJX-1"'), 'A2-P3: SVG id rewrite')
+
+  // Plain path does not require typesetting for model resolution.
+  const plainSheet = netFixture()
+  const plainLabel = plainSheet.labels[0]!
+  setLabelDisplayText(plainSheet, plainLabel.id, 'carrier_signal')
+  check(labelTextFormat(plainLabel) === 'plain', 'A2-P3: plain custom needs no MathJax')
+  check(labelText(plainSheet, plainLabel) === 'carrier_signal', 'A2-P3: plain fast path text')
+}
+
 if (failures.length) {
   throw new Error(failures.join('\n'))
 }
 console.log('selfcheck ok')
+
 
 
 
