@@ -1,4 +1,4 @@
-import type { ImageAsset, SymbolDefinition, SymbolLabel, SymbolPort, SymbolShape } from './document'
+import type { ImageAsset, SymbolDefinition, SymbolGuide, SymbolLabel, SymbolPort, SymbolShape } from './document'
 import type { SymbolLibrary } from './library'
 import { PICTURE_SOURCES, pictureAssets } from './pictures'
 
@@ -28,8 +28,55 @@ function symbol(
   labels: SymbolLabel[] = [],
   width = W,
   height = H,
+  revision = 1,
+  guides?: SymbolGuide[],
 ): SymbolDefinition {
-  return { id, name, width, height, shapes, ports, labels, libraryId, libraryVersion: version, categoryId, revision: 1 }
+  return {
+    id,
+    name,
+    width,
+    height,
+    shapes,
+    ports,
+    labels,
+    libraryId,
+    libraryVersion: version,
+    categoryId,
+    revision,
+    ...(guides && guides.length > 0 ? { guides } : {}),
+  }
+}
+
+/**
+ * Canonical circular DSP body (A2-P1 catalog geometry).
+ * Box 120×120, centre (60,60), artwork r=40, outer guide r=60, constant lead length 20.
+ * Declarative guides — not hardcoded by symbol id in the editor.
+ */
+function guidedEllipseSymbol(
+  libraryId: string,
+  categoryId: string,
+  id: string,
+  name: string,
+  ports: Array<{ id: string; name: string; side: SymbolPort['side']; t: number; u: number }>,
+  labels: SymbolLabel[],
+): SymbolDefinition {
+  const size = 120
+  const body: SymbolShape = { kind: 'ellipse', x: 20, y: 20, width: 80, height: 80 }
+  const guides: SymbolGuide[] = [
+    { id: 'guide_ports', kind: 'ellipse', cx: 60, cy: 60, rx: 60, ry: 60 },
+    { id: 'guide_body', kind: 'ellipse', cx: 60, cy: 60, rx: 40, ry: 40 },
+  ]
+  const pins: SymbolPort[] = ports.map((port) => ({
+    id: port.id,
+    name: port.name,
+    side: port.side,
+    t: port.t,
+    guideId: 'guide_ports',
+    u: port.u,
+    lead: 'radial',
+    leadGuideId: 'guide_body',
+  }))
+  return symbol(libraryId, 1, categoryId, id, name, [body], pins, labels, size, size, 4, guides)
 }
 
 function library(
@@ -68,7 +115,20 @@ function generalLibrary(): SymbolLibrary {
     symbol(id, 1, category, 'sym_rectangle', 'Rectangle', [rect()], []),
     symbol(id, 1, category, 'sym_roundrect', 'Rounded rectangle', [rect(10, 10, W - 20, H - 20, 14)], []),
     symbol(id, 1, category, 'sym_ellipse', 'Ellipse', [{ kind: 'ellipse', x: 10, y: 12, width: W - 20, height: H - 24 }], []),
-    symbol(id, 1, category, 'sym_block', 'Generic block', [rect()], [pin('pin_block_in', 'in', 'left', 0.5), pin('pin_block_out', 'out', 'right', 0.5)]),
+    // A2-P1: 160×80 so centred side ports land on g=20 (W,H multiples of 40).
+    symbol(
+      id,
+      1,
+      category,
+      'sym_block',
+      'Generic block',
+      [rect(10, 10, 140, 60)],
+      [pin('pin_block_in', 'in', 'left', 0.5), pin('pin_block_out', 'out', 'right', 0.5)],
+      [],
+      160,
+      80,
+      2,
+    ),
     symbol(id, 1, category, 'sym_textbox', 'Text box', [rect()], [], [text('lbl_textbox', 'Text', 28, 36)]),
   ])
 }
@@ -81,7 +141,20 @@ function flowchartLibrary(): SymbolLibrary {
       pin('pin_start_in', 'in', 'left', 0.5),
       pin('pin_start_out', 'out', 'right', 0.5),
     ]),
-    symbol(id, 1, category, 'sym_process', 'Process', [rect()], [pin('pin_process_in', 'in', 'left', 0.5), pin('pin_process_out', 'out', 'right', 0.5)]),
+    // A2-P1: 200×120 — centred side ports on g=20 lattice.
+    symbol(
+      id,
+      1,
+      category,
+      'sym_process',
+      'Process',
+      [rect(10, 10, 180, 100)],
+      [pin('pin_process_in', 'in', 'left', 0.5), pin('pin_process_out', 'out', 'right', 0.5)],
+      [],
+      200,
+      120,
+      2,
+    ),
     symbol(
       id,
       1,
@@ -170,20 +243,27 @@ function pictureLibrary(): SymbolLibrary {
     'Pictures',
     'Reference pictures. They have no electrical function and no HDL.',
     [{ id: category, name: 'Pictures' }],
-    PICTURE_SOURCES.map((source) =>
-      symbol(
+    PICTURE_SOURCES.map((source) => {
+      // A2-P1: Oscillator uses 160×120 with centred 120×80 image so mid-side ports are on-grid.
+      const oscillator = source.symbolId === 'sym_oscillator'
+      const boxW = 160
+      const boxH = oscillator ? 120 : 108
+      const imageY = oscillator ? 20 : 4
+      const labelY = oscillator ? 112 : 100
+      return symbol(
         id,
         1,
         category,
         source.symbolId,
         source.title,
-        [{ kind: 'image', assetId: source.assetId, x: 20, y: 4, width: 120, height: 80, lockAspect: true }],
+        [{ kind: 'image', assetId: source.assetId, x: 20, y: imageY, width: 120, height: 80, lockAspect: true }],
         source.pins.map((item) => pin(item.id, item.name, item.side, item.t)),
-        [text(`lbl_${source.symbolId}`, source.label, 58, 100)],
-        160,
-        108,
-      ),
-    ),
+        [text(`lbl_${source.symbolId}`, source.label, 58, labelY)],
+        boxW,
+        boxH,
+        oscillator ? 2 : 1,
+      )
+    }),
     pictureAssets(),
   )
 }
@@ -196,16 +276,31 @@ function signalLibrary(): SymbolLibrary {
       pin('pin_gain_in', 'in', 'left', 0.5),
       pin('pin_gain_out', 'out', 'right', 0.5),
     ]),
-    symbol(id, 1, category, 'sym_adder', 'Adder', [{ kind: 'ellipse', x: 16, y: 8, width: 56, height: 48 }], [
-      pin('pin_adder_a', 'a', 'left', 0.35),
-      pin('pin_adder_b', 'b', 'left', 0.7),
-      pin('pin_adder_y', 'y', 'right', 0.5),
-    ], [text('lbl_adder', '+', 40, 38)]),
-    symbol(id, 1, category, 'sym_multiplier', 'Multiplier', [{ kind: 'ellipse', x: 16, y: 8, width: 56, height: 48 }], [
-      pin('pin_mul_a', 'a', 'left', 0.35),
-      pin('pin_mul_b', 'b', 'left', 0.7),
-      pin('pin_mul_y', 'y', 'right', 0.5),
-    ], [text('lbl_mul', 'x', 40, 38)]),
+    // A2-P1: declarative ellipse guides + radial leads (not symbol-name special cases).
+    guidedEllipseSymbol(
+      id,
+      category,
+      'sym_adder',
+      'Adder',
+      [
+        { id: 'pin_adder_a', name: 'a', side: 'left', t: 0.35, u: 0.58 },
+        { id: 'pin_adder_b', name: 'b', side: 'left', t: 0.7, u: 0.42 },
+        { id: 'pin_adder_y', name: 'y', side: 'right', t: 0.5, u: 0 },
+      ],
+      [text('lbl_adder', '+', 54, 66)],
+    ),
+    guidedEllipseSymbol(
+      id,
+      category,
+      'sym_multiplier',
+      'Multiplier',
+      [
+        { id: 'pin_mul_a', name: 'a', side: 'left', t: 0.35, u: 0.58 },
+        { id: 'pin_mul_b', name: 'b', side: 'left', t: 0.7, u: 0.42 },
+        { id: 'pin_mul_y', name: 'y', side: 'right', t: 0.5, u: 0 },
+      ],
+      [text('lbl_mul', 'x', 54, 66)],
+    ),
     symbol(id, 1, category, 'sym_integrator', 'Integrator', [rect()], [pin('pin_int_in', 'in', 'left', 0.5), pin('pin_int_out', 'out', 'right', 0.5)], [text('lbl_int', '1/s', 30, 36)]),
     symbol(id, 1, category, 'sym_delay', 'Delay', [rect()], [pin('pin_delay_in', 'in', 'left', 0.5), pin('pin_delay_out', 'out', 'right', 0.5)], [text('lbl_delay', 'z-1', 30, 36)]),
     symbol(id, 1, category, 'sym_filter', 'Filter', [rect()], [pin('pin_filter_in', 'in', 'left', 0.5), pin('pin_filter_out', 'out', 'right', 0.5)], [text('lbl_filter', 'H', 38, 36)]),

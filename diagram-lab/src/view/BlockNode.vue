@@ -3,14 +3,16 @@ import { computed } from 'vue'
 import type { BlockStyle, ImageAsset, Port, SymbolLabel, SymbolShape } from '../core/document'
 import { portsOnSide } from '../core/geometry'
 import { RESIZE_HANDLES, type ResizeHandle } from '../core/edit'
-import SymbolFace, { type FacePin } from './SymbolFace.vue'
+import SymbolFace, { type FaceLead, type FacePin } from './SymbolFace.vue'
 
 const props = defineProps<{
   blockId: string
   name: string
   width: number
   height: number
-  ports: Array<Port & { top?: number; left?: number; missing?: boolean }>
+  ports: Array<Port & { top?: number; left?: number; missing?: boolean; guided?: boolean }>
+  /** Derived radial connection leads (A2-P1). */
+  leads?: FaceLead[]
   shapes: SymbolShape[] | null
   labels: SymbolLabel[]
   assets: ImageAsset[]
@@ -141,6 +143,7 @@ const symbolPins = computed<FacePin[]>(() =>
     y: port.top ?? 0,
     missing: port.missing,
     free: typeof port.x === 'number' && typeof port.y === 'number',
+    guided: Boolean(port.guided),
   })),
 )
 
@@ -247,6 +250,7 @@ function onKey(event: KeyboardEvent): void {
         :labels="labels"
         :assets="assets"
         :pins="symbolPins"
+        :leads="leads ?? []"
         hit
         :interactive-pins="portsLive"
         :hit-radius="Math.max(handlePx, 8)"

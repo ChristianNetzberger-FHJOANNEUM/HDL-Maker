@@ -67,7 +67,7 @@ Plain `BLOCK_TEMPLATES` remain available alongside symbols.
 | ID | Diagram | Intent |
 | --- | --- | --- |
 | **A1** | Synchronous 4-bit counter (clk, en, rst, Q) | **Formally closed** — [final](diagram-lab-pilot-a1-final-evaluation.md); findings [here](diagram-lab-pilot-a1-presentation-findings.md) |
-| **A2** | Digital baseband / communication system | **Next** (separate freigabe) — symbol library & reuse; Gain/Adder/Filter/etc. already in builtins |
+| **A2** | BPSK modulator + AWGN channel | **Execution kit ready** — [findings](diagram-lab-pilot-a2-findings.md); [prep](diagram-lab-pilot-a2-preparation.md); await user A2.1–A2.3 |
 
 **Acceptance (practical):** Completing A1/A2 without dead-end edits; stubs/names/junctions usable; missing features logged as defects vs enhancements vs architecture limits.
 
@@ -90,7 +90,7 @@ Plain `BLOCK_TEMPLATES` remain available alongside symbols.
 | Category | Use from builtins | Still missing / future |
 | --- | --- | --- |
 | Digital logic | AND, OR, NOT, XOR, NAND, NOR, MUX, DFF, Register, Counter | — |
-| Signal processing | Gain, Adder, Multiplier, Delay, Filter, Integrator | Oscillator, ADC, DAC |
+| Signal processing | Gain, Adder, Multiplier, Delay, Filter, Integrator | ADC, DAC (Oscillator exists under **Pictures** — see A2 prep) |
 | General / teaching | Rectangle, Round rect, Ellipse, Text box, Generic block | Triangle, Point, Document |
 | Flowchart | Start/End, Process, Decision, I/O | Terminator ≈ Start/End |
 
@@ -182,4 +182,4 @@ Preserve S-series gates and D5d priorities.
 
 ## 10. Stop for review
 
-Next human decision: review **A1 formal closure** ([final](diagram-lab-pilot-a1-final-evaluation.md)); separately freigeben **A2** (symbol library / baseband system). Keep **D5d** independent. No commit unless asked.
+Next human decision: review **port-guide ADR** ([adr](adr-symbol-geometry-and-port-guides.md)) and choose the minimal A2-P1 correction; P2–P4 gated. Keep **D5d** independent.

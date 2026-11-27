@@ -12,7 +12,11 @@ export type FacePin = {
   y: number
   missing?: boolean
   free?: boolean
+  /** Guided pin (A2-P1) — name layout like a free pin. */
+  guided?: boolean
 }
+
+export type FaceLead = { x1: number; y1: number; x2: number; y2: number }
 
 const props = defineProps<{
   width: number
@@ -20,6 +24,8 @@ const props = defineProps<{
   shapes: SymbolShape[]
   labels: SymbolLabel[]
   pins: FacePin[]
+  /** Derived radial connection leads (A2-P1) — not nets. */
+  leads?: FaceLead[]
   assets?: ImageAsset[]
   /** Symbol definition size. When set, shapes are mapped into `width` and `height`. */
   symbolWidth?: number
@@ -95,7 +101,7 @@ const closedPaintStyle = computed(() => {
 })
 
 function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle' | 'end' } {
-  if (pin.free) return { x: pin.x, y: pin.y - 8, anchor: 'middle' }
+  if (pin.free || pin.guided) return { x: pin.x, y: pin.y - 8, anchor: 'middle' }
   if (props.flushBody) {
     if (pin.side === 'left') return { x: pin.x + 8, y: pin.y + 3, anchor: 'start' }
     if (pin.side === 'right') return { x: pin.x - 8, y: pin.y + 3, anchor: 'end' }
@@ -167,6 +173,17 @@ function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle
       </template>
       <text v-else class="sym-label" :x="shape.x" :y="shape.y">{{ shape.text }}</text>
     </template>
+    <!-- A2-P1: derived radial leads (not nets); paint with symbol stroke. -->
+    <line
+      v-for="(lead, index) in leads ?? []"
+      :key="`lead-${index}`"
+      class="sym-shape sym-lead"
+      :x1="lead.x1"
+      :y1="lead.y1"
+      :x2="lead.x2"
+      :y2="lead.y2"
+      :style="closedPaintStyle"
+    />
     <text
       v-for="label in drawn.labels"
       :key="label.id"

@@ -93,6 +93,11 @@ export type Port = {
   /** Fractions inside the symbol when the pin is free. Absent on a side pin. */
   x?: number
   y?: number
+  /**
+   * Instance override of a guided symbol pin’s normalised parameter `u` (A2-P1).
+   * Absent ⇒ use the definition’s `u`. Does not rewrite the library definition.
+   */
+  guideU?: number
 }
 
 /** A drawing primitive owned by a symbol. Coordinates are inside the symbol, not on the sheet. */
@@ -104,6 +109,20 @@ export type SymbolShape =
   | { kind: 'text'; x: number; y: number; text: string }
   | { kind: 'image'; assetId: string; x: number; y: number; width: number; height: number; lockAspect?: boolean }
 
+/**
+ * Symbol-local port guide (A2-P1). Invisible; constrains guided pin placement.
+ * Ellipse covers circles (`rx === ry`). Polyline guides are reserved for later.
+ */
+export type SymbolGuide = {
+  id: string
+  kind: 'ellipse'
+  /** Centre and radii in symbol-local units. */
+  cx: number
+  cy: number
+  rx: number
+  ry: number
+}
+
 export type SymbolPort = {
   id: string
   name: string
@@ -111,11 +130,29 @@ export type SymbolPort = {
   /**
    * Fraction along the side, from 0 to 1.
    * Left and right: top to bottom. Top and bottom: left to right.
+   * Kept for side-based pins and as a fallback hint for label layout.
    */
   t: number
   /** Fractions of the symbol width and height. Set only for a free pin. */
   x?: number
   y?: number
+  /**
+   * When set, the pin rides the named guide; position is derived from `u` (A2-P1).
+   * Free `x`/`y` and side/`t` anchors are ignored for geometry while guided.
+   */
+  guideId?: string
+  /**
+   * Normalised guide parameter in [0, 1). For ellipses, φ = 2πu
+   * (u=0 right, 0.25 bottom, 0.5 left, 0.75 top in screen coordinates).
+   */
+  u?: number
+  /**
+   * Derived graphical lead (not a net). `radial` connects this pin to `leadGuideId`
+   * using the same `u` when both guides are concentric ellipses.
+   */
+  lead?: 'none' | 'radial'
+  /** Inner contour guide for `lead: 'radial'`. */
+  leadGuideId?: string
 }
 
 export type ImageMime = 'image/svg+xml' | 'image/png' | 'image/jpeg' | 'image/webp'
@@ -150,6 +187,8 @@ export type SymbolDefinition = {
   ports: SymbolPort[]
   shapes: SymbolShape[]
   labels: SymbolLabel[]
+  /** Optional port guides (A2-P1). Omitted on legacy symbols. */
+  guides?: SymbolGuide[]
   /** Set when the definition was copied from a library. Later library edits do not follow this copy. */
   libraryId?: string
   libraryVersion?: number

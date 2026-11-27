@@ -38,6 +38,7 @@ export function symbolFingerprint(symbol: SymbolDefinition, assets: ImageAsset[]
     height: symbol.height,
     ports: [...symbol.ports].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     labels: [...symbol.labels].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    guides: [...(symbol.guides ?? [])].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     shapes: symbol.shapes.map((shape) => shapeKey(shape, assets)),
   })
   return sha256Sync(new TextEncoder().encode(body))

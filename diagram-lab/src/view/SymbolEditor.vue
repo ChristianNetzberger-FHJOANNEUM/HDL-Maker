@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { inspectImage } from '../core/assets'
 import type { DiagramDocument, ImageAsset, Point, SymbolDefinition, SymbolShape } from '../core/document'
-import { isFreePin, pinOnBorder, pinPoint } from '../core/geometry'
+import { guidedPinPoint, isFreePin, isGuidedPin, pinOnBorder, pinPoint, radialLeadSegment } from '../core/geometry'
 import {
   addImageAsset,
   addSymbolLabel,
@@ -23,7 +23,7 @@ import {
   setSymbolSize,
   translatedShape,
 } from '../core/symbols'
-import SymbolFace, { type FacePin } from './SymbolFace.vue'
+import SymbolFace, { type FaceLead, type FacePin } from './SymbolFace.vue'
 
 type Tool = 'select' | 'rect' | 'ellipse' | 'line' | 'polygon' | 'text' | 'pin' | 'free'
 type Selection = { kind: 'shape'; index: number } | { kind: 'label'; id: string } | { kind: 'pin'; id: string } | null
@@ -62,9 +62,18 @@ let gesture: Gesture | null = null
 
 const pins = computed<FacePin[]>(() =>
   props.symbol.ports.map((pin) => {
-    const at = pinPoint(props.symbol.width, props.symbol.height, pin)
-    return { id: pin.id, name: pin.name, side: pin.side, x: at.x, y: at.y, free: isFreePin(pin) }
+    const guided = isGuidedPin(pin)
+    const at = guided
+      ? guidedPinPoint(props.symbol, pin, props.symbol.width, props.symbol.height) ?? pinPoint(props.symbol.width, props.symbol.height, pin)
+      : pinPoint(props.symbol.width, props.symbol.height, pin)
+    return { id: pin.id, name: pin.name, side: pin.side, x: at.x, y: at.y, free: isFreePin(pin), guided }
   }),
+)
+
+const leads = computed<FaceLead[]>(() =>
+  props.symbol.ports
+    .map((pin) => radialLeadSegment(props.symbol, pin, props.symbol.width, props.symbol.height))
+    .filter((lead): lead is FaceLead => lead !== null),
 )
 
 const selectedImage = computed(() => {
@@ -572,6 +581,7 @@ defineExpose({ removeSelected, finishPolygon, cancelDraft, abandonGesture })
         :labels="symbol.labels"
         :assets="assets"
         :pins="pins"
+        :leads="leads"
         :selected-shape="selected?.kind === 'shape' ? selected.index : null"
         :selected-pin="selected?.kind === 'pin' ? selected.id : null"
         :selected-label="selected?.kind === 'label' ? selected.id : null"

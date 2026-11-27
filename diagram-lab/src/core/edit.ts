@@ -42,8 +42,9 @@ export type BlockTemplate = { name: string; width: number; height: number }
 /** Plain blocks. They are not HDL symbols. */
 export const BLOCK_TEMPLATES: BlockTemplate[] = [
   { name: 'Note', width: 160, height: 80 },
-  { name: 'Process', width: 180, height: 100 },
-  { name: 'Decision', width: 140, height: 100 },
+  // A2-P1: multiples of 40 so centred side ports sit on default snap g=20.
+  { name: 'Process', width: 200, height: 120 },
+  { name: 'Decision', width: 160, height: 120 },
 ]
 
 export function emptyDocument(): DiagramDocument {
@@ -129,9 +130,29 @@ export function placePort(doc: DiagramDocument, portId: string, side: Port['side
   port.placed = true
   delete port.x
   delete port.y
+  delete port.guideU
   // Attached Port↔Free stubs follow this port’s actual Δ (S4); other stubs stay put.
   translateAttachedStubsByPortDeltas(doc, portAnchorDeltas(doc, before))
   refreshAll(doc)
+}
+
+/**
+ * Move a guided symbol pin along its guide (A2-P1).
+ * Stores an instance `guideU` override; does not rewrite the symbol definition.
+ * Guide constraints win over grid snapping (caller passes already-projected u).
+ */
+export function placeGuidedPort(doc: DiagramDocument, portId: string, u: number): boolean {
+  const port = doc.ports.find((item) => item.id === portId)
+  if (!port) return false
+  const before = capturePortAnchors(doc, port.blockId)
+  const wrapped = ((u % 1) + 1) % 1
+  port.guideU = wrapped
+  delete port.placed
+  delete port.x
+  delete port.y
+  translateAttachedStubsByPortDeltas(doc, portAnchorDeltas(doc, before))
+  refreshAll(doc)
+  return true
 }
 
 /** First `pN` that is not already used, ignoring letter case. */

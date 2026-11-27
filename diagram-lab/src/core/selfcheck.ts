@@ -2,16 +2,23 @@ import { createId, parseDocument, serialize } from './document'
 import {
   autoRoute,
   capturePortAnchors,
+  continuousGuideU,
   fitSymbolShapes,
+  guidedPinPoint,
   isBlockAttachedStub,
+  isGuidedPin,
   isPortAttachedStub,
   labelPlacement,
   moveBlock,
   pinLocal,
   pinOnBorder,
+  pointOnEllipseGuide,
   polylineLength,
   portAnchor,
   portAnchorDeltas,
+  projectOntoEllipseGuide,
+  radialLeadSegment,
+  scaleEllipseGuide,
   simplifyOrthogonal,
   translateAttachedStubsByPortDeltas,
   translateSegmentGeometry,
@@ -46,6 +53,7 @@ import {
   addPortAt,
   borderPlacement,
   nearestBlockBorder,
+  placeGuidedPort,
   placePort,
   removeUnwiredPort,
   renameInstancePort,
@@ -5519,6 +5527,246 @@ function isPortFreeLike(segment: { start: { kind: string }; end: { kind: string 
   const legacyRound = parseDocument(serialize(legacyDoc))
   const roundAt = labelPlacement(legacyRound, 'lbl_l')!
   check(Math.abs(roundAt.x - legacyAt.x) < 0.5 && Math.abs(roundAt.y - legacyAt.y) < 0.5, 'P5b: legacy position survives round-trip')
+}
+
+{
+  // --- A2-P1: canonical circular catalog + guides ---
+  const signal = builtinLibraries().find((library) => library.id === 'lib_signal')!
+  const pictures = builtinLibraries().find((library) => library.id === 'lib_pictures')!
+  const general = builtinLibraries().find((library) => library.id === 'lib_general')!
+  const flowchart = builtinLibraries().find((library) => library.id === 'lib_flowchart')!
+  const mul = signal.symbols.find((item) => item.id === 'sym_multiplier')!
+  const add = signal.symbols.find((item) => item.id === 'sym_adder')!
+  const osc = pictures.symbols.find((item) => item.id === 'sym_oscillator')!
+  const gain = signal.symbols.find((item) => item.id === 'sym_gain')!
+  const generic = general.symbols.find((item) => item.id === 'sym_block')!
+  const process = flowchart.symbols.find((item) => item.id === 'sym_process')!
+  const staticLines = (shapes: { kind: string }[]) => shapes.filter((shape) => shape.kind === 'line').length
+  const g = 20
+  const onGrid = (value: number) => Math.abs(value / g - Math.round(value / g)) < 1e-9
+  const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps
+
+  check(add.width === 120 && add.height === 120 && mul.width === 120 && mul.height === 120, 'A2-P1: adder/multiplier 120×120')
+  check(mul.revision === 4 && add.revision === 4, 'A2-P1: adder/multiplier revision 4')
+  const art = add.shapes[0]
+  check(art?.kind === 'ellipse' && art.width === 80 && art.height === 80 && art.x === 20 && art.y === 20, 'A2-P1: circular artwork 80×80 at (20,20)')
+  const outer = add.guides?.find((item) => item.id === 'guide_ports')
+  const inner = add.guides?.find((item) => item.id === 'guide_body')
+  check(Boolean(outer && outer.rx === 60 && outer.ry === 60 && outer.cx === 60 && outer.cy === 60), 'A2-P1: outer guide circle r=60')
+  check(Boolean(inner && inner.rx === 40 && inner.ry === 40 && inner.cx === 60 && inner.cy === 60), 'A2-P1: inner guide circle r=40')
+  check(mul.ports.every((port) => isGuidedPin(port) && port.lead === 'radial'), 'A2-P1: multiplier ports guided with radial leads')
+  check(add.ports.every((port) => isGuidedPin(port) && port.lead === 'radial'), 'A2-P1: adder ports guided with radial leads')
+  check(staticLines(mul.shapes) === 0 && staticLines(add.shapes) === 0, 'A2-P1: no static lead shapes on adder/multiplier')
+  check(mul.ports.every((port) => port.id.startsWith('pin_mul_')), 'A2-P1: multiplier port ids unchanged')
+  check(add.ports.every((port) => port.id.startsWith('pin_adder_')), 'A2-P1: adder port ids unchanged')
+
+  // Cardinals of the default construction.
+  const card = [
+    { u: 0, x: 120, y: 60 },
+    { u: 0.25, x: 60, y: 120 },
+    { u: 0.5, x: 0, y: 60 },
+    { u: 0.75, x: 60, y: 0 },
+  ]
+  for (const item of card) {
+    const at = pointOnEllipseGuide(outer!, item.u)
+    check(near(at.x, item.x, 1e-9) && near(at.y, item.y, 1e-9), `A2-P1: cardinal u=${item.u}`)
+    check(onGrid(at.x) && onGrid(at.y), `A2-P1: cardinal u=${item.u} on g=20`)
+  }
+  // Constant lead length 20 at several angles.
+  for (const u of [0, 0.125, 0.42, 0.58, 0.75]) {
+    const pin = { ...add.ports[0]!, u }
+    const lead = radialLeadSegment(add, pin, add.width, add.height)!
+    const len = Math.hypot(lead.x2 - lead.x1, lead.y2 - lead.y1)
+    check(near(len, 20, 1e-9), `A2-P1: lead length 20 at u=${u}`)
+  }
+  const yPin = add.ports.find((port) => port.id === 'pin_adder_y')!
+  const yAt = guidedPinPoint(add, yPin, add.width, add.height)!
+  check(near(yAt.x, 120) && near(yAt.y, 60), 'A2-P1: default y at right cardinal')
+
+  // Oscillator / rectangular A2 symbols.
+  check(osc.width === 160 && osc.height === 120, 'A2-P1: oscillator 160×120')
+  check(osc.revision === 2, 'A2-P1: oscillator revision 2')
+  check(!osc.guides && osc.ports.every((port) => !isGuidedPin(port)), 'A2-P1: oscillator stays side-based')
+  const oscImage = osc.shapes.find((shape) => shape.kind === 'image')
+  check(oscImage?.kind === 'image' && oscImage.y === 20 && oscImage.x === 20, 'A2-P1: oscillator image centred vertically')
+  check(near(osc.height / 2, 60) && onGrid(osc.height / 2) && onGrid(osc.width / 2), 'A2-P1: oscillator mid-ports on grid')
+  check(generic.width === 160 && generic.height === 80 && onGrid(generic.height / 2), 'A2-P1: generic block 160×80 mid on grid')
+  check(process.width === 200 && process.height === 120 && onGrid(process.height / 2), 'A2-P1: process symbol 200×120 mid on grid')
+  check(BLOCK_TEMPLATES[1]!.width === 200 && BLOCK_TEMPLATES[1]!.height === 120, 'A2-P1: Process template 200×120')
+  check(BLOCK_TEMPLATES[2]!.width === 160 && BLOCK_TEMPLATES[2]!.height === 120, 'A2-P1: Decision template 160×120')
+  check(gain.width === 88 && gain.height === 64, 'A2-P1: unrelated Gain size left unchanged')
+
+  // Guide evaluation + wraparound (unit circle).
+  const unit: Extract<import('./document').SymbolGuide, { kind: 'ellipse' }> = {
+    id: 'g',
+    kind: 'ellipse',
+    cx: 0,
+    cy: 0,
+    rx: 10,
+    ry: 10,
+  }
+  check(near(pointOnEllipseGuide(unit, 0).x, 10) && near(pointOnEllipseGuide(unit, 0).y, 0), 'A2-P1: u=0 is right')
+  check(near(pointOnEllipseGuide(unit, 0.25).y, 10) && near(pointOnEllipseGuide(unit, 0.25).x, 0), 'A2-P1: u=0.25 is bottom')
+  check(near(pointOnEllipseGuide(unit, 0.5).x, -10) && near(pointOnEllipseGuide(unit, 0.5).y, 0), 'A2-P1: u=0.5 is left')
+  check(near(pointOnEllipseGuide(unit, 0.75).y, -10) && near(pointOnEllipseGuide(unit, 0.75).x, 0), 'A2-P1: u=0.75 is top')
+  check(near(projectOntoEllipseGuide(unit, { x: 10, y: 0 }), 0), 'A2-P1: project right')
+  check(near(projectOntoEllipseGuide(unit, { x: 0, y: 10 }), 0.25), 'A2-P1: project bottom')
+  check(near(continuousGuideU(0.95, 0.05), 1.05), 'A2-P1: wraparound forward')
+  check(near(continuousGuideU(0.05, 0.95), -0.05), 'A2-P1: wraparound backward')
+
+  // Variant A fixture: port on contour, lead none.
+  const variantA = cloneSymbol(mul)
+  variantA.id = 'sym_variant_a_fixture'
+  variantA.guides = [{ id: 'guide_body', kind: 'ellipse', cx: 60, cy: 60, rx: 40, ry: 40 }]
+  variantA.ports = variantA.ports.map((port) => {
+    const next = { ...port, guideId: 'guide_body', lead: 'none' as const }
+    delete next.leadGuideId
+    return next
+  })
+  check(variantA.ports.every((port) => isGuidedPin(port)), 'A2-P1: variant A fixture guided')
+  check(radialLeadSegment(variantA, variantA.ports[0]!, variantA.width, variantA.height) === null, 'A2-P1: variant A has no derived lead')
+
+  // HV connection geometry with grid-aligned origins (no snap framework).
+  let sheet = emptyDocument()
+  const oscPlace = placeLibrarySymbol(sheet, osc, { x: 100, y: 100 }, undefined, pictures.assets ?? [])
+  const addPlace = placeLibrarySymbol(sheet, add, { x: 320, y: 100 }, undefined, signal.assets ?? [])
+  check(oscPlace.ok && addPlace.ok, 'A2-P1: place oscillator and adder')
+  if (!oscPlace.ok || !addPlace.ok) throw new Error('A2-P1 place osc/adder failed')
+  const oscOut = sheet.ports.find((item) => item.blockId === oscPlace.blockId && item.symbolPortId === 'pin_osc_out')!
+  const addIn = sheet.ports.find((item) => item.blockId === addPlace.blockId && item.symbolPortId === 'pin_adder_a')!
+  // Move adder input a to left cardinal for an exact horizontal wire demo.
+  placeGuidedPort(sheet, addIn.id, 0.5)
+  const oscAt = portAnchor(sheet, oscOut.id)!
+  const addWest = portAnchor(sheet, addIn.id)!
+  check(near(oscAt.y, 160) && near(addWest.y, 160) && near(oscAt.y, addWest.y), 'A2-P1: OSC→Adder horizontal y match')
+  check(onGrid(oscAt.x) && onGrid(oscAt.y) && onGrid(addWest.x) && onGrid(addWest.y), 'A2-P1: OSC/Adder cardinals on grid')
+
+  const noise = placeLibrarySymbol(sheet, generic, { x: 320, y: 280 }, 'AWGN', general.assets ?? [])
+  check(noise.ok, 'A2-P1: place AWGN generic')
+  if (!noise.ok) throw new Error('A2-P1 place AWGN failed')
+  const noiseOut = sheet.ports.find((item) => item.blockId === noise.blockId && item.symbolPortId === 'pin_block_out')!
+  const addB = sheet.ports.find((item) => item.blockId === addPlace.blockId && item.symbolPortId === 'pin_adder_b')!
+  placeGuidedPort(sheet, addB.id, 0.25)
+  const noiseAt = portAnchor(sheet, noiseOut.id)!
+  const addSouth = portAnchor(sheet, addB.id)!
+  // Align noise block so its mid-right shares Adder south x for a vertical wire.
+  const noiseBlock = sheet.blocks.find((item) => item.id === noise.blockId)!
+  setBlockFields(sheet, noiseBlock.id, { x: addSouth.x - noiseBlock.width, y: addSouth.y + 40 })
+  const noiseAt2 = portAnchor(sheet, noiseOut.id)!
+  check(near(noiseAt2.x, addSouth.x) && onGrid(addSouth.x) && onGrid(addSouth.y), 'A2-P1: AWGN→Adder vertical x alignable on grid')
+
+  // Instance independence + stub follow.
+  const placedA = placeLibrarySymbol(sheet, add, { x: 40, y: 400 }, undefined, signal.assets ?? [])
+  const placedB = placeLibrarySymbol(sheet, add, { x: 200, y: 400 }, undefined, signal.assets ?? [])
+  check(placedA.ok && placedB.ok, 'A2-P1: place two adder instances')
+  if (!placedA.ok || !placedB.ok) throw new Error('A2-P1 place adders failed')
+  const emb = sheet.symbols.find((item) => item.id === 'sym_adder')!
+  check(Boolean(emb.guides?.length === 2) && staticLines(emb.shapes) === 0, 'A2-P1: embedded definition has guides, no static leads')
+  const blockA = sheet.blocks.find((item) => item.id === placedA.blockId)!
+  const portA = sheet.ports.find((item) => item.blockId === blockA.id && item.symbolPortId === 'pin_adder_b')!
+  const portB = sheet.ports.find((item) => item.blockId === placedB.blockId && item.symbolPortId === 'pin_adder_b')!
+  const netIdBefore = createId('net')
+  const segIdBefore = createId('seg')
+  const portAId = portA.id
+  const freeStub: import('./document').Segment = {
+    id: segIdBefore,
+    netId: netIdBefore,
+    routed: 'manual',
+    points: [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+    ],
+    start: { kind: 'port', portId: portAId },
+    end: { kind: 'free', x: 0, y: 0 },
+  }
+  sheet.nets.push({ id: netIdBefore, name: 'n1' })
+  const anchorBefore = portAnchor(sheet, portAId)!
+  freeStub.points = [
+    { x: anchorBefore.x, y: anchorBefore.y },
+    { x: anchorBefore.x - 30, y: anchorBefore.y },
+  ]
+  freeStub.end = { kind: 'free', x: anchorBefore.x - 30, y: anchorBefore.y }
+  sheet.segments.push(freeStub)
+
+  placeGuidedPort(sheet, portAId, 0.75)
+  check(near(portA.guideU ?? -1, 0.75), 'A2-P1: instance guideU override')
+  check(portB.guideU === undefined, 'A2-P1: other instance independent')
+  check(emb.ports.find((port) => port.id === 'pin_adder_b')!.u === 0.42, 'A2-P1: library default u preserved')
+  const afterMove = portAnchor(sheet, portAId)!
+  const stub = sheet.segments.find((item) => item.id === segIdBefore)!
+  check(near(stub.points[0]!.x, afterMove.x, 1e-6) && near(stub.points[0]!.y, afterMove.y, 1e-6), 'A2-P1: attached stub follows guided port')
+  check(portA.id === portAId && stub.netId === netIdBefore, 'A2-P1: port and net identity preserved')
+
+  const uKeep = portA.guideU!
+  const box = resizeBox(
+    { x: blockA.x, y: blockA.y, width: blockA.width, height: blockA.height },
+    'se',
+    { x: blockA.x + blockA.width * 1.5, y: blockA.y + blockA.height * 1.2 },
+    false,
+  )
+  setBlockFields(sheet, blockA.id, box)
+  check(near(portA.guideU ?? -1, uKeep), 'A2-P1: resize preserves guideU')
+  const resizedLocal = guidedPinPoint(emb, emb.ports.find((port) => port.id === 'pin_adder_b')!, blockA.width, blockA.height, uKeep)!
+  const resizedAnchor = portAnchor(sheet, portAId)!
+  check(near(resizedAnchor.x, blockA.x + resizedLocal.x, 1e-6), 'A2-P1: resized guided anchor matches scaled guide')
+
+  const circle = scaleEllipseGuide({ id: 'c', kind: 'ellipse', cx: 10, cy: 10, rx: 5, ry: 5 }, 2, 1.5)
+  check(near(circle.rx, 10) && near(circle.ry, 7.5), 'A2-P1: circle guide becomes ellipse under non-uniform scale')
+
+  const broken = cloneSymbol(emb)
+  broken.guides = []
+  sheet.symbols = sheet.symbols.map((item) => (item.id === broken.id ? broken : item))
+  check(portAnchor(sheet, portAId) !== null, 'A2-P1: missing guide still yields an anchor')
+  check(sheet.segments.some((item) => item.id === segIdBefore && item.netId === netIdBefore), 'A2-P1: missing guide does not drop net')
+
+  let historyDoc = emptyDocument()
+  const placed = placeLibrarySymbol(historyDoc, mul, { x: 40, y: 40 }, undefined, signal.assets ?? [])
+  check(placed.ok, 'A2-P1: place corrected multiplier')
+  if (!placed.ok) throw new Error('A2-P1 place failed')
+  const session = new EditSession(
+    () => historyDoc,
+    (next) => {
+      historyDoc = next
+    },
+  )
+  const mulPortId = historyDoc.ports.find((item) => item.symbolPortId === 'pin_mul_b')!.id
+  session.begin()
+  session.preview((draft) => {
+    placeGuidedPort(draft, mulPortId, 0.1)
+  })
+  session.commit()
+  check(near(historyDoc.ports.find((item) => item.id === mulPortId)?.guideU ?? -1, 0.1), 'A2-P1: guided move commits')
+  session.undo()
+  check(historyDoc.ports.find((item) => item.id === mulPortId)?.guideU === undefined, 'A2-P1: undo restores absence of guideU')
+  session.redo()
+  check(near(historyDoc.ports.find((item) => item.id === mulPortId)?.guideU ?? -1, 0.1), 'A2-P1: redo restores guideU')
+
+  const frag = captureFragment(historyDoc, [placed.blockId])
+  const pasted = pasteFragment(historyDoc, frag, 80, 0)
+  const copyPort = historyDoc.ports.find((item) => item.blockId === pasted[0] && item.symbolPortId === 'pin_mul_b')!
+  check(near(copyPort.guideU ?? -1, 0.1), 'A2-P1: paste preserves guideU')
+
+  const round = parseDocument(serialize(historyDoc))
+  const roundPort = round.ports.find((item) => item.guideU !== undefined)!
+  check(near(roundPort.guideU ?? -1, 0.1), 'A2-P1: guideU survives save/load')
+  check(Boolean(round.symbols.find((item) => item.id === 'sym_multiplier')?.guides?.length), 'A2-P1: guides survive save/load')
+
+  const stale = cloneSymbol(round.symbols.find((item) => item.id === 'sym_multiplier')!)
+  stale.shapes = [{ kind: 'ellipse', x: 16, y: 8, width: 56, height: 48 }]
+  stale.guides = undefined
+  stale.ports = stale.ports.map((port) => {
+    const next = { ...port }
+    delete next.guideId
+    delete next.u
+    delete next.lead
+    delete next.leadGuideId
+    return next
+  })
+  stale.revision = 1
+  round.symbols = round.symbols.map((item) => (item.id === stale.id ? stale : item))
+  const again = parseDocument(serialize(round))
+  const againSym = again.symbols.find((item) => item.id === 'sym_multiplier')!
+  check(!againSym.guides && againSym.revision === 1, 'A2-P1: stale embedded body survives save/load without catalog pull')
 }
 
 if (failures.length) {

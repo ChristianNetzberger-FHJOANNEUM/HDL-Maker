@@ -8,7 +8,9 @@ import type {
   PortSide,
   Segment,
   SymbolDefinition,
+  SymbolGuide,
   SymbolLabel,
+  SymbolPort,
   SymbolShape,
   Waypoint,
 } from './document'
@@ -39,7 +41,113 @@ export function isFreePin(pin: { x?: number; y?: number }): boolean {
   return typeof pin.x === 'number' && typeof pin.y === 'number'
 }
 
-/** A free pin uses fractions of the symbol box. A side pin uses `t` along that side. */
+/** True when the pin uses a symbol guide (A2-P1). */
+export function isGuidedPin(pin: Pick<SymbolPort, 'guideId' | 'u'>): boolean {
+  return typeof pin.guideId === 'string' && pin.guideId.length > 0 && typeof pin.u === 'number'
+}
+
+export function clampGuideU(u: number): number {
+  if (!Number.isFinite(u)) return 0
+  const wrapped = u % 1
+  return wrapped < 0 ? wrapped + 1 : wrapped
+}
+
+/** Scale a symbol-local ellipse guide into instance coordinates. */
+export function scaleEllipseGuide(guide: Extract<SymbolGuide, { kind: 'ellipse' }>, sx: number, sy: number): Extract<SymbolGuide, { kind: 'ellipse' }> {
+  return {
+    ...guide,
+    cx: guide.cx * sx,
+    cy: guide.cy * sy,
+    rx: Math.abs(guide.rx * sx),
+    ry: Math.abs(guide.ry * sy),
+  }
+}
+
+/**
+ * Point on an ellipse guide. φ = 2πu; screen y grows downward
+ * (u=0 right, 0.25 bottom, 0.5 left, 0.75 top).
+ */
+export function pointOnEllipseGuide(guide: Extract<SymbolGuide, { kind: 'ellipse' }>, u: number): Point {
+  const phi = 2 * Math.PI * clampGuideU(u)
+  return {
+    x: guide.cx + guide.rx * Math.cos(phi),
+    y: guide.cy + guide.ry * Math.sin(phi),
+  }
+}
+
+/**
+ * Project a local point onto an ellipse guide; return u in [0,1).
+ * Uses the ellipse-parameter angle atan2((y-cy)/ry, (x-cx)/rx).
+ */
+export function projectOntoEllipseGuide(guide: Extract<SymbolGuide, { kind: 'ellipse' }>, local: Point): number {
+  const rx = guide.rx > 1e-9 ? guide.rx : 1e-9
+  const ry = guide.ry > 1e-9 ? guide.ry : 1e-9
+  let phi = Math.atan2((local.y - guide.cy) / ry, (local.x - guide.cx) / rx)
+  if (phi < 0) phi += 2 * Math.PI
+  return clampGuideU(phi / (2 * Math.PI))
+}
+
+/**
+ * Choose the unwrap of `next` in [0,1) closest to `previous` so drag across u=0 does not jump.
+ * Returns a value that may lie outside [0,1); callers store `clampGuideU` of the result.
+ */
+export function continuousGuideU(previous: number, next: number): number {
+  const target = clampGuideU(next)
+  let candidate = target
+  while (candidate - previous > 0.5) candidate -= 1
+  while (candidate - previous < -0.5) candidate += 1
+  return candidate
+}
+
+export function findSymbolGuide(symbol: SymbolDefinition, guideId: string | undefined): SymbolGuide | undefined {
+  if (!guideId || !symbol.guides) return undefined
+  return symbol.guides.find((guide) => guide.id === guideId)
+}
+
+/** Resolve guided pin position in the instance box (definition guide scaled). */
+export function guidedPinPoint(
+  symbol: SymbolDefinition,
+  pin: SymbolPort,
+  instanceWidth: number,
+  instanceHeight: number,
+  uOverride?: number,
+): Point | null {
+  if (!isGuidedPin(pin) || !pin.guideId) return null
+  const guide = findSymbolGuide(symbol, pin.guideId)
+  if (!guide || guide.kind !== 'ellipse') return null
+  const sx = symbol.width > 0 ? instanceWidth / symbol.width : 1
+  const sy = symbol.height > 0 ? instanceHeight / symbol.height : 1
+  const scaled = scaleEllipseGuide(guide, sx, sy)
+  const u = typeof uOverride === 'number' ? uOverride : pin.u!
+  return pointOnEllipseGuide(scaled, u)
+}
+
+/**
+ * Derived radial lead in instance space (same u on concentric ellipses).
+ * Returns null when guides are missing or not ellipses.
+ */
+export function radialLeadSegment(
+  symbol: SymbolDefinition,
+  pin: SymbolPort,
+  instanceWidth: number,
+  instanceHeight: number,
+  uOverride?: number,
+): { x1: number; y1: number; x2: number; y2: number } | null {
+  if (pin.lead !== 'radial' || !pin.guideId || !pin.leadGuideId) return null
+  const outerDef = findSymbolGuide(symbol, pin.guideId)
+  const innerDef = findSymbolGuide(symbol, pin.leadGuideId)
+  if (!outerDef || outerDef.kind !== 'ellipse' || !innerDef || innerDef.kind !== 'ellipse') return null
+  const sx = symbol.width > 0 ? instanceWidth / symbol.width : 1
+  const sy = symbol.height > 0 ? instanceHeight / symbol.height : 1
+  const outer = scaleEllipseGuide(outerDef, sx, sy)
+  const inner = scaleEllipseGuide(innerDef, sx, sy)
+  const u = typeof uOverride === 'number' ? uOverride : (pin.u ?? 0)
+  const a = pointOnEllipseGuide(outer, u)
+  const b = pointOnEllipseGuide(inner, u)
+  return { x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+}
+
+/** A free pin uses fractions of the symbol box. A side pin uses `t` along that side. Guided pins need `guidedPinPoint`. */
 export function pinPoint(width: number, height: number, pin: { side: PortSide; t: number; x?: number; y?: number }): Point {
   if (isFreePin(pin)) {
     return { x: width * clampUnit(pin.x ?? 0), y: height * clampUnit(pin.y ?? 0) }
@@ -90,10 +198,13 @@ export function portAnchor(
     const local = pinLocal(block.width, block.height, port.side, port.t ?? 0.5)
     return { x: origin.x + local.x, y: origin.y + local.y }
   }
-  const symbolPort =
-    port.symbolPortId && block.symbolId
-      ? doc.symbols?.find((symbol) => symbol.id === block.symbolId)?.ports.find((item) => item.id === port.symbolPortId)
-      : undefined
+  const symbol =
+    port.symbolPortId && block.symbolId ? doc.symbols?.find((item) => item.id === block.symbolId) : undefined
+  const symbolPort = port.symbolPortId ? symbol?.ports.find((item) => item.id === port.symbolPortId) : undefined
+  if (symbol && symbolPort && isGuidedPin(symbolPort)) {
+    const local = guidedPinPoint(symbol, symbolPort, block.width, block.height, port.guideU ?? symbolPort.u)
+    if (local) return { x: origin.x + local.x, y: origin.y + local.y }
+  }
   if (symbolPort) {
     const local = pinPoint(block.width, block.height, symbolPort)
     return { x: origin.x + local.x, y: origin.y + local.y }

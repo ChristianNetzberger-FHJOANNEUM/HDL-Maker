@@ -1,7 +1,7 @@
 # Diagram-Lab — Strategic Vision and Future Specialisation Roadmap
 
-**Status:** Vision / architectural orientation (26 Nov 2026). **Not** an implementation specification. **Not** an extension of the approved D-series or HDL-Maker Studio roadmaps.  
-**Related:** [adr-diagram-geometry-routing-style.md](adr-diagram-geometry-routing-style.md), [adr-diagram-animation-runtime.md](adr-diagram-animation-runtime.md), [diagram-editor-roadmap.md](diagram-editor-roadmap.md), [diagram-lab-application-pilots.md](diagram-lab-application-pilots.md) (practical evaluation — planning only).
+**Status:** Vision / architectural orientation (26 Nov 2026; **§3.7 / Python Studio addendum accepted 27 Nov 2026**). **Not** an implementation specification. **Not** an extension of the approved D-series or HDL-Maker Studio roadmaps.  
+**Related:** [adr-diagram-geometry-routing-style.md](adr-diagram-geometry-routing-style.md), [adr-diagram-animation-runtime.md](adr-diagram-animation-runtime.md), [adr-executable-python-block-diagrams.md](adr-executable-python-block-diagrams.md), [adr-symbol-geometry-and-port-guides.md](adr-symbol-geometry-and-port-guides.md), [diagram-editor-roadmap.md](diagram-editor-roadmap.md), [diagram-lab-application-pilots.md](diagram-lab-application-pilots.md), [diagram-lab-pilot-a2-findings.md](diagram-lab-pilot-a2-findings.md).
 
 ---
 
@@ -22,7 +22,7 @@ The current development must not be burdened with speculative features, abstract
 | Layer | Role | Examples |
 | --- | --- | --- |
 | **Strategic vision** | Long-term goals, possible applications, licensing posture, philosophy | This file |
-| **ADRs** | Concrete architecture decisions, compatibility, deferred choices | `adr-diagram-*.md` |
+| **ADRs** | Concrete architecture decisions, compatibility, deferred choices | `adr-diagram-*.md`, `adr-executable-python-block-diagrams.md`, `adr-symbol-geometry-and-port-guides.md` |
 | **Operational roadmap** | Released milestones, implementation briefs, selfchecks, acceptance, measurements | D-series / S-slices, handoffs, prep specs |
 | **Application pilots** | Practical usage evaluation (findings, not auto-implement) | [diagram-lab-application-pilots.md](diagram-lab-application-pilots.md) |
 
@@ -56,6 +56,10 @@ The primary application currently under development:
 - Simulation integration.
 - FPGA implementation workflows.
 - Educational digital design projects.
+
+### 3.1a Symbol libraries and Symbol Designer (orientation)
+
+Domain packs (e.g. Communication Systems) and a future **Symbol Designer** should author declarative symbols: artwork + optional **port guides** + logical ports + optional derived leads — without special-casing each silhouette in the editor core. See [adr-symbol-geometry-and-port-guides.md](adr-symbol-geometry-and-port-guides.md). A2 exercises reuse first; Designer implementation requires a separate freigabe (SD0+).
 
 ### 3.2 General Diagram Editor
 
@@ -110,6 +114,30 @@ Future possibility for external runtime data: sensors, device/FPGA/embedded stat
 
 The engine provides graphics; hosts provide acquisition and interpretation.
 
+### 3.7 Python Simulation Studio (future specialisation)
+
+A possible specialised host for **executable software block diagrams**: blocks with Python implementations, typed or loosely typed ports, parameters, hierarchical subsystems, a model compiler, a controlled runtime, signal probes and plots.
+
+**Working title:** Python Simulation Studio.
+
+Motivation: freely available, Python-first teaching alternative to parts of the MATLAB/Simulink workflow — without turning Diagram-Lab into a simulation kernel.
+
+Conceptual product family on one editor core:
+
+| Application | Semantics / backend |
+| --- | --- |
+| **HDL Studio** | VHDL, GHDL, GTKWave, Vivado workflows |
+| **Python Studio** | NumPy / SciPy, optional BDSim or other adapters, local execution |
+| **Education Studio** | Illustrative / animated teaching diagrams (may later embed executable models) |
+
+Related external systems (study only): Peter Corke’s **BDSim** / **bdedit**, **GNU Radio Companion**, Scilab Xcos, Ptolemy II, MATLAB/Simulink.
+
+**First execution class (if ever released):** simple **array-based acyclic dataflow** (e.g. BPSK/AWGN from A2). Continuous/hybrid dynamics → evaluate a **BDSim adapter** before inventing a full continuous kernel. Streaming/SDR → GNU Radio-class effort, not an early goal.
+
+A2 remains a **symbol-library** pilot first; the same BPSK drawing is only a *candidate* later executable prototype. Details, security rules, MoC ladder, and non-goals: [adr-executable-python-block-diagrams.md](adr-executable-python-block-diagrams.md).
+
+**Do not** implement a simulator, executable schema, or new dependencies from this vision section.
+
 ---
 
 ## 4. Long-term conceptual architecture
@@ -118,11 +146,13 @@ Preserve clear separation (aligned with the ADRs):
 
 | Layer | Responsibility |
 | --- | --- |
-| **1. Semantics** | What objects and connections mean (HDL nets, FSM edges, general relationships, pure graphics) |
+| **1. Semantics** | What objects and connections mean (HDL nets, FSM edges, general relationships, pure graphics, *optional* executable bindings in a host) |
 | **2. Canonical geometry** | Persistent space (positions, sizes, polylines, anchors, labels) |
 | **3. Routing / edit policy** | How connections are created and edited (orthogonal, free, …) — not an unconditional document invariant |
 | **4. Persistent visual styling** | Appearance; must not redefine connectivity or HDL direction |
-| **5. Optional animation / runtime** | Temporary time- or data-driven presentation overrides |
+| **5. Optional animation / runtime** | Temporary time- or data-driven presentation overrides (including *display* of simulation results) |
+
+**Executable Python / simulation control planes** (compiler, scheduler, worker process, signal store) are **host backends**, not a sixth mandatory Lab document layer. They may *feed* layer 5 for visualisation. See Python ADR.
 
 Application-specific semantics should not unnecessarily constrain the generic engine. Details and non-goals: companion ADRs.
 
@@ -174,11 +204,11 @@ Orientation only — **not** approved milestones, **not** a renumbering of the D
 | F6 | Basic animation playback |
 | F7 | Property tracks, keyframes and motion paths |
 | F8 | Interactive animation authoring and timeline UI |
-| F9 | Simulation and external data binding |
-| F10 | Specialised educational and technical applications |
+| F9 | Simulation and external data binding (incl. possible Python Studio runtime *interfaces*) |
+| F10 | Specialised educational and technical applications (HDL / Python / Education hosts) |
 | F11 | Open-source distribution and ecosystem development |
 
-Stages may overlap, reorder, shrink, or never happen. They must not replace D-series or Studio milestones.
+Stages may overlap, reorder, shrink, or never happen. They must not replace D-series, A2, S5b, D5d, or Studio milestones. A Python dataflow prototype would require its **own freigabe**, not an F-stage auto-start.
 
 ---
 
@@ -198,7 +228,7 @@ Stages may overlap, reorder, shrink, or never happen. They must not replace D-se
 
 ## 10. Explicit non-goals
 
-This vision does **not** authorise: animation/style/new object types/new routing/schema changes/renderer refactor/plugin infrastructure/simulation integration/new dependencies/general-purpose editor implementation/licence changes/public repo publication/performance optimisations/roadmap reordering/commit or push.
+This vision does **not** authorise: animation/style/new object types/new routing/schema changes/renderer refactor/plugin infrastructure/simulation integration/**Python executor or BDSim/GNU Radio dependencies**/general-purpose editor implementation/licence changes/public repo publication/performance optimisations/roadmap reordering/commit or push.
 
 Do not add empty interfaces, placeholder classes, or unused abstractions merely to anticipate the future.
 
@@ -210,18 +240,20 @@ Current priorities remain unchanged:
 
 - Finish approved wire-editing work (including remaining S-gates as freigegeben).  
 - Preserve architectural invariants (shared history, gesture preview from baseline, sheet net-name identity, toolbar as chrome).  
+- Complete application pilot **A2** (symbol library) as released — findings first, no auto-implement.  
 - Run the D5d performance campaign when released.  
 - Continue Diagram-Lab D-series and HDL-Maker Studio per their own roadmaps.  
 - Prepare reusable Vue library per D5f when due.
 
-Future specialisations must not delay these activities.
+Future specialisations — including Python Simulation Studio — must **not** delay these activities.
 
 ---
 
 ## 12. Guiding statement
 
-Diagram-Lab should grow into a reliable, reusable and potentially freely licensed foundation for technical diagram editing, interactive education, simulation visualisation and specialised graphical applications.
+Diagram-Lab should grow into a reliable, reusable and potentially freely licensed foundation for technical diagram editing, interactive education, simulation visualisation, specialised graphical applications, and — if separately justified — executable Python teaching models on specialised backends.
 
 Its long-term potential should be preserved through sound architectural decisions, not through premature implementation.
 
-**Build what is needed today. Preserve the possibilities of tomorrow.**
+**Build what is needed today. Preserve the possibilities of tomorrow.**  
+**One diagram core; specialised backends for meaning and execution.**

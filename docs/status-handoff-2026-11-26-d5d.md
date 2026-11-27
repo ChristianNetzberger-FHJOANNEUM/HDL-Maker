@@ -43,6 +43,7 @@ Earlier same-day baseline (D5b–D5c): [status-handoff-2026-11-26.md](status-han
 | Geometry / style architecture | ADR recorded; no implement | `adr-diagram-geometry-routing-style.md` |
 | Animation / runtime (optional) | Linked ADR; no implement | `adr-diagram-animation-runtime.md` |
 | Strategic vision (F0–F11 orient.) | Vision only; not a work queue | `diagram-lab-strategic-vision.md` |
+| Executable Python block diagrams | **ADR accepted** (architecture only — no implement) | `adr-executable-python-block-diagrams.md` |
 | Application pilots A/B | Prep accepted; **A1 findings** filed (presentation; no implement) | `diagram-lab-application-pilots.md`, `diagram-lab-pilot-a1-presentation-findings.md` |
 | A1 presentation P0 | **Accepted** (visual) | `diagram-lab-pilot-a1-presentation-findings.md` |
 | A1 P0b grid stacking | **Accepted** (visual); live interaction **open** | `diagram-lab-pilot-a1-grid-stacking-findings.md`, `diagram-lab-pilot-a1-p0b-regression.md` |
@@ -57,7 +58,7 @@ Earlier same-day baseline (D5b–D5c): [status-handoff-2026-11-26.md](status-han
 | A1 presentation P5a | **Accepted** | `diagram-lab-pilot-a1-p5a-label-position.md` |
 | A1 presentation P5b | **Accepted** (Remove fix + user confirm) | `diagram-lab-pilot-a1-p5b-remove-label.md` |
 | **A1 final pilot evaluation** | **Formally closed** | `diagram-lab-pilot-a1-final-evaluation.md` |
-| A2 digital / baseband system | **Not released** — separate freigabe | `diagram-lab-application-pilots.md` |
+| A2 BPSK + AWGN (symbol library) | Kit ready; **A2-P1 architecture** (port guides) await review; P2–P4 gated | `adr-symbol-geometry-and-port-guides.md`, `diagram-lab-pilot-a2-p1-symbol-connections.md` |
 | Vertex-handle / edge / vertex drag (“S5a.2”) | Discussed only — **not** an open work package | needs separate freigabe |
 | D5d.0 performance campaign | **Not released** — after S5a/S5b | prep + generator docs |
 
@@ -142,7 +143,7 @@ Lab: typically `http://localhost:5174/`.
 | 3 | **S5a** Port-originated stub drawing | **Double-click accepted** |
 | 3b | **S5a.1** Incremental wire drawing undo | **Accepted** |
 | 4 | **S5b** Stable free-endpoint drag | **Accepted** |
-| 5 | Manual application pilots A1→A2→B2→B3→B1 | **A1 closed**; A2 separate freigabe (symbol focus); D5d independent… |
+| 5 | Manual application pilots A1→A2→B2→B3→B1 | **A1 closed**; **A2-P1** implemented — manual accept pending; A2-P2…P4 gated; D5d independent… |
 | — | ADR geometry / style / animation; strategic vision | Documented only |
 | 6 | D5d.0 performance campaign (B–D as freigegeben) | Independent high priority |
 | 7 | D5d.1+ optimisations | Only after measurements |
@@ -165,4 +166,4 @@ Do **not** reopen S1/S2, D5c.7, edge/vertex-drag (“S5a.2”), or style work wi
 
 ## 9. One-line summary
 
-**S3/S5a/S5a.1/S5b accepted; A1 P0–P5b accepted and formally closed; A2 not released (symbol-library focus when freigegeben); S4 port drag TBD; D5d independent; no commit unless asked.**
+**S3/S5a/S5a.1/S5b accepted; A1 closed @ 730dfb6; A2-P1 guides + catalog geometry correction shipped — final manual accept pending; Object Snap deferred; A2-P2…P4 gated; S4 port drag TBD; D5d independent; no commit unless asked.**

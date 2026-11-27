@@ -147,6 +147,23 @@ export function validateSymbol(value: unknown): value is SymbolDefinition {
   if (symbol.ports.some((port) => typeof port.id !== 'string' || typeof port.name !== 'string' || !SIDES.has(port.side) || typeof port.t !== 'number')) {
     return false
   }
+  if (symbol.guides !== undefined) {
+    if (!Array.isArray(symbol.guides)) return false
+    if (
+      symbol.guides.some(
+        (guide) =>
+          !guide ||
+          typeof guide.id !== 'string' ||
+          guide.kind !== 'ellipse' ||
+          typeof guide.cx !== 'number' ||
+          typeof guide.cy !== 'number' ||
+          typeof guide.rx !== 'number' ||
+          typeof guide.ry !== 'number',
+      )
+    ) {
+      return false
+    }
+  }
   return symbol.shapes.every((shape) => validShape(shape))
 }
 
@@ -163,6 +180,7 @@ function bodyRecord(symbol: SymbolDefinition, assets: ImageAsset[]) {
     height: symbol.height,
     ports: symbol.ports,
     labels: symbol.labels,
+    guides: symbol.guides ?? [],
     shapes: symbol.shapes.map((shape) => {
       if (shape.kind !== 'image') return shape
       const checksum = assets.find((asset) => asset.id === shape.assetId)?.checksum ?? shape.assetId

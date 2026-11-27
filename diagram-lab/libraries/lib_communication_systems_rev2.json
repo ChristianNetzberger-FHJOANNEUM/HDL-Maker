@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "lib_comms_systems",
+  "name": "Communication Systems",
+  "description": "A2 pilot library revision 2 — Carrier artwork changed for update/conflict tests. Import only after removing the prior Carrier from the user library, or use Symbol Editor Publish instead.",
+  "version": 2,
+  "origin": "a2-pilot",
+  "license": "MIT",
+  "builtin": false,
+  "categories": [
+    { "id": "cat_comms", "name": "Communication Systems" }
+  ],
+  "symbols": [
+    {
+      "id": "sym_comms_carrier",
+      "name": "Carrier",
+      "width": 88,
+      "height": 64,
+      "libraryId": "lib_comms_systems",
+      "libraryVersion": 2,
+      "categoryId": "cat_comms",
+      "revision": 2,
+      "ports": [
+        { "id": "pin_comms_carrier_out", "name": "out", "side": "right", "t": 0.5 }
+      ],
+      "shapes": [
+        { "kind": "rect", "x": 4, "y": 4, "width": 80, "height": 56, "rx": 4 },
+        { "kind": "line", "x1": 14, "y1": 32, "x2": 22, "y2": 18 },
+        { "kind": "line", "x1": 22, "y1": 18, "x2": 30, "y2": 46 },
+        { "kind": "line", "x1": 30, "y1": 46, "x2": 38, "y2": 18 },
+        { "kind": "line", "x1": 38, "y1": 18, "x2": 46, "y2": 46 },
+        { "kind": "line", "x1": 46, "y1": 46, "x2": 54, "y2": 32 },
+        { "kind": "line", "x1": 54, "y1": 32, "x2": 74, "y2": 32 },
+        { "kind": "ellipse", "x": 62, "y": 12, "width": 12, "height": 12 }
+      ],
+      "labels": [
+        { "id": "lbl_comms_carrier", "text": "OSC*", "x": 34, "y": 14 }
+      ]
+    }
+  ],
+  "assets": []
+}

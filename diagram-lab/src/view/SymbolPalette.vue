@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { SymbolDefinition } from '../core/document'
-import { isFreePin, pinPoint } from '../core/geometry'
+import { guidedPinPoint, isFreePin, isGuidedPin, pinPoint, radialLeadSegment } from '../core/geometry'
 import type { LibraryDiagnostic, SymbolLibrary } from '../core/library'
-import SymbolFace, { type FacePin } from './SymbolFace.vue'
+import SymbolFace, { type FaceLead, type FacePin } from './SymbolFace.vue'
 
 const props = defineProps<{
   libraries: SymbolLibrary[]
@@ -41,9 +41,18 @@ const visible = computed(() => {
 
 function pinsOf(symbol: SymbolDefinition): FacePin[] {
   return symbol.ports.map((pin) => {
-    const at = pinPoint(symbol.width, symbol.height, pin)
-    return { id: pin.id, name: pin.name, side: pin.side, x: at.x, y: at.y, free: isFreePin(pin) }
+    const guided = isGuidedPin(pin)
+    const at = guided
+      ? guidedPinPoint(symbol, pin, symbol.width, symbol.height) ?? pinPoint(symbol.width, symbol.height, pin)
+      : pinPoint(symbol.width, symbol.height, pin)
+    return { id: pin.id, name: pin.name, side: pin.side, x: at.x, y: at.y, free: isFreePin(pin), guided }
   })
+}
+
+function leadsOf(symbol: SymbolDefinition): FaceLead[] {
+  return symbol.ports
+    .map((pin) => radialLeadSegment(symbol, pin, symbol.width, symbol.height))
+    .filter((lead): lead is FaceLead => lead !== null)
 }
 
 function onLibrary(event: Event): void {
@@ -108,7 +117,7 @@ function onUp(event: PointerEvent): void {
       @pointerup="onUp"
     >
       <svg class="palette-preview" :viewBox="`0 0 ${symbol.width} ${symbol.height}`" width="72" height="48">
-        <SymbolFace :width="symbol.width" :height="symbol.height" :shapes="symbol.shapes" :labels="symbol.labels" :assets="selectedLibrary?.assets ?? []" :pins="pinsOf(symbol)" />
+        <SymbolFace :width="symbol.width" :height="symbol.height" :shapes="symbol.shapes" :labels="symbol.labels" :assets="selectedLibrary?.assets ?? []" :pins="pinsOf(symbol)" :leads="leadsOf(symbol)" />
       </svg>
       <span>{{ symbol.name }}</span>
       <span class="palette-actions">

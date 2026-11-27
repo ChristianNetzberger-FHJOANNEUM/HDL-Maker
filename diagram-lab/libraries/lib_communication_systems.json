@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "id": "lib_comms_systems",
+  "name": "Communication Systems",
+  "description": "A2 pilot test library — BPSK / baseband teaching symbols. Not a product catalog. Vector primitives only; no new schema fields.",
+  "version": 1,
+  "origin": "a2-pilot",
+  "license": "MIT",
+  "builtin": false,
+  "categories": [
+    { "id": "cat_comms", "name": "Communication Systems" }
+  ],
+  "symbols": [
+    {
+      "id": "sym_comms_carrier",
+      "name": "Carrier",
+      "width": 88,
+      "height": 64,
+      "libraryId": "lib_comms_systems",
+      "libraryVersion": 1,
+      "categoryId": "cat_comms",
+      "revision": 1,
+      "ports": [
+        { "id": "pin_comms_carrier_out", "name": "out", "side": "right", "t": 0.5 }
+      ],
+      "shapes": [
+        { "kind": "rect", "x": 4, "y": 4, "width": 80, "height": 56, "rx": 4 },
+        { "kind": "line", "x1": 14, "y1": 32, "x2": 22, "y2": 18 },
+        { "kind": "line", "x1": 22, "y1": 18, "x2": 30, "y2": 46 },
+        { "kind": "line", "x1": 30, "y1": 46, "x2": 38, "y2": 18 },
+        { "kind": "line", "x1": 38, "y1": 18, "x2": 46, "y2": 46 },
+        { "kind": "line", "x1": 46, "y1": 46, "x2": 54, "y2": 32 },
+        { "kind": "line", "x1": 54, "y1": 32, "x2": 74, "y2": 32 }
+      ],
+      "labels": [
+        { "id": "lbl_comms_carrier", "text": "OSC", "x": 36, "y": 14 }
+      ]
+    },
+    {
+      "id": "sym_comms_noise",
+      "name": "Noise",
+      "width": 88,
+      "height": 64,
+      "libraryId": "lib_comms_systems",
+      "libraryVersion": 1,
+      "categoryId": "cat_comms",
+      "revision": 1,
+      "ports": [
+        { "id": "pin_comms_noise_out", "name": "out", "side": "right", "t": 0.5 }
+      ],
+      "shapes": [
+        { "kind": "rect", "x": 4, "y": 4, "width": 80, "height": 56, "rx": 4 },
+        { "kind": "line", "x1": 16, "y1": 36, "x2": 22, "y2": 22 },
+        { "kind": "line", "x1": 22, "y1": 22, "x2": 28, "y2": 44 },
+        { "kind": "line", "x1": 28, "y1": 44, "x2": 34, "y2": 26 },
+        { "kind": "line", "x1": 34, "y1": 26, "x2": 40, "y2": 48 },
+        { "kind": "line", "x1": 40, "y1": 48, "x2": 46, "y2": 20 },
+        { "kind": "line", "x1": 46, "y1": 20, "x2": 52, "y2": 40 },
+        { "kind": "line", "x1": 52, "y1": 40, "x2": 58, "y2": 28 },
+        { "kind": "line", "x1": 58, "y1": 28, "x2": 72, "y2": 28 }
+      ],
+      "labels": [
+        { "id": "lbl_comms_noise", "text": "AWGN", "x": 30, "y": 14 }
+      ]
+    },
+    {
+      "id": "sym_comms_mapper",
+      "name": "Mapper",
+      "width": 88,
+      "height": 64,
+      "libraryId": "lib_comms_systems",
+      "libraryVersion": 1,
+      "categoryId": "cat_comms",
+      "revision": 1,
+      "ports": [
+        { "id": "pin_comms_mapper_in", "name": "in", "side": "left", "t": 0.5 },
+        { "id": "pin_comms_mapper_out", "name": "out", "side": "right", "t": 0.5 }
+      ],
+      "shapes": [
+        { "kind": "rect", "x": 8, "y": 8, "width": 72, "height": 48, "rx": 2 },
+        { "kind": "line", "x1": 20, "y1": 40, "x2": 36, "y2": 40 },
+        { "kind": "line", "x1": 36, "y1": 40, "x2": 36, "y2": 24 },
+        { "kind": "line", "x1": 52, "y1": 24, "x2": 52, "y2": 40 },
+        { "kind": "line", "x1": 52, "y1": 40, "x2": 68, "y2": 40 }
+      ],
+      "labels": [
+        { "id": "lbl_comms_mapper", "text": "MAP", "x": 34, "y": 22 }
+      ]
+    },
+    {
+      "id": "sym_comms_adc",
+      "name": "ADC",
+      "width": 88,
+      "height": 64,
+      "libraryId": "lib_comms_systems",
+      "libraryVersion": 1,
+      "categoryId": "cat_comms",
+      "revision": 1,
+      "ports": [
+        { "id": "pin_comms_adc_in", "name": "in", "side": "left", "t": 0.5 },
+        { "id": "pin_comms_adc_out", "name": "out", "side": "right", "t": 0.5 }
+      ],
+      "shapes": [
+        { "kind": "rect", "x": 8, "y": 8, "width": 72, "height": 48, "rx": 2 },
+        { "kind": "ellipse", "x": 18, "y": 22, "width": 20, "height": 20 },
+        { "kind": "line", "x1": 42, "y1": 20, "x2": 42, "y2": 44 },
+        { "kind": "line", "x1": 42, "y1": 20, "x2": 50, "y2": 20 },
+        { "kind": "line", "x1": 42, "y1": 32, "x2": 54, "y2": 32 },
+        { "kind": "line", "x1": 42, "y1": 44, "x2": 50, "y2": 44 }
+      ],
+      "labels": [
+        { "id": "lbl_comms_adc", "text": "ADC", "x": 54, "y": 38 }
+      ]
+    },
+    {
+      "id": "sym_comms_dac",
+      "name": "DAC",
+      "width": 88,
+      "height": 64,
+      "libraryId": "lib_comms_systems",
+      "libraryVersion": 1,
+      "categoryId": "cat_comms",
+      "revision": 1,
+      "ports": [
+        { "id": "pin_comms_dac_in", "name": "in", "side": "left", "t": 0.5 },
+        { "id": "pin_comms_dac_out", "name": "out", "side": "right", "t": 0.5 }
+      ],
+      "shapes": [
+        { "kind": "rect", "x": 8, "y": 8, "width": 72, "height": 48, "rx": 2 },
+        { "kind": "line", "x1": 18, "y1": 20, "x2": 26, "y2": 20 },
+        { "kind": "line", "x1": 18, "y1": 32, "x2": 30, "y2": 32 },
+        { "kind": "line", "x1": 18, "y1": 44, "x2": 26, "y2": 44 },
+        { "kind": "line", "x1": 34, "y1": 20, "x2": 34, "y2": 44 },
+        { "kind": "ellipse", "x": 48, "y": 22, "width": 20, "height": 20 }
+      ],
+      "labels": [
+        { "id": "lbl_comms_dac", "text": "DAC", "x": 18, "y": 16 }
+      ]
+    },
+    {
+      "id": "sym_comms_amplifier",
+      "name": "Amplifier",
+      "width": 88,
+      "height": 64,
+      "libraryId": "lib_comms_systems",
+      "libraryVersion": 1,
+      "categoryId": "cat_comms",
+      "revision": 1,
+      "ports": [
+        { "id": "pin_comms_amp_in", "name": "in", "side": "left", "t": 0.5 },
+        { "id": "pin_comms_amp_out", "name": "out", "side": "right", "t": 0.5 }
+      ],
+      "shapes": [
+        { "kind": "polygon", "points": [
+          { "x": 16, "y": 10 },
+          { "x": 16, "y": 54 },
+          { "x": 72, "y": 32 }
+        ] }
+      ],
+      "labels": [
+        { "id": "lbl_comms_amp", "text": "A", "x": 28, "y": 36 }
+      ]
+    }
+  ],
+  "assets": []
+}

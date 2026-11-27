@@ -20,6 +20,7 @@ import {
   borderPlacement,
   nearestBlockBorder,
   placePort,
+  placeGuidedPort,
   removeUnwiredPort,
   renameInstancePort,
   unusedPortName,
@@ -44,7 +45,20 @@ import {
   SPACING_PRESETS,
   type EditorPreferences,
 } from '../core/preferences'
-import { labelPlacement, moveBlock, orthogonalTo, pinPoint, portAnchor } from '../core/geometry'
+import {
+  continuousGuideU,
+  findSymbolGuide,
+  guidedPinPoint,
+  isGuidedPin,
+  labelPlacement,
+  moveBlock,
+  orthogonalTo,
+  pinPoint,
+  portAnchor,
+  projectOntoEllipseGuide,
+  radialLeadSegment,
+  scaleEllipseGuide,
+} from '../core/geometry'
 import { netFixture } from '../core/fixture'
 import {
   addNameLabel,
@@ -315,7 +329,15 @@ let clipPasteCount = 0
 let drag: Drag | null = null
 let resizeDrag: ResizeDrag | null = null
 const resizing = ref(false)
-let portDrag: { portId: string; side: PortSide; t: number; placed: boolean; cancelled: boolean } | null = null
+let portDrag: {
+  portId: string
+  side: PortSide
+  t: number
+  placed: boolean
+  cancelled: boolean
+  /** Guided-port drag baseline (A2-P1); absent for side/free placement. */
+  guided?: { lastU: number; guideU: number | undefined }
+} | null = null
 let bendDrag: BendDrag | null = null
 let spanDrag: SpanDrag | null = null
 let freeEndDrag: FreeEndDrag | null = null
@@ -494,14 +516,27 @@ const flowNodes = computed(() =>
         .filter((port) => port.blockId === block.id)
         .map((port) => {
           const at = portAnchor(doc.value, port.id)
+          const symbolPort = port.symbolPortId ? symbol?.ports.find((pin) => pin.id === port.symbolPortId) : undefined
+          const guided = Boolean(symbol && symbolPort && isGuidedPin(symbolPort) && !port.placed)
           return {
             ...port,
             name: logicalPortName(project.value, port),
             top: (at?.y ?? block.y) - block.y,
             left: (at?.x ?? block.x) - block.x,
             missing: Boolean(port.symbolPortId && symbol && !symbol.ports.some((pin) => pin.id === port.symbolPortId)),
+            guided,
           }
         }),
+      leads: symbol
+        ? doc.value.ports
+            .filter((port) => port.blockId === block.id && !port.placed)
+            .map((port) => {
+              const symbolPort = port.symbolPortId ? symbol.ports.find((pin) => pin.id === port.symbolPortId) : undefined
+              if (!symbolPort) return null
+              return radialLeadSegment(symbol, symbolPort, block.width, block.height, port.guideU ?? symbolPort.u)
+            })
+            .filter((lead): lead is NonNullable<typeof lead> => lead !== null)
+        : [],
       // A plain block such as Boundary has no symbol. A flush rectangle reuses SymbolFace so port names show inside the outline.
       shapes: symbol ? symbol.shapes : null,
       labels: symbol ? symbol.labels : [],
@@ -1099,9 +1134,26 @@ function focusedSymbol(): SymbolDefinition | null {
 
 function facePins(symbol: SymbolDefinition): FacePin[] {
   return symbol.ports.map((pin) => {
-    const at = pinPoint(symbol.width, symbol.height, pin)
-    return { id: pin.id, name: pin.name, side: pin.side, x: at.x, y: at.y, free: typeof pin.x === 'number' && typeof pin.y === 'number' }
+    const guided = isGuidedPin(pin)
+    const at = guided
+      ? guidedPinPoint(symbol, pin, symbol.width, symbol.height) ?? pinPoint(symbol.width, symbol.height, pin)
+      : pinPoint(symbol.width, symbol.height, pin)
+    return {
+      id: pin.id,
+      name: pin.name,
+      side: pin.side,
+      x: at.x,
+      y: at.y,
+      free: typeof pin.x === 'number' && typeof pin.y === 'number',
+      guided,
+    }
   })
+}
+
+function faceLeads(symbol: SymbolDefinition) {
+  return symbol.ports
+    .map((pin) => radialLeadSegment(symbol, pin, symbol.width, symbol.height))
+    .filter((lead): lead is NonNullable<typeof lead> => lead !== null)
 }
 
 const currentUpdateSymbol = computed(() => doc.value.symbols.find((item) => item.id === updatePreview.value?.symbolId) ?? null)
@@ -2391,6 +2443,19 @@ function stopPortListeners(): void {
   window.removeEventListener('pointercancel', onPortCancel)
 }
 
+function guidedPortContext(port: { blockId: string; symbolPortId?: string | null; placed?: boolean; guideU?: number }) {
+  if (port.placed) return null
+  const block = doc.value.blocks.find((item) => item.id === port.blockId)
+  if (!block?.symbolId) return null
+  const symbol = doc.value.symbols.find((item) => item.id === block.symbolId)
+  if (!symbol) return null
+  const pin = port.symbolPortId ? symbol.ports.find((item) => item.id === port.symbolPortId) : undefined
+  if (!pin || !isGuidedPin(pin) || !pin.guideId) return null
+  const guide = findSymbolGuide(symbol, pin.guideId)
+  if (!guide || guide.kind !== 'ellipse') return null
+  return { block, symbol, pin, guide }
+}
+
 function onPortDown(blockId: string, portId: string, event: PointerEvent): void {
   if (tool.value !== 'select' || event.button !== 0 || resizing.value) return
   if (edits().isGesturing) cancelActiveDocumentGesture()
@@ -2398,7 +2463,19 @@ function onPortDown(blockId: string, portId: string, event: PointerEvent): void 
   if (!port) return
   selected.value = new Set()
   selectedPort.value = portId
-  portDrag = { portId, side: port.side, t: port.t ?? 0.5, placed: Boolean(port.placed), cancelled: false }
+  const guided = guidedPortContext(port)
+  const baselineU = guided ? (port.guideU ?? guided.pin.u ?? 0) : undefined
+  portDrag = {
+    portId,
+    side: port.side,
+    t: port.t ?? 0.5,
+    placed: Boolean(port.placed),
+    cancelled: false,
+    guided:
+      guided && typeof baselineU === 'number'
+        ? { lastU: baselineU, guideU: port.guideU }
+        : undefined,
+  }
   beginDocumentGesture()
   window.addEventListener('pointermove', onPortMove)
   window.addEventListener('pointerup', onPortEnd)
@@ -2415,7 +2492,23 @@ function onPortMove(event: PointerEvent): void {
   if (!current || current.cancelled || gestureLatch.isClosing) return
   const port = doc.value.ports.find((item) => item.id === current.portId)
   const block = port ? doc.value.blocks.find((item) => item.id === port.blockId) : undefined
-  if (!block) return
+  if (!block || !port) return
+  if (current.guided) {
+    const guided = guidedPortContext(port)
+    if (!guided) return
+    const world = clientToWorld(event)
+    const sx = guided.symbol.width > 0 ? guided.block.width / guided.symbol.width : 1
+    const sy = guided.symbol.height > 0 ? guided.block.height / guided.symbol.height : 1
+    const scaled = scaleEllipseGuide(guided.guide, sx, sy)
+    const local = { x: world.x - guided.block.x, y: world.y - guided.block.y }
+    // Guide constraint wins over Cartesian grid snapping (A2-P1).
+    const projected = projectOntoEllipseGuide(scaled, local)
+    const continuous = continuousGuideU(current.guided.lastU, projected)
+    current.guided.lastU = continuous
+    const u = ((continuous % 1) + 1) % 1
+    edits().preview((draft) => placeGuidedPort(draft, current.portId, u))
+    return
+  }
   const place = borderPlacement(block, clientToWorld(event), activeSnapEnabled(), activeSnapSpacing())
   edits().preview((draft) => placePort(draft, current.portId, place.side, place.t))
 }
@@ -2429,7 +2522,7 @@ function onPortEnd(): void {
   }
   portDrag = null
   const lossAtStart = focusLossToken
-  const snapshot = { ...current }
+  const snapshot = { ...current, guided: current.guided ? { ...current.guided } : undefined }
   requestAnimationFrame(() => {
     if (gestureLatch.isClosing || lossAtStart !== focusLossToken) {
       if (edits().isGesturing) cancelActiveDocumentGesture('Port move cancelled.')
@@ -2443,9 +2536,12 @@ function onPortEnd(): void {
     const port = doc.value.ports.find((item) => item.id === snapshot.portId)
     const changed = Boolean(
       port &&
-        (port.side !== snapshot.side ||
-          Math.abs((port.t ?? 0) - snapshot.t) > 1e-6 ||
-          Boolean(port.placed) !== snapshot.placed),
+        (snapshot.guided
+          ? Math.abs((port.guideU ?? -1) - (snapshot.guided.guideU ?? -1)) > 1e-6 ||
+            (typeof port.guideU === 'number') !== (typeof snapshot.guided.guideU === 'number')
+          : port.side !== snapshot.side ||
+            Math.abs((port.t ?? 0) - snapshot.t) > 1e-6 ||
+            Boolean(port.placed) !== snapshot.placed),
     )
     commitDocumentGesture()
     if (changed) status.value = 'Port moved.'
@@ -4167,6 +4263,7 @@ defineExpose({ roundTrip, doc })
             :width="nodeProps.data.width"
             :height="nodeProps.data.height"
             :ports="nodeProps.data.ports"
+            :leads="nodeProps.data.leads"
             :shapes="nodeProps.data.shapes"
             :labels="nodeProps.data.labels"
             :assets="nodeProps.data.assets"
@@ -4553,10 +4650,10 @@ defineExpose({ roundTrip, doc })
         <p class="hint">{{ updatePreview.instanceIds.length }} instances, {{ updatePreview.connectionCount }} connections</p>
         <div class="preview-row">
           <svg :viewBox="`0 0 ${currentUpdateSymbol.width} ${currentUpdateSymbol.height}`" width="88" height="64">
-            <SymbolFace :width="currentUpdateSymbol.width" :height="currentUpdateSymbol.height" :shapes="currentUpdateSymbol.shapes" :labels="currentUpdateSymbol.labels" :pins="facePins(currentUpdateSymbol)" :assets="doc.assets" />
+            <SymbolFace :width="currentUpdateSymbol.width" :height="currentUpdateSymbol.height" :shapes="currentUpdateSymbol.shapes" :labels="currentUpdateSymbol.labels" :pins="facePins(currentUpdateSymbol)" :leads="faceLeads(currentUpdateSymbol)" :assets="doc.assets" />
           </svg>
           <svg :viewBox="`0 0 ${previewLibrarySymbol.width} ${previewLibrarySymbol.height}`" width="88" height="64">
-            <SymbolFace :width="previewLibrarySymbol.width" :height="previewLibrarySymbol.height" :shapes="previewLibrarySymbol.shapes" :labels="previewLibrarySymbol.labels" :pins="facePins(previewLibrarySymbol)" :assets="previewLibraryAssets" />
+            <SymbolFace :width="previewLibrarySymbol.width" :height="previewLibrarySymbol.height" :shapes="previewLibrarySymbol.shapes" :labels="previewLibrarySymbol.labels" :pins="facePins(previewLibrarySymbol)" :leads="faceLeads(previewLibrarySymbol)" :assets="previewLibraryAssets" />
           </svg>
         </div>
         <p v-if="updatePreview.changes.length === 0" class="hint">No content changes.</p>
