@@ -12,10 +12,11 @@ D5c.4 made wire **Name** editable but did **not** join nets. Same display name c
 | D5c.7 | Spec only — deferred implement; see [d5c7-wire-copy-spec.md](d5c7-wire-copy-spec.md) |
 | D5b.5 / D5b.6 | Locked |
 
-## 2. Product rule
+## 2. Product rule (updated 28 Nov 2026 — [Unique Net Naming](diagram-lab-unique-net-naming.md))
 
-**Per sheet:** equal logical **name** ⇒ **one net** (one net id).  
-Geometry and junctions remain valid. Electrically disconnected stubs may share one net id when they share a name.
+**Per sheet:** equal logical **name** ⇒ **one net** (one net id) **after an explicit join** (rename to existing name, merge-all, `linkPorts`, paste stub via `ensureNetByName`).
+
+**New wires and stubs** without geometric attachment to an existing net receive a **unique display name** (`out`, `out_1`, …) and a **new net id** — the port name is only a **naming suggestion**, not an implicit join.
 
 **Merge** stays for joining nets that still have **different** names.
 
@@ -25,7 +26,7 @@ Scope is the **current sheet only** (not project-wide across child diagrams).
 
 | Situation | Behaviour |
 | --- | --- |
-| Create stub / new wire with inherited or chosen name | Reuse existing sheet net with that name; else create one |
+| Create stub / new wire (no geometric net yet) | **Unique** name (`allocateUniqueNetName`) and **new** net id — see [unique net naming](diagram-lab-unique-net-naming.md) |
 | Port → free stub | Name from the **start port** (port `name`); free end open |
 | Free → port | Name from the **end port** if no net yet on that hit |
 | Geometry already on a net | That net wins; no silent rename |

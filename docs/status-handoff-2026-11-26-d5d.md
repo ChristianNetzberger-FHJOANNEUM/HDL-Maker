@@ -58,7 +58,7 @@ Earlier same-day baseline (D5b–D5c): [status-handoff-2026-11-26.md](status-han
 | A1 presentation P5a | **Accepted** | `diagram-lab-pilot-a1-p5a-label-position.md` |
 | A1 presentation P5b | **Accepted** (Remove fix + user confirm) | `diagram-lab-pilot-a1-p5b-remove-label.md` |
 | **A1 final pilot evaluation** | **Formally closed** | `diagram-lab-pilot-a1-final-evaluation.md` |
-| A2 BPSK + AWGN (symbol library) | **P1–P5b closed**; next **P5c** | `diagram-lab-pilot-a2-p5b-port-direction.md`, `diagram-lab-pilot-a2-p5-roadmap.md` |
+| A2 BPSK + AWGN (symbol library) | **Unique Net Naming closed**; **P5c canonical semantics implemented** — manual 14/14 pending | `diagram-lab-pilot-a2-p5c-wire-arrowheads.md` |
 | Vertex-handle / edge / vertex drag (“S5a.2”) | Discussed only — **not** an open work package | needs separate freigabe |
 | D5d.0 performance campaign | **Not released** — after S5a/S5b | prep + generator docs |
 
@@ -166,4 +166,4 @@ Do **not** reopen S1/S2, D5c.7, edge/vertex-drag (“S5a.2”), or style work wi
 
 ## 9. One-line summary
 
-**S3/S5a/S5a.1/S5b accepted; A1 + A2-P1…P5b closed; A2 BPSK accepted; next A2-P5c freigabe; D5d→D5e→D5f; Object Snap deferred; no commit unless asked.**
+**Unique Net Naming 12/12; P5c 18/18; P5c-DEL 10/10; DEL10 closed (R1–R7). Checkpoint landed. Next: [S5b.2](d5d0a-s5b2-endpoint-snap-connect.md) implement → manual S1–S12; P5d after.**

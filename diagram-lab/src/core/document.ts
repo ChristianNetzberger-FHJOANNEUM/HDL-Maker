@@ -250,6 +250,11 @@ export type Segment = {
   end: Endpoint
   /** manual is kept as drawn. auto may be replaced by the local router. */
   routed: 'manual' | 'auto'
+  /**
+   * Arrowhead override (A2-P5c). Omitted or `inherit` uses the diagram default.
+   * Manual start/end follow geometric point order, not signal flow.
+   */
+  arrowheads?: 'inherit' | 'none' | 'automatic' | 'start' | 'end' | 'both'
 }
 
 export type LabelAnchor =
@@ -313,6 +318,12 @@ export type Stroke = {
   size: number
 }
 
+/** Per-document presentation (A2-P5c). Not editor preferences. */
+export type DiagramPresentation = {
+  /** Default wire arrowhead mode. Omitted ≡ none (legacy appearance). */
+  arrowheadDefault?: 'none' | 'automatic'
+}
+
 /** A group is a set of block ids. It has no geometry of its own. */
 export type BlockGroup = {
   id: string
@@ -333,6 +344,8 @@ export type DiagramDocument = {
   labels: Label[]
   strokes: Stroke[]
   groups: BlockGroup[]
+  /** Sheet-level presentation (A2-P5c arrowhead default, etc.). */
+  presentation?: DiagramPresentation
   extensions: Record<string, unknown>
   /** Unknown top-level fields, preserved across save and load. */
   extra: Record<string, unknown>
@@ -351,6 +364,7 @@ const KNOWN_KEYS = new Set([
   'labels',
   'strokes',
   'groups',
+  'presentation',
   'extensions',
 ])
 
@@ -373,6 +387,7 @@ export function serialize(doc: DiagramDocument): string {
     labels: doc.labels,
     strokes: doc.strokes,
     groups: doc.groups,
+    ...(doc.presentation && Object.keys(doc.presentation).length > 0 ? { presentation: doc.presentation } : {}),
     extensions: doc.extensions,
     ...doc.extra,
   }
@@ -403,6 +418,7 @@ export function parseDocument(text: string): DiagramDocument {
     labels: asArray<Label>(raw.labels),
     strokes: asArray<Stroke>(raw.strokes),
     groups: asArray<BlockGroup>(raw.groups),
+    presentation: isRecord(raw.presentation) ? (raw.presentation as DiagramPresentation) : undefined,
     extensions,
     extra,
   }

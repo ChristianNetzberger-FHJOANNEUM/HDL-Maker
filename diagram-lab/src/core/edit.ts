@@ -541,11 +541,15 @@ export function deleteBlocks(doc: DiagramDocument, blockIds: string[]): void {
   const removed = doc.segments.filter((segment) => usesPort(segment.start, portIds) || usesPort(segment.end, portIds))
   const segmentIds = new Set(removed.map((segment) => segment.id))
   const affected = [...new Set(removed.map((segment) => segment.netId))]
+  const beforeByNet = new Map<string, typeof doc.segments>()
+  for (const netId of affected) {
+    beforeByNet.set(netId, doc.segments.filter((segment) => segment.netId === netId))
+  }
   doc.blocks = doc.blocks.filter((block) => !drop.has(block.id))
   doc.ports = doc.ports.filter((port) => !drop.has(port.blockId))
   doc.segments = doc.segments.filter((segment) => !segmentIds.has(segment.id))
   doc.labels = doc.labels.filter((label) => label.anchor.kind !== 'segment' || !segmentIds.has(label.anchor.segmentId))
-  for (const netId of affected) reassignComponents(doc, netId)
+  for (const netId of affected) reassignComponents(doc, netId, beforeByNet.get(netId))
   doc.groups = doc.groups.flatMap((group) => {
     const remaining = group.blockIds.filter((id) => !drop.has(id))
     return remaining.length > 0 ? [{ ...group, blockIds: remaining }] : []

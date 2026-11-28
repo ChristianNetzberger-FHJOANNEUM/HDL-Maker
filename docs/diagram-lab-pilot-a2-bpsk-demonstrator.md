@@ -17,7 +17,7 @@
 | Signal labels on wires | Good |
 | Wire routing | Good |
 | Typography controls | Still limited (expected) |
-| Obvious signal-flow direction | **P5b closed** metadata; **P5c** arrowheads next → [roadmap](diagram-lab-pilot-a2-p5-roadmap.md) |
+| Obvious signal-flow direction | **P5b** metadata + **P5c** automatic arrowheads → [p5c doc](diagram-lab-pilot-a2-p5c-wire-arrowheads.md) |
 | Symbol variety | Expandable → [P5d](diagram-lab-pilot-a2-p5-roadmap.md) |
 | Suitability for scientific scriptum | Already good; clear upside |
 
@@ -96,7 +96,7 @@ Both pilots pressure-test **one** Diagram-Lab editor without forking per product
 
 ## 6. Handoff
 
-1. ~~P5a / P5b~~ — **closed** — [p5a](diagram-lab-pilot-a2-p5a-text-typography.md), [p5b](diagram-lab-pilot-a2-p5b-port-direction.md). **Freigabe A2-P5c** (wire arrowheads) when ready.  
+1. ~~P5a / P5b~~ — **closed**. **P5c** — verify on BPSK with diagram default Automatic — [p5c](diagram-lab-pilot-a2-p5c-wire-arrowheads.md). Then **P5d**.  
 2. Continue platform roadmap in parallel: **S5b**, **D5d**, **D5e**, **D5f** (unchanged gates).  
 3. Optionally check in BPSK `.diagram.json` under `docs/examples/`.  
 4. B2–B3 pilot diagrams when A2 follow-on packages stabilise.

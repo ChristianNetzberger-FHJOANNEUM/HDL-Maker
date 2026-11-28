@@ -201,13 +201,42 @@ export function nameCollisions(doc: DiagramDocument): Array<{ name: string; netI
     .sort((a, b) => (a.name < b.name ? -1 : 1))
 }
 
-/** Next free display name on this sheet (`clk`, `clk 2`, …). */
+/** Family base for generated suffixes (`out_1` → `out`). Legacy names with spaces are never parsed. */
+export function netNameFamilyBase(raw: string): string {
+  const trimmed = raw.trim() || 'net'
+  const match = /^(.+)_(\d+)$/.exec(trimmed)
+  return match ? match[1]! : trimmed
+}
+
+function occupiedNetNames(doc: DiagramDocument): Set<string> {
+  return new Set(doc.nets.map((net) => net.name.trim()))
+}
+
+/**
+ * Deterministic unique net display name on this sheet.
+ * Uses unsuffixed preferred when free, then smallest gap in `base_1`, `base_2`, …
+ */
+export function allocateUniqueNetName(doc: DiagramDocument, preferredRaw: string): string {
+  const preferred = preferredRaw.trim() || 'net'
+  const occupied = occupiedNetNames(doc)
+  if (!occupied.has(preferred)) return preferred
+  const base = netNameFamilyBase(preferred)
+  let index = 1
+  while (occupied.has(`${base}_${index}`)) index += 1
+  return `${base}_${index}`
+}
+
+/** @deprecated Use `allocateUniqueNetName` — kept as alias for existing imports. */
 export function uniqueNetName(doc: DiagramDocument, baseRaw: string): string {
-  const base = baseRaw.trim() || 'net'
-  if (!findNetByName(doc, base)) return base
-  let index = 2
-  while (findNetByName(doc, `${base} ${index}`)) index += 1
-  return `${base} ${index}`
+  return allocateUniqueNetName(doc, baseRaw)
+}
+
+/** New logical net: unique display name and a new net id (independent create — not by-name join). */
+export function createIndependentNet(doc: DiagramDocument, preferredBase?: string): string {
+  const name = allocateUniqueNetName(doc, preferredBase ?? 'net')
+  const id = createId('net')
+  doc.nets.push({ id, name })
+  return id
 }
 
 /** Reuse an existing sheet net with this name, or create one. */
@@ -296,22 +325,13 @@ export function commitWire(doc: DiagramDocument, points: Point[], start: SnapHit
   const resolvedEnd = resolveHit(doc, end)
   if ('error' in resolvedStart) return { ok: false, reason: resolvedStart.error, netIds: [] }
   if ('error' in resolvedEnd) return { ok: false, reason: resolvedEnd.error, netIds: [] }
-  // Geometry wins when a hit already touches a net; otherwise inherit a port name and join by name (D5c.5).
+  // Geometry wins when a hit already touches a net; else unique independent net (port name = preferred label only).
   let createdNet = false
   let netId = probe.netId
   if (!netId) {
     const inherited = inheritNetName(doc, start, end)
-    if (inherited) {
-      const existing = findNetByName(doc, inherited)
-      if (existing) netId = existing.id
-      else {
-        netId = ensureNetByName(doc, inherited)
-        createdNet = true
-      }
-    } else {
-      netId = createNet(doc)
-      createdNet = true
-    }
+    netId = createIndependentNet(doc, inherited ?? undefined)
+    createdNet = true
   }
   const segmentId = createId('seg')
   const routedPoints = simplifyOrthogonal(points.map((point) => ({ ...point })))
@@ -340,24 +360,40 @@ export function mergeNets(doc: DiagramDocument, keepId: string, dropId: string):
   return true
 }
 
-/** Remove one segment, then give each remaining piece of that net its own id. The piece with the smallest segment id keeps the old id. */
+/**
+ * Remove one segment, then split the net only when deletion fractures a previously
+ * single geometric component (DEL10 / Fall B). Multi-fragment canonical nets (Fall A/C)
+ * keep one netId when unrelated stubs survive.
+ */
 export function deleteSegment(doc: DiagramDocument, segmentId: string): string[] {
   const segment = doc.segments.find((item) => item.id === segmentId)
   if (!segment) return []
   const netId = segment.netId
+  const beforeOwned = doc.segments.filter((item) => item.netId === netId)
   doc.segments = doc.segments.filter((item) => item.id !== segmentId)
   doc.labels = doc.labels.filter((label) => label.anchor.kind !== 'segment' || label.anchor.segmentId !== segmentId)
-  return reassignComponents(doc, netId)
+  return reassignComponents(doc, netId, beforeOwned)
 }
 
-export function reassignComponents(doc: DiagramDocument, netId: string): string[] {
+/**
+ * After deletions on `netId`, assign new net ids only when a **single** geometric
+ * component (ports/junctions) was fractured into two or more (bridge cut).
+ * Pre-existing multiple components on one canonical net (shared-by-intent) are unchanged (DEL10).
+ */
+export function reassignComponents(doc: DiagramDocument, netId: string, beforeOwned?: Segment[]): string[] {
   const owned = doc.segments.filter((segment) => segment.netId === netId)
-  const components = componentsOf(owned)
-  if (components.length <= 1) {
+  const afterComponents = componentsOf(owned)
+  if (afterComponents.length <= 1) {
     pruneTopology(doc)
     return []
   }
-  const ranked = components
+  const beforeComponents = beforeOwned ? componentsOf(beforeOwned) : []
+  const shouldSplit = beforeComponents.length === 1 && afterComponents.length > 1
+  if (!shouldSplit) {
+    pruneTopology(doc)
+    return []
+  }
+  const ranked = afterComponents
     .map((ids) => ({ ids, key: [...ids].sort()[0] ?? '' }))
     .sort((a, b) => (a.key < b.key ? -1 : 1))
   const net = doc.nets.find((item) => item.id === netId)
@@ -365,7 +401,7 @@ export function reassignComponents(doc: DiagramDocument, netId: string): string[
   for (const component of ranked.slice(1)) {
     // Unique names so a geometric split does not recreate silent name collisions (D5c.5).
     const id = createId('net')
-    doc.nets.push({ id, name: uniqueNetName(doc, net?.name ?? 'net') })
+    doc.nets.push({ id, name: allocateUniqueNetName(doc, net?.name ?? 'net') })
     created.push(id)
     for (const segmentId of component.ids) {
       const segment = doc.segments.find((item) => item.id === segmentId)
@@ -753,6 +789,7 @@ function splitSegmentAt(doc: DiagramDocument, segmentId: string, edge: number, d
   segment.points = head
   segment.end = { kind: 'junction', junctionId: junction.id }
   segment.routed = 'manual'
+  const inheritedArrowheads = segment.arrowheads
   doc.segments.push({
     id: newId,
     netId: segment.netId,
@@ -760,7 +797,9 @@ function splitSegmentAt(doc: DiagramDocument, segmentId: string, edge: number, d
     start: { kind: 'junction', junctionId: junction.id },
     end: oldEnd,
     routed: 'manual',
+    ...(inheritedArrowheads ? { arrowheads: inheritedArrowheads } : {}),
   })
+  if (inheritedArrowheads) segment.arrowheads = inheritedArrowheads
   for (const item of remembered) {
     if (!item.at || item.label.anchor.kind !== 'segment') continue
     const onHead = nearestOnPolyline(head, item.at)
@@ -781,12 +820,10 @@ function makeJunction(doc: DiagramDocument, netId: string, point: Point): Juncti
 
 function createNet(doc: DiagramDocument, preferredName?: string): string {
   if (preferredName?.trim()) return ensureNetByName(doc, preferredName)
-  const id = createId('net')
-  doc.nets.push({ id, name: uniqueNetName(doc, 'net') })
-  return id
+  return createIndependentNet(doc, 'net')
 }
 
-/** Port name inheritance when neither hit already belongs to a net (D5c.5). */
+/** Preferred display name when neither hit already belongs to a net (not join-by-name). */
 function inheritNetName(doc: DiagramDocument, start: SnapHit, end: SnapHit): string | null {
   if (start.kind === 'port') {
     const port = doc.ports.find((item) => item.id === start.portId)

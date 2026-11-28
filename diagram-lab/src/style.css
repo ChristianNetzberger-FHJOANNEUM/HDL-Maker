@@ -280,6 +280,11 @@ button:disabled {
   stroke-width: 2.2;
 }
 
+.wire-arrow-fill {
+  fill: #243140;
+  stroke: none;
+}
+
 .junction {
   fill: #243140;
   stroke: #fff;

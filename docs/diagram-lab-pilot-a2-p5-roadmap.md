@@ -1,8 +1,8 @@
 # A2-P5 roadmap — BPSK follow-on packages (specification)
 
-**Status:** **P5a–P5b closed** — [p5a](diagram-lab-pilot-a2-p5a-text-typography.md), [p5b](diagram-lab-pilot-a2-p5b-port-direction.md). **Next:** **P5c** freigabe. **P5d:** specification.  
+**Status:** **P5a–P5b + Unique Net Naming closed**. **P5c** — canonical semantics implemented; **manual 14/14 + DEL pending** — [p5c](diagram-lab-pilot-a2-p5c-wire-arrowheads.md). **S5b.2** — [freigabe](d5d0a-s5b2-endpoint-snap-connect.md), implement after P5c/DEL. **P5d:** gated after **S5b.2** acceptance.  
 **Trigger:** [BPSK demonstrator accepted](diagram-lab-pilot-a2-bpsk-demonstrator.md).  
-**Recommended order:** **P5a → P5b → P5c → P5d** (user); P5a first for immediate scientific-diagram value.
+**Recommended order:** **P5a → P5b → Unique Net Naming → P5c → (checkpoint) → S5b.2 → P5d** (28 Nov 2026 user).
 
 ---
 
@@ -67,6 +67,8 @@ direction?: 'unspecified' | 'in' | 'out' | 'inout'  // default omitted ≡ unspe
 ---
 
 ## 3. A2-P5c — Wire arrowheads
+
+**Implementation:** [diagram-lab-pilot-a2-p5c-wire-arrowheads.md](diagram-lab-pilot-a2-p5c-wire-arrowheads.md).
 
 **Goal:** show signal flow where topology + port direction are unambiguous.
 
@@ -157,4 +159,4 @@ Inspected 28 Nov 2026 — implementers must **extend** these surfaces, not dupli
 - No Symbol Designer, Library Manager, or full CommonMark in P5a–P5d.  
 - No commit/push from this roadmap doc.
 
-**Next freigabe:** **A2-P5c** (wire arrowheads).
+**Next implementation slice:** **S5b.2** after **P5c + P5c-DEL** manual acceptance; then **A2-P5d** (generic circle) after **S5b.2 12/12**.

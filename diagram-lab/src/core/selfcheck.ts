@@ -24,7 +24,7 @@ import {
   translateSegmentGeometry,
 } from './geometry'
 import { netFixture } from './fixture'
-import { addNameLabel, commitWire, crossings, deleteSegment, ensureNetByName, isNameLabel, labelText, labelTextFormat, mergeNets, mergeNetsByName, moveJunction, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeFreeEnd, placeLabelAt, placeSpan, probeWire, renameNet, removeSegmentNameLabels, resetLabelPosition, resetLabelTypography, setLabelDisplay, setLabelDisplayText, setLabelOffset, setLabelTextFormat, setLabelTypography, setRouted, snapTarget } from './nets'
+import { addNameLabel, allocateUniqueNetName, commitWire, crossings, createIndependentNet, deleteSegment, ensureNetByName, isNameLabel, labelText, labelTextFormat, mergeNets, mergeNetsByName, moveJunction, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeFreeEnd, placeLabelAt, placeSpan, probeWire, renameNet, removeSegmentNameLabels, resetLabelPosition, resetLabelTypography, setLabelDisplay, setLabelDisplayText, setLabelOffset, setLabelTextFormat, setLabelTypography, setRouted, snapTarget } from './nets'
 import { countMathSegments, parseFormattedText } from './formattedTextParse'
 import { clearFormattedTextLayoutCache, renderFormattedText, renderPlainDisplayText } from './formattedTextRender'
 import {
@@ -102,6 +102,16 @@ import {
   lineAlignOffset,
 } from './textTypography'
 import { resolvePortDirection } from './portDirection'
+import { resolveDeleteSelectionTarget } from './selectionDelete'
+import {
+  automaticNetStatus,
+  buildNetArrowAnalyses,
+  diagramArrowheadDefault,
+  effectiveArrowheadMode,
+  segmentArrowMarkers,
+  setDiagramArrowheadDefault,
+  setSegmentArrowheads,
+} from './wireArrowheads'
 import {
   DEFAULT_EDITOR_PREFERENCES,
   loadEditorPreferences,
@@ -3627,8 +3637,79 @@ if (faceOpened.ok) {
     { kind: 'port', portId: extraPort!, point: portPoint },
     { kind: 'free', point: freePoint },
   )
-  check(stubResult.ok && stubResult.netId === stubNet && !stubResult.createdNet, 'D5c.5 stub with existing port name joins that net')
-  check(stubDoc.nets.filter((net) => net.name === 'clk').length === 1, 'D5c.5 stub does not create a parallel clk net')
+  check(stubResult.ok && stubResult.createdNet && stubResult.netId !== stubNet, 'UniqueNet: second stub does not auto-join by port name')
+  if (stubResult.ok) {
+    check(stubDoc.nets.find((net) => net.id === stubResult.netId)?.name === 'clk_1', 'UniqueNet: independent stub gets clk_1')
+  }
+
+  // --- Unique Net Naming (independent create) ---
+  {
+    const sheet = emptyDocument()
+    const left = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    const mid = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    const right = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    sheet.blocks.find((block) => block.id === mid)!.x = 320
+    sheet.blocks.find((block) => block.id === right)!.x = 640
+    const o1 = addPortAt(sheet, left, 'right', 0.5) ?? ''
+    const o2 = addPortAt(sheet, mid, 'right', 0.5) ?? ''
+    const o3 = addPortAt(sheet, right, 'right', 0.5) ?? ''
+    sheet.ports.find((port) => port.id === o1)!.name = 'out'
+    sheet.ports.find((port) => port.id === o2)!.name = 'out'
+    sheet.ports.find((port) => port.id === o3)!.name = 'out'
+    const mkStub = (portId: string) => {
+      const at = portAnchor(sheet, portId)!
+      return commitWire(
+        sheet,
+        [at, { x: at.x + 40, y: at.y }],
+        { kind: 'port', portId, point: at },
+        { kind: 'free', point: { x: at.x + 40, y: at.y } },
+      )
+    }
+    const s1 = mkStub(o1)
+    const s2 = mkStub(o2)
+    const s3 = mkStub(o3)
+    check(s1.ok && s2.ok && s3.ok, 'UniqueNet: three stubs commit')
+    if (s1.ok && s2.ok && s3.ok) {
+      const names = [s1.netId, s2.netId, s3.netId].map((id) => sheet.nets.find((net) => net.id === id)?.name)
+      check(names.join(',') === 'out,out_1,out_2', 'UniqueNet: stub suffix sequence out, out_1, out_2')
+      check(new Set([s1.netId, s2.netId, s3.netId]).size === 3, 'UniqueNet: three distinct net ids')
+    }
+
+    const gap = emptyDocument()
+    gap.nets.push({ id: 'n0', name: 'out' }, { id: 'n1', name: 'out_2' })
+    check(allocateUniqueNetName(gap, 'out') === 'out_1', 'UniqueNet: gap fill out_1 when out and out_2 exist')
+    gap.nets.push({ id: 'n2', name: 'out_1' })
+    check(allocateUniqueNetName(gap, 'out_1') === 'out_3', 'UniqueNet: family suffix when out_1 taken')
+
+    const legacy = emptyDocument()
+    legacy.nets.push({ id: 'legacy', name: 'out 2' })
+    check(allocateUniqueNetName(legacy, 'out') === 'out', 'UniqueNet: legacy space name does not block unsuffixed out')
+
+  const inPort = addPortAt(sheet, left, 'left', 0.5) ?? ''
+  const outTarget = addPortAt(sheet, mid, 'left', 0.5) ?? ''
+  sheet.ports.find((port) => port.id === inPort)!.name = 'in'
+  sheet.ports.find((port) => port.id === outTarget)!.name = 'in'
+  const a = portAnchor(sheet, outTarget)!
+  const b = portAnchor(sheet, inPort)!
+  const link = commitWire(
+    sheet,
+    [a, b],
+    { kind: 'port', portId: outTarget, point: a },
+    { kind: 'port', portId: inPort, point: b },
+  )
+  check(link.ok && sheet.nets.find((net) => net.id === link.netId)?.name === 'in', 'UniqueNet: port-to-port uses preferred name when free')
+  const link2Id = createIndependentNet(sheet, 'in')
+  check(sheet.nets.find((net) => net.id === link2Id)?.name === 'in_1', 'UniqueNet: second independent in becomes in_1')
+
+    if (link.ok) {
+      setPortDirection(sheet, outTarget, 'out')
+      setPortDirection(sheet, inPort, 'in')
+      setDiagramArrowheadDefault(sheet, 'automatic')
+      const seg = sheet.segments.find((item) => item.id === link.segmentId)!
+      const markers = segmentArrowMarkers(sheet, seg, buildNetArrowAnalyses(sheet))
+      check(markers.markerEnd && automaticNetStatus(sheet, link.netId, seg.id).ok, 'UniqueNet: P5c automatic on independent out→in link')
+    }
+  }
 
   // Unequal geometric join still blocked.
   const d = emptyDocument()
@@ -3935,12 +4016,15 @@ if (faceOpened.ok) {
   check(
     stubsCopy.every((segment) => {
       const net = sheet.nets.find((item) => item.id === segment.netId)
-      if (net?.name === 'clk' || net?.name === 'data' || net?.name === 'rst') return segment.netId === sheet.nets.find((item) => item.name === net.name)!.id
+      if (!net) return false
+      if (net.name === 'clk' || net.name === 'data' || net.name === 'rst') {
+        return segment.netId === sheet.nets.find((item) => item.name === net.name)!.id
+      }
       return true
     }),
-    'S3: named stubs join sheet nets by name',
+    'S3: pasted named stubs join sheet nets by display name',
   )
-  check(sheet.segments.filter((segment) => segment.netId === clkNetBefore).length === 3, 'S3: clk net gains the copied stub (A original, B, A copy)')
+  check(sheet.segments.filter((segment) => segment.netId === clkNetBefore).length === 2, 'S3: copied clk stub joins original clk net (B stays clk_1)')
   for (const stub of stubsCopy) {
     const label = sheet.labels.find((item) => item.anchor.kind === 'segment' && item.anchor.segmentId === stub.id)
     check(Boolean(label), `S3: stub ${stub.id} keeps a label`)
@@ -4160,9 +4244,7 @@ function isPortFreeLike(segment: { start: { kind: string }; end: { kind: string 
     )
   }
   check(near(freeOf(stubB[0]!)!, freeBBefore), 'D5d stub-move: same-name stub on other block stays put')
-  check(
-    Boolean(clkNetId) && sheet.segments.filter((segment) => segment.netId === clkNetId).length === 2,
-    'D5d stub-move: shared clk net id preserved across both stubs',
+  check(Boolean(clkNetId) && sheet.segments.filter((segment) => segment.netId === clkNetId).length === 1, 'D5d stub-move: clk net holds block-A stub only (B is clk_1 until rename join)',
   )
 
   const trunk = sampleDocument()
@@ -4592,7 +4674,7 @@ function isPortFreeLike(segment: { start: { kind: string }; end: { kind: string 
   const dup = duplicateBlocks(moved, [blk.id], 30, 0)
   check(attachedStubsForBlocks(moved, [dup.get(blk.id)!]).length === 1, 'S5a: stub-aware copy still works')
 
-  // Named-net join: second stub with same port name joins.
+  // Second stub with same port name is independent until explicit rename join.
   const joinDoc = emptyDocument()
   const jA = placeTemplate(joinDoc, BLOCK_TEMPLATES[1], false)
   const jB = placeTemplate(joinDoc, BLOCK_TEMPLATES[1], false)
@@ -4604,12 +4686,19 @@ function isPortFreeLike(segment: { start: { kind: string }; end: { kind: string 
   const jAa = portAnchor(joinDoc, jPortA)!
   const jBa = portAnchor(joinDoc, jPortB)!
   const c1 = finishFree(wireClick(null, { kind: 'port', portId: jPortA, point: jAa }).draft!, { x: jAa.x + 40, y: jAa.y }, { fromBeforeLastFreeBend: false })
-  commitWire(joinDoc, c1.points, c1.start, c1.end)
+  const first = commitWire(joinDoc, c1.points, c1.start, c1.end)
   const d0 = wireClick(null, { kind: 'port', portId: jPortB, point: jBa }).draft!
   const d1 = wireClick(d0, { kind: 'free', point: { x: jBa.x + 40, y: jBa.y } }).draft!
   const c2 = finishFree(d1, { x: jBa.x + 40, y: jBa.y }, { fromBeforeLastFreeBend: true })
-  const joined = commitWire(joinDoc, c2.points, c2.start, c2.end)
-  check(joined.ok && !joined.createdNet && joinDoc.nets.filter((net) => net.name === 'clk').length === 1, 'S5a: second stub joins existing named net')
+  const second = commitWire(joinDoc, c2.points, c2.start, c2.end)
+  if (!first.ok || !second.ok) {
+    check(false, 'S5a: clk stub fixtures commit')
+  } else {
+    check(second.createdNet && second.netId !== first.netId, 'S5a: second stub is independent by default')
+    check(joinDoc.nets.find((net) => net.id === second.netId)?.name === 'clk_1', 'S5a: second clk stub is clk_1')
+    const renameJoin = renameNet(joinDoc, second.netId, 'clk')
+    check(renameJoin.ok && renameJoin.joined && renameJoin.netId === first.netId, 'S5a: explicit rename joins clk stubs')
+  }
 }
 
 // --- S5a.1 incremental wire drawing undo (local steps; one global history entry) ---
@@ -6503,6 +6592,355 @@ $y(t)=x(t)+n(t)$ $n\sim\mathcal{N}(0,\sigma_n^2)$
   check(dirDoc.ports.find((item) => item.id === portB.id)?.direction === undefined, 'A2-P5b: undo direction')
   check(setSymbolPortDirection(dirDoc, dirSym, pinMut, 'inout'), 'A2-P5b: symbol pin inout')
   check(dirDoc.symbols.find((item) => item.id === dirSym)!.ports.find((p) => p.id === pinMut)!.direction === 'inout', 'A2-P5b: symbol direction on pin')
+
+  // --- A2-P5c: wire arrowheads ---
+  check(diagramArrowheadDefault(emptyDocument()) === 'none', 'A2-P5c: legacy diagram default none')
+  const arrowSimple = netFixture()
+  const segCross = arrowSimple.segments.find((item) => item.id === 'seg_cross')!
+  check(!segmentArrowMarkers(arrowSimple, segCross, buildNetArrowAnalyses(arrowSimple)).markerEnd, 'A2-P5c: legacy segment no markers')
+  setSegmentArrowheads(arrowSimple, 'seg_cross', 'end')
+  const manualEnd = segmentArrowMarkers(arrowSimple, segCross, buildNetArrowAnalyses(arrowSimple))
+  check(manualEnd.markerEnd && !manualEnd.markerStart && manualEnd.mode === 'end', 'A2-P5c: manual end marker')
+  setSegmentArrowheads(arrowSimple, 'seg_cross', 'start')
+  const manualStart = segmentArrowMarkers(arrowSimple, segCross, buildNetArrowAnalyses(arrowSimple))
+  check(manualStart.markerStart && !manualStart.markerEnd, 'A2-P5c: manual start marker')
+
+  const branch = netFixture()
+  setPortDirection(branch, 'blk_a_r', 'out')
+  setPortDirection(branch, 'blk_b_l', 'in')
+  setPortDirection(branch, 'blk_c_l', 'in')
+  setPortDirection(branch, 'blk_f_r', 'in')
+  setDiagramArrowheadDefault(branch, 'automatic')
+  const branchA = buildNetArrowAnalyses(branch)
+  const segB = branch.segments.find((item) => item.id === 'seg_ab2')!
+  const atB = segmentArrowMarkers(branch, segB, branchA)
+  check(atB.markerEnd && !atB.markerStart, 'A2-P5c: automatic arrow at input port')
+  check(automaticNetStatus(branch, segB.netId).ok, 'A2-P5c: automatic net status ok on simple out→in')
+  check(!automaticNetStatus(branch, 'net_missing').ok, 'A2-P5c: automatic net status fails on missing net')
+
+  const disjoint = netFixture()
+  const sharedNet = 'net_disjoint'
+  disjoint.nets.push({ id: sharedNet, name: 'merged' })
+  const segCrossIso = disjoint.segments.find((item) => item.id === 'seg_cross')!
+  const segLongIso = disjoint.segments.find((item) => item.id === 'seg_long')!
+  segCrossIso.netId = sharedNet
+  segLongIso.netId = sharedNet
+  setPortDirection(disjoint, 'blk_g_r', 'out')
+  setPortDirection(disjoint, 'blk_i_l', 'in')
+  setPortDirection(disjoint, 'blk_e_r', 'out')
+  setPortDirection(disjoint, 'blk_j_l', 'in')
+  setDiagramArrowheadDefault(disjoint, 'automatic')
+  const disjointAnalyses = buildNetArrowAnalyses(disjoint)
+  check(
+    !segmentArrowMarkers(disjoint, segCrossIso, disjointAnalyses).markerEnd,
+    'A2-P5c canonical: two outputs on one net id suppress automatic',
+  )
+  check(!automaticNetStatus(disjoint, sharedNet).ok, 'A2-P5c canonical: inspector agrees on ambiguous net')
+  setSegmentArrowheads(disjoint, segCrossIso.id, 'end')
+  check(segmentArrowMarkers(disjoint, segCrossIso, disjointAnalyses).markerEnd, 'A2-P5c: manual end override survives canonical suppress')
+
+  const fan = emptyDocument()
+  const fanNet = createIndependentNet(fan, 'fan')
+  const fSrc = placeTemplate(fan, BLOCK_TEMPLATES[1], false)
+  const fIn1 = placeTemplate(fan, BLOCK_TEMPLATES[1], false)
+  const fIn2 = placeTemplate(fan, BLOCK_TEMPLATES[1], false)
+  fan.blocks.find((block) => block.id === fIn1)!.x = 280
+  fan.blocks.find((block) => block.id === fIn2)!.x = 280
+  fan.blocks.find((block) => block.id === fIn2)!.y = 180
+  const pOut = addPortAt(fan, fSrc, 'right', 0.5) ?? ''
+  const pIn1 = addPortAt(fan, fIn1, 'left', 0.5) ?? ''
+  const pIn2 = addPortAt(fan, fIn2, 'left', 0.5) ?? ''
+  setPortDirection(fan, pOut, 'out')
+  setPortDirection(fan, pIn1, 'in')
+  setPortDirection(fan, pIn2, 'in')
+  const fanOut = portAnchor(fan, pOut)!
+  const fanIn1 = portAnchor(fan, pIn1)!
+  const fanIn2 = portAnchor(fan, pIn2)!
+  const fanStub = (portId: string, at: { x: number; y: number }) => {
+    const id = createId('seg')
+    const free = { x: at.x + (portId === pOut ? 40 : -40), y: at.y }
+    fan.segments.push({
+      id,
+      netId: fanNet,
+      routed: 'manual',
+      points: portId === pOut ? [at, free] : [free, at],
+      start: portId === pOut ? { kind: 'port', portId } : { kind: 'free', ...free },
+      end: portId === pOut ? { kind: 'free', ...free } : { kind: 'port', portId },
+    })
+    return id
+  }
+  fanStub(pOut, fanOut)
+  fanStub(pIn1, fanIn1)
+  fanStub(pIn2, fanIn2)
+  setDiagramArrowheadDefault(fan, 'automatic')
+  const fanA = buildNetArrowAnalyses(fan)
+  const fanSegIn1 = fan.segments.find((item) => item.end.kind === 'port' && item.end.portId === pIn1)!
+  const fanSegIn2 = fan.segments.find((item) => item.end.kind === 'port' && item.end.portId === pIn2)!
+  check(
+    segmentArrowMarkers(fan, fanSegIn1, fanA).markerEnd && segmentArrowMarkers(fan, fanSegIn2, fanA).markerEnd,
+    'A2-P5c canonical: one out two in on disconnected same net id',
+  )
+  check(automaticNetStatus(fan, fanNet).ok, 'A2-P5c canonical: inspector ok for intentional fan-out net')
+
+  const dualOut = emptyDocument()
+  const dualNet = createIndependentNet(dualOut, 'dual')
+  const dA = placeTemplate(dualOut, BLOCK_TEMPLATES[1], false)
+  const dB = placeTemplate(dualOut, BLOCK_TEMPLATES[1], false)
+  dualOut.blocks.find((block) => block.id === dB)!.y = 160
+  const dOutA = addPortAt(dualOut, dA, 'right', 0.5) ?? ''
+  const dOutB = addPortAt(dualOut, dB, 'right', 0.5) ?? ''
+  setPortDirection(dualOut, dOutA, 'out')
+  setPortDirection(dualOut, dOutB, 'out')
+  const stubOut = (portId: string) => {
+    const at = portAnchor(dualOut, portId)!
+    const free = { x: at.x + 36, y: at.y }
+    dualOut.segments.push({
+      id: createId('seg'),
+      netId: dualNet,
+      routed: 'manual',
+      points: [at, free],
+      start: { kind: 'port', portId },
+      end: { kind: 'free', ...free },
+    })
+  }
+  stubOut(dOutA)
+  stubOut(dOutB)
+  setDiagramArrowheadDefault(dualOut, 'automatic')
+  const dualA = buildNetArrowAnalyses(dualOut)
+  check(
+    !segmentArrowMarkers(dualOut, dualOut.segments[0]!, dualA).markerEnd,
+    'A2-P5c canonical: dual output stubs on one net id',
+  )
+  const trunk = branch.segments.find((item) => item.id === 'seg_link')!
+  const atTrunk = segmentArrowMarkers(branch, trunk, branchA)
+  check(!atTrunk.markerStart && !atTrunk.markerEnd, 'A2-P5c: no arrow on junction trunk')
+  setPortDirection(branch, 'blk_f_r', 'out')
+  const messy = buildNetArrowAnalyses(branch)
+  const ambiguous = segmentArrowMarkers(branch, segB, messy)
+  check(!ambiguous.markerStart && !ambiguous.markerEnd, 'A2-P5c: ambiguous net suppresses automatic')
+
+  setDiagramArrowheadDefault(branch, 'automatic')
+  branch.presentation = { arrowheadDefault: 'automatic' }
+  const arrowProject = createProject('arrow-default')
+  const arrowRootId = arrowProject.rootDocumentId
+  const arrowMgr = TransactionManager.holding(arrowProject)
+  arrowMgr.transact('Edit', (p) => {
+    const sheet = documentById(p, arrowRootId)
+    if (!sheet) return { ok: false as const, message: 'root missing' }
+    setDiagramArrowheadDefault(sheet, 'automatic')
+    return p
+  })
+  const arrowReloaded = documentById(arrowMgr.project, arrowRootId)
+  check(arrowReloaded?.presentation?.arrowheadDefault === 'automatic', 'A2-P5c: project transact stores diagram default')
+  const loadedArrow = parseDocument(serialize(branch))
+  check(loadedArrow.presentation?.arrowheadDefault === 'automatic', 'A2-P5c: presentation save/load')
+  check(effectiveArrowheadMode(loadedArrow, loadedArrow.segments[0]!) === 'automatic', 'A2-P5c: effective automatic after load')
+
+  const pointsBefore = segCross.points.map((point) => ({ ...point }))
+  setPortDirection(branch, 'blk_b_l', 'inout')
+  check(
+    branch.segments.every((item) => item.points.length === pointsBefore.length || item.id !== segCross.id),
+    'A2-P5c: direction change does not rewrite unrelated geometry',
+  )
+
+  // --- DEL10: preserve canonical net on multi-fragment delete ---
+  function sharedClkStubs(count: 3 | 4 | 5): { doc: ReturnType<typeof emptyDocument>; netId: string; segmentIds: string[]; inIds: string[]; outId: string } {
+    const doc = emptyDocument()
+    const netId = createIndependentNet(doc, 'CLK')
+    const outBlock = placeTemplate(doc, BLOCK_TEMPLATES[1], false)
+    doc.blocks.find((block) => block.id === outBlock)!.y = 40
+    const outPort = addPortAt(doc, outBlock, 'right', 0.5) ?? ''
+    setPortDirection(doc, outPort, 'out')
+    const outAt = portAnchor(doc, outPort)!
+    const segmentIds: string[] = []
+    const inIds: string[] = []
+    const outId = createId('seg')
+    const outFree = { x: outAt.x + 48, y: outAt.y }
+    doc.segments.push({
+      id: outId,
+      netId,
+      routed: 'manual',
+      points: [outAt, outFree],
+      start: { kind: 'port', portId: outPort },
+      end: { kind: 'free', ...outFree },
+    })
+    segmentIds.push(outId)
+    for (let index = 0; index < count - 1; index += 1) {
+      const blockId = placeTemplate(doc, BLOCK_TEMPLATES[1], false)
+      const block = doc.blocks.find((item) => item.id === blockId)!
+      block.x = 260
+      block.y = 40 + index * 120
+      const port = addPortAt(doc, blockId, 'left', 0.5) ?? ''
+      setPortDirection(doc, port, 'in')
+      const at = portAnchor(doc, port)!
+      const free = { x: at.x - 48, y: at.y }
+      const id = createId('seg')
+      doc.segments.push({
+        id,
+        netId,
+        routed: 'manual',
+        points: [free, at],
+        start: { kind: 'free', ...free },
+        end: { kind: 'port', portId: port },
+      })
+      segmentIds.push(id)
+      inIds.push(id)
+    }
+    return { doc, netId, segmentIds, inIds, outId }
+  }
+
+  {
+    const { doc, netId, inIds } = sharedClkStubs(3)
+    addNameLabel(doc, inIds[1]!, 0, 16, 14)
+    const labelId = doc.labels[0]?.id ?? ''
+    deleteSegment(doc, inIds[0]!)
+    check(doc.segments.length === 2, 'DEL10-R1: two stubs remain')
+    check(doc.segments.every((segment) => segment.netId === netId), 'DEL10-R1: survivors keep net id')
+    check(doc.nets.length === 1 && doc.nets[0]!.id === netId && doc.nets[0]!.name === 'CLK', 'DEL10-R1: single CLK net name')
+    check(!doc.nets.some((net) => net.name === 'CLK_1'), 'DEL10-R1: no suffix split name')
+    check(doc.labels.some((label) => label.id === labelId), 'DEL10-R5: label kept')
+  }
+
+  {
+    const { doc, netId, outId } = sharedClkStubs(3)
+    deleteSegment(doc, outId)
+    check(doc.segments.every((segment) => segment.netId === netId), 'DEL10-R2: delete output stub keeps shared net')
+    check(doc.nets[0]!.name === 'CLK', 'DEL10-R2: net name CLK')
+  }
+
+  {
+    const { doc, netId, inIds } = sharedClkStubs(4)
+    deleteSegment(doc, inIds[2]!)
+    check(doc.segments.length === 3, 'DEL10-R3: three stubs remain')
+    check(new Set(doc.segments.map((segment) => segment.netId)).size === 1 && doc.segments[0]!.netId === netId, 'DEL10-R3: one net id')
+  }
+
+  {
+    const { doc, netId, inIds } = sharedClkStubs(3)
+    const in0 = doc.segments.find((item) => item.id === inIds[0]!)!
+    const portId =
+      in0.end.kind === 'port' ? in0.end.portId : in0.start.kind === 'port' ? in0.start.portId : ''
+    const blockId = doc.ports.find((port) => port.id === portId)?.blockId ?? ''
+    deleteBlocks(doc, [blockId])
+    check(doc.segments.every((segment) => segment.netId === netId), 'DEL10-R4: deleteBlocks keeps canonical net')
+    check(doc.nets[0]!.name === 'CLK', 'DEL10-R4: CLK name after block delete')
+  }
+
+  {
+    const doc = emptyDocument()
+    const netId = createIndependentNet(doc, 'CLK')
+    const blockIds: string[] = []
+    for (let index = 0; index < 5; index += 1) {
+      const block = placeTemplate(doc, BLOCK_TEMPLATES[1], false)
+      blockIds.push(block)
+      doc.blocks.find((item) => item.id === block)!.x = 80 + index * 30
+      doc.blocks.find((item) => item.id === block)!.y = 80 + index * 50
+      const port = addPortAt(doc, block, 'right', 0.5) ?? ''
+      const at = portAnchor(doc, port)!
+      const free = { x: at.x + 30, y: at.y }
+      doc.segments.push({
+        id: createId('seg'),
+        netId,
+        routed: 'manual',
+        points: [at, free],
+        start: { kind: 'port', portId: port },
+        end: { kind: 'free', ...free },
+      })
+    }
+    deleteBlocks(doc, [blockIds[2]!])
+    check(doc.segments.every((segment) => segment.netId === netId), 'DEL10-R5: five-net delete one block')
+    check(doc.segments.length === 4, 'DEL10-R5: four stubs remain')
+  }
+
+  const splitting = netFixture()
+  const spawned = deleteSegment(splitting, 'seg_link')
+  check(spawned.length === 1, 'DEL10-R6: bridge cut still spawns one new net')
+  check(splitting.segments.find((segment) => segment.id === 'seg_ab1')?.netId === 'net_main', 'DEL10-R6: kept piece keeps net id')
+
+  {
+    const mixed = netFixture()
+    const orphanId = createId('seg')
+    const freeStart = { x: 40, y: 400 }
+    const freeEnd = { x: 120, y: 400 }
+    mixed.segments.push({
+      id: orphanId,
+      netId: 'net_main',
+      routed: 'manual',
+      points: [freeStart, freeEnd],
+      start: { kind: 'free', ...freeStart },
+      end: { kind: 'free', ...freeEnd },
+    })
+    deleteSegment(mixed, 'seg_link')
+    const onMain = mixed.segments.filter((segment) => segment.netId === 'net_main')
+    check(onMain.length >= 2, 'DEL10-R7: net_main segments remain')
+    check(
+      onMain.every((segment) => segment.netId === 'net_main'),
+      'DEL10-R7: mixed canonical net — no split when bridge fractures inside multi-fragment net',
+    )
+    check(mixed.nets.filter((net) => net.id === 'net_main').length === 1, 'DEL10-R7: net_main row survives')
+    check(mixed.nets.length === 5, 'DEL10-R7: no spawned net rows')
+  }
+
+  {
+    const { doc, netId, inIds, outId } = sharedClkStubs(3)
+    deleteSegment(doc, inIds[0]!)
+    deleteSegment(doc, inIds[1]!)
+    deleteSegment(doc, outId)
+    check(doc.segments.length === 0, 'DEL10-R8: all segments removed')
+    check(!doc.nets.some((net) => net.id === netId), 'DEL10-R8: net pruned when empty')
+  }
+
+  {
+    const { doc, netId, inIds } = sharedClkStubs(3)
+    const before = serialize(doc)
+    let live = doc
+    const session = new EditSession(
+      () => live,
+      (next) => {
+        live = next
+      },
+    )
+    session.execute((draft) => {
+      deleteSegment(draft, inIds[0]!)
+    })
+    session.undo()
+    check(serialize(live) === before, 'DEL10-R9: undo restores net identities')
+    session.redo()
+    check(live.segments.length === 2 && live.nets[0]!.name === 'CLK', 'DEL10-R9: redo delete keeps CLK')
+    const reloaded = parseDocument(serialize(live))
+    check(
+      reloaded.segments.every((segment) => segment.netId === netId) && reloaded.nets[0]?.name === 'CLK',
+      'DEL10-R9: save/load keeps shared net',
+    )
+  }
+
+  {
+    const { doc, netId, inIds, outId } = sharedClkStubs(3)
+    const outSeg = doc.segments.find((item) => item.id === outId)!
+    const outPort = outSeg.start.kind === 'port' ? outSeg.start.portId : ''
+    setPortDirection(doc, outPort, 'out')
+    for (const id of inIds) {
+      const seg = doc.segments.find((item) => item.id === id)!
+      const port = seg.end.kind === 'port' ? seg.end.portId : seg.start.kind === 'port' ? seg.start.portId : ''
+      setPortDirection(doc, port, 'in')
+    }
+    setDiagramArrowheadDefault(doc, 'automatic')
+    deleteSegment(doc, inIds[0]!)
+    check(automaticNetStatus(doc, netId).ok, 'DEL10-R10: automatic arrows ok on canonical net after delete')
+  }
+
+  check(
+    resolveDeleteSelectionTarget({ blockCount: 0, strokeId: null, segmentId: 'seg_a', portId: 'port_a' }) === 'segment',
+    'P5c-DEL-R1: segment wins over stale port ref',
+  )
+  check(
+    resolveDeleteSelectionTarget({ blockCount: 0, strokeId: null, segmentId: null, portId: 'port_a' }) === 'port',
+    'P5c-DEL-R2: port-only targets port delete',
+  )
+  check(
+    resolveDeleteSelectionTarget({ blockCount: 0, strokeId: null, segmentId: 'seg_a', portId: null }) === 'segment',
+    'P5c-DEL-R3: segment-only targets segment delete',
+  )
 }
 
 function measureProseWidthGuess(text: string, em: number): number {

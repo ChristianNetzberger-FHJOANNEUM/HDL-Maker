@@ -113,6 +113,19 @@ import {
 } from '../core/textTypography'
 import type { TextAlign } from '../core/textTypography'
 import { resolvePortDirection, symbolPinForPort, type PortDirection } from '../core/portDirection'
+import {
+  automaticNetStatus,
+  buildNetArrowAnalyses,
+  connectedSegmentGroups,
+  diagramArrowheadDefault,
+  effectiveArrowheadMode,
+  resetSegmentArrowheads,
+  segmentArrowMarkers,
+  setDiagramArrowheadDefault,
+  setSegmentArrowheads,
+  type ArrowheadDiagramDefault,
+  type ArrowheadSegmentOverride,
+} from '../core/wireArrowheads'
 import { finishFree, undoWireStep, wireClick, type WireDraft } from '../core/wiretool'
 import { orthogonalize } from '../core/orthogonalize'
 import { sampleDocument } from '../core/sample'
@@ -440,6 +453,22 @@ function clearTransactions(): void {
   transactions = null
 }
 
+/** Active sheet id for project edits — keep navigation and doc in sync (D5b.3). */
+function activeSheetId(): string {
+  if (navigation.value?.documentId) return navigation.value.documentId
+  const current = project.value
+  if (current) return current.rootDocumentId
+  return doc.value.id
+}
+
+/** Re-bind the transaction manager if hot reload cleared the module slot while a project is open. */
+function ensureProjectTransactions(): TransactionManager | null {
+  const current = project.value
+  if (!current) return null
+  if (!transactions) bindTransactions(current)
+  return transactions
+}
+
 /** Duck-typed EditSession that records full project snapshots while a project is open. */
 const projectSheetAdapter = {
   get canUndo(): boolean {
@@ -452,8 +481,8 @@ const projectSheetAdapter = {
     return transactions?.isGesturing ?? false
   },
   execute(apply: (draft: DiagramDocument) => void): void {
-    const manager = transactions
-    const sheetId = doc.value.id
+    const manager = ensureProjectTransactions()
+    const sheetId = activeSheetId()
     if (!manager) return
     // Concurrent command during a gesture: cancel first, then one new transaction.
     if (manager.isGesturing) {
@@ -466,15 +495,20 @@ const projectSheetAdapter = {
       apply(sheet)
       return proj
     })
-    if (result.ok) rebindAfterProject()
+    if (result.ok) {
+      rebindAfterProject()
+      const live = project.value
+      const pinned = live ? documentById(live, sheetId) : null
+      if (pinned) doc.value = pinned
+    } else status.value = result.message
   },
   begin(): void {
     gestureLatch.reset()
-    transactions?.begin('Gesture')
+    ensureProjectTransactions()?.begin('Gesture')
   },
   preview(apply: (draft: DiagramDocument) => void): void {
-    const manager = transactions
-    const sheetId = doc.value.id
+    const manager = ensureProjectTransactions()
+    const sheetId = activeSheetId()
     if (!manager || gestureLatch.isClosing) return
     manager.preview((proj) => {
       const sheet = documentById(proj, sheetId)
@@ -518,7 +552,7 @@ const projectSheetAdapter = {
 }
 
 function edits(): EditSession {
-  if (project.value && transactions) return projectSheetAdapter as unknown as EditSession
+  if (project.value) return projectSheetAdapter as unknown as EditSession
   return sheetSession
 }
 
@@ -589,9 +623,31 @@ const flowNodes = computed(() =>
   }),
 )
 
-const wires = computed(() =>
-  doc.value.segments.map((segment) => ({ id: segment.id, points: segment.points, start: segment.start, end: segment.end })),
-)
+const netArrowAnalyses = computed(() => buildNetArrowAnalyses(doc.value))
+
+/** Inputs to automatic arrowheads — forces wire marker recompute when metadata changes without geometry edits. */
+const wireArrowRenderEpoch = computed(() => {
+  const sheet = doc.value
+  const dirs = sheet.ports.map((port) => `${port.id}:${resolvePortDirection(sheet, port.id)}`).join('\0')
+  const overrides = sheet.segments.map((seg) => `${seg.id}:${seg.arrowheads ?? ''}`).join('\0')
+  return `${diagramArrowheadDefault(sheet)}\0${dirs}\0${overrides}`
+})
+
+const wires = computed(() => {
+  wireArrowRenderEpoch.value
+  const analyses = netArrowAnalyses.value
+  return doc.value.segments.map((segment) => {
+    const markers = segmentArrowMarkers(doc.value, segment, analyses)
+    return {
+      id: segment.id,
+      points: segment.points,
+      start: segment.start,
+      end: segment.end,
+      markerStart: markers.markerStart,
+      markerEnd: markers.markerEnd,
+    }
+  })
+})
 
 const diagnostics = computed(() => symbolDiagnostics(doc.value))
 const updatePreview = ref<UpdatePreview | null>(null)
@@ -1018,6 +1074,22 @@ const selectedNet = computed(() => {
   return segment ? doc.value.nets.find((net) => net.id === segment.netId) ?? null : null
 })
 
+const selectedWireSegment = computed(() =>
+  selectedSegment.value ? doc.value.segments.find((item) => item.id === selectedSegment.value) ?? null : null,
+)
+
+const diagramArrowDefault = computed((): ArrowheadDiagramDefault => diagramArrowheadDefault(doc.value))
+
+const selectedSegmentArrowOverride = computed((): ArrowheadSegmentOverride => {
+  const segment = selectedWireSegment.value
+  return segment?.arrowheads ?? 'inherit'
+})
+
+const selectedSegmentEffectiveArrowMode = computed(() => {
+  const segment = selectedWireSegment.value
+  return segment ? effectiveArrowheadMode(doc.value, segment) : 'none'
+})
+
 /** Labels anchored on one segment (P1 visibility is per segment, not per named net). */
 function labelsForSegment(segmentId: string) {
   return doc.value.labels.filter((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === segmentId)
@@ -1027,11 +1099,22 @@ function labelsForSegment(segmentId: string) {
 const wireInspectorSummary = computed(() => {
   const net = selectedNet.value
   if (!net) return ''
-  const segments = doc.value.segments.filter((item) => item.netId === net.id)
-  const ports = netPortIds(doc.value, net.id)
-  const segmentIds = new Set(segments.map((item) => item.id))
-  const labels = doc.value.labels.filter((label) => label.anchor.kind === 'segment' && segmentIds.has(label.anchor.segmentId))
-  return `${segments.length} segment${segments.length === 1 ? '' : 's'}, ${ports.length} port${ports.length === 1 ? '' : 's'}, ${labels.length} label${labels.length === 1 ? '' : 's'}`
+  const segmentId = selectedSegment.value ?? selectedWireSegment.value?.id
+  const onNet = doc.value.segments.filter((item) => item.netId === net.id)
+  const group = segmentId
+    ? connectedSegmentGroups(onNet).find((g) => g.some((item) => item.id === segmentId)) ?? onNet
+    : onNet
+  const groupIds = new Set(group.map((item) => item.id))
+  const ports = new Set<string>()
+  for (const segment of group) {
+    if (segment.start.kind === 'port') ports.add(segment.start.portId)
+    if (segment.end.kind === 'port') ports.add(segment.end.portId)
+  }
+  const labels = doc.value.labels.filter((label) => label.anchor.kind === 'segment' && groupIds.has(label.anchor.segmentId))
+  const base = `${group.length} segment${group.length === 1 ? '' : 's'}, ${ports.size} port${ports.size === 1 ? '' : 's'}, ${labels.length} label${labels.length === 1 ? '' : 's'}`
+  if (diagramArrowheadDefault(doc.value) !== 'automatic') return base
+  const arrow = automaticNetStatus(doc.value, net.id, segmentId ?? undefined)
+  return `${base}. ${arrow.detail}`
 })
 
 /** Name labels on the selected segment (P5b: at most one expected). */
@@ -2172,7 +2255,10 @@ function rebindAfterProject(): void {
   const resolved = resolveLocation(current, location.steps)
   navigation.value = resolved.location
   reveal(resolved.location)
-  const sheet = documentById(current, resolved.location.documentId)
+  const sheetId = resolved.location.documentId
+  const sheet =
+    documentById(current, sheetId) ??
+    documentById(current, current.rootDocumentId)
   if (sheet) doc.value = sheet
   if (interfaceFocus.value && !current.components.some((item) => item.id === interfaceFocus.value)) interfaceFocus.value = null
   selected.value = new Set([...selected.value].filter((id) => sheet?.blocks.some((block) => block.id === id)))
@@ -2217,12 +2303,12 @@ function openInstalled(created: DiagramProject, message: string): void {
   expandPlan.value = null
   closeOpenAs()
   navigation.value = rootLocation(created)
-  doc.value = root
   selected.value = new Set()
   editingSymbol.value = null
   resetInteractionMode()
+  rebindAfterProject()
   refreshHistory()
-  const bounds = contentBounds(root)
+  const bounds = contentBounds(doc.value)
   frame.value = { mode: 'fit', x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, zoom: 1, token: (frame.value?.token ?? 0) + 1 }
   syncNav()
   status.value = message
@@ -2456,12 +2542,12 @@ function loadProject(): void {
   viewMemory.clear()
   expanded.value = []
   navigation.value = rootLocation(sample)
-  doc.value = root
   selected.value = new Set()
   clearWireDraft()
   editingSymbol.value = null
+  rebindAfterProject()
   refreshHistory()
-  const bounds = contentBounds(root)
+  const bounds = contentBounds(doc.value)
   frame.value = { mode: 'fit', x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, zoom: 1, token: (frame.value?.token ?? 0) + 1 }
   syncNav()
   const notes = validateProject(sample)
@@ -2694,6 +2780,8 @@ function onNodeDoubleClick(payload: { node: { id: string } }): void {
 
 function onNodeClick(payload: { node: { id: string }; event: MouseEvent | TouchEvent }): void {
   selectedPort.value = null
+  selectedSegment.value = null
+  selectedStroke.value = null
   const id = payload.node.id
   const shift = payload.event instanceof MouseEvent && payload.event.shiftKey
   if (shift) {
@@ -2964,24 +3052,40 @@ function paste(): void {
   status.value = created.length > 0 ? `Pasted ${created.length} block${created.length === 1 ? '' : 's'}.` : 'Paste failed.'
 }
 
+function focusPortSelection(portId: string): void {
+  selected.value = new Set()
+  selectedStroke.value = null
+  selectedSegment.value = null
+  selectedPort.value = portId
+}
+
+function focusSegmentSelection(segmentId: string): void {
+  selected.value = new Set()
+  selectedStroke.value = null
+  selectedPort.value = null
+  selectedSegment.value = segmentId
+}
+
 function removeSelection(): void {
-  if (selected.value.size === 0 && selectedPort.value) {
-    deleteActivePort()
-    return
-  }
   const ids = [...selected.value]
   const strokeId = selectedStroke.value
   const segmentId = ids.length === 0 ? selectedSegment.value : null
-  if (ids.length === 0 && !strokeId && !segmentId) return
+  const portOnly = ids.length === 0 && !strokeId && !segmentId && selectedPort.value
+  if (ids.length === 0 && !strokeId && !segmentId && !portOnly) return
+  if (portOnly) {
+    deleteActivePort()
+    return
+  }
   let created: string[] = []
   edits().execute((draft) => {
     if (ids.length > 0) deleteBlocks(draft, ids)
-    if (strokeId) removeStroke(draft, strokeId)
-    if (segmentId) created = deleteSegment(draft, segmentId)
+    else if (strokeId) removeStroke(draft, strokeId)
+    else if (segmentId) created = deleteSegment(draft, segmentId)
   })
   selected.value = new Set()
   selectedStroke.value = null
   selectedSegment.value = null
+  selectedPort.value = null
   preview.value = null
   refreshHistory()
   status.value = created.length > 0 ? 'Segment removed. The disconnected piece has a new net id.' : 'Deleted.'
@@ -3081,6 +3185,49 @@ function commitPortT(event: Event): void {
   status.value = 'Port moved.'
 }
 
+function commitDiagramArrowDefault(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value as ArrowheadDiagramDefault
+  const expected: ArrowheadDiagramDefault = value === 'automatic' ? 'automatic' : 'none'
+  let mutated = false
+  edits().execute((draft) => {
+    mutated = setDiagramArrowheadDefault(draft, value)
+  })
+  if (!mutated) return
+  if (diagramArrowheadDefault(doc.value) === expected) {
+    refreshHistory()
+    status.value = 'Diagram arrow default updated.'
+    return
+  }
+  status.value = 'The diagram arrow default could not be saved. Use New project or Reload.'
+}
+
+function commitSegmentArrowOverride(event: Event): void {
+  const segment = selectedWireSegment.value
+  if (!segment) return
+  const value = (event.target as HTMLSelectElement).value as ArrowheadSegmentOverride
+  let changed = false
+  edits().execute((draft) => {
+    changed = setSegmentArrowheads(draft, segment.id, value === 'inherit' ? null : value)
+  })
+  if (changed) {
+    refreshHistory()
+    status.value = 'Segment arrowheads updated.'
+  }
+}
+
+function resetSegmentArrowOverride(): void {
+  const segment = selectedWireSegment.value
+  if (!segment) return
+  let changed = false
+  edits().execute((draft) => {
+    changed = resetSegmentArrowheads(draft, segment.id)
+  })
+  if (changed) {
+    refreshHistory()
+    status.value = 'Segment uses diagram default.'
+  }
+}
+
 function commitPortDirection(event: Event): void {
   const port = activePort.value
   if (!port) return
@@ -3157,8 +3304,7 @@ function onPortDown(blockId: string, portId: string, event: PointerEvent): void 
   if (edits().isGesturing) cancelActiveDocumentGesture()
   const port = doc.value.ports.find((item) => item.id === portId && item.blockId === blockId)
   if (!port) return
-  selected.value = new Set()
-  selectedPort.value = portId
+  focusPortSelection(portId)
   const guided = guidedPortContext(port)
   const baselineU = guided ? (port.guideU ?? guided.pin.u ?? 0) : undefined
   portDrag = {
@@ -3274,7 +3420,7 @@ function onLabelDown(labelId: string, event: PointerEvent): void {
     },
     cancelled: false,
   }
-  selectedSegment.value = label.anchor.segmentId
+  focusSegmentSelection(label.anchor.segmentId)
   beginDocumentGesture()
   // Window listeners only — setPointerCapture on the label would fire lostpointercapture
   // on the world SVG after pointerup and cancel the deferred commit (same class of bug as E3 resize).
@@ -3726,7 +3872,12 @@ function onStagePointerUp(): void {
   if (!box) return
   marquee.value = null
   if (Math.abs(box.width) < 4 && Math.abs(box.height) < 4) {
-    if (!box.shift) selected.value = new Set()
+    if (!box.shift) {
+      selected.value = new Set()
+      selectedPort.value = null
+      selectedSegment.value = null
+      selectedStroke.value = null
+    }
     return
   }
   const x1 = Math.min(box.x, box.x + box.width)
@@ -3737,6 +3888,11 @@ function onStagePointerUp(): void {
     .filter((block) => block.x < x2 && block.x + block.width > x1 && block.y < y2 && block.y + block.height > y1)
     .map((block) => block.id)
   selected.value = box.shift ? new Set([...selected.value, ...hits]) : new Set(hits)
+  if (hits.length > 0 || !box.shift) {
+    selectedPort.value = null
+    selectedSegment.value = null
+    selectedStroke.value = null
+  }
 }
 
 function clearWireDraft(): void {
@@ -3753,15 +3909,18 @@ function acceptWire(commit: { points: Point[]; start: Parameters<typeof commitWi
   }
   let createdNet = probe.createdNet
   let netId = probe.netId
+  let createdSegmentId = ''
   edits().execute((draft) => {
     const result = commitWire(draft, commit.points, commit.start, commit.end)
     if (result.ok) {
       createdNet = result.createdNet
       netId = result.netId
+      createdSegmentId = result.segmentId
     }
   })
   clearWireDraft()
   refreshHistory()
+  if (createdSegmentId) focusSegmentSelection(createdSegmentId)
   const netName = doc.value.nets.find((item) => item.id === netId)?.name
   status.value = createdNet
     ? `New net${netName ? ` "${netName}"` : ''}.`
@@ -3920,6 +4079,9 @@ function onPointerUp(event: PointerEvent): void {
     edits().execute((draft) => {
       strokeId = addStroke(draft, points)?.id ?? null
     })
+    selected.value = new Set()
+    selectedPort.value = null
+    selectedSegment.value = null
     selectedStroke.value = strokeId
     preview.value = null
     refreshHistory()
@@ -4031,7 +4193,7 @@ function startBend(segmentId: string, pointIndex: number, event: PointerEvent): 
     originY: point.y,
     axis: null,
   }
-  selectedSegment.value = segmentId
+  focusSegmentSelection(segmentId)
   if (edits().isGesturing) cancelActiveDocumentGesture()
   beginDocumentGesture()
   ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
@@ -4080,8 +4242,7 @@ function onSpanDown(segmentId: string, event: PointerEvent): void {
   const to = segment.points[edge + 1]
   if (!from || !to) return
   const horizontal = Math.abs(from.y - to.y) <= Math.abs(from.x - to.x)
-  selected.value = new Set()
-  selectedSegment.value = segmentId
+  focusSegmentSelection(segmentId)
   selectedEdge.value = edge
   spanDrag = { segmentId, edge, horizontal, origin: horizontal ? from.y : from.x, pointer: world }
   if (edits().isGesturing) cancelActiveDocumentGesture()
@@ -4104,8 +4265,7 @@ function freeEndNear(segment: { start: { kind: string; x?: number; y?: number };
 
 function startFreeEnd(segmentId: string, which: 'start' | 'end', event: PointerEvent): void {
   event.stopPropagation()
-  selected.value = new Set()
-  selectedSegment.value = segmentId
+  focusSegmentSelection(segmentId)
   freeEndDrag = { segmentId, which }
   if (edits().isGesturing) cancelActiveDocumentGesture()
   beginDocumentGesture()
@@ -4327,6 +4487,9 @@ function routeSelected(routed: 'manual' | 'auto'): void {
 function selectStroke(strokeId: string, event: PointerEvent): void {
   if (tool.value !== 'select') return
   event.stopPropagation()
+  selected.value = new Set()
+  selectedPort.value = null
+  selectedSegment.value = null
   selectedStroke.value = strokeId
   preview.value = null
 }
@@ -4479,7 +4642,14 @@ async function onFile(event: Event): Promise<void> {
       extractPlan.value = null
       expandPlan.value = null
       closeOpenAs()
-      showLocation(rootLocation(nextProject), false, false)
+      navigation.value = rootLocation(nextProject)
+      editingSymbol.value = null
+      resetInteractionMode()
+      rebindAfterProject()
+      refreshHistory()
+      const bounds = contentBounds(doc.value)
+      frame.value = { mode: 'fit', x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, zoom: 1, token: (frame.value?.token ?? 0) + 1 }
+      syncNav()
       status.value = `Loaded project ${nextProject.name}.`
       return
     }
@@ -5168,6 +5338,34 @@ defineExpose({ roundTrip, doc })
         @lostpointercapture="onLostPointerCapture"
         @dblclick="onWorldDblClick"
       >
+        <defs>
+          <marker
+            id="dl-arrow-end"
+            markerUnits="strokeWidth"
+            orient="auto"
+            overflow="visible"
+            refX="4"
+            refY="2.5"
+            markerWidth="5"
+            markerHeight="5"
+            viewBox="0 0 6 6"
+          >
+            <path d="M0,0 L6,3 L0,6 Z" class="wire-arrow-fill" />
+          </marker>
+          <marker
+            id="dl-arrow-start"
+            markerUnits="strokeWidth"
+            orient="auto-start-reverse"
+            overflow="visible"
+            refX="4"
+            refY="2.5"
+            markerWidth="5"
+            markerHeight="5"
+            viewBox="0 0 6 6"
+          >
+            <path d="M0,0 L6,3 L0,6 Z" class="wire-arrow-fill" />
+          </marker>
+        </defs>
         <polyline
           v-for="wire in wires"
           :key="`${wire.id}-hit`"
@@ -5175,7 +5373,15 @@ defineExpose({ roundTrip, doc })
           class="hit"
           @pointerdown="onSpanDown(wire.id, $event)"
         />
-        <polyline v-for="wire in wires" :key="wire.id" :points="pointsAttr(wire.points)" class="wire" :class="{ selected: wire.id === selectedSegment }" />
+        <polyline
+          v-for="wire in wires"
+          :key="`${wire.id}:${wire.markerStart ? 1 : 0}:${wire.markerEnd ? 1 : 0}`"
+          :points="pointsAttr(wire.points)"
+          class="wire"
+          :class="{ selected: wire.id === selectedSegment }"
+          :marker-start="wire.markerStart ? 'url(#dl-arrow-start)' : undefined"
+          :marker-end="wire.markerEnd ? 'url(#dl-arrow-end)' : undefined"
+        />
         <circle v-if="portPreview" class="port-preview" :cx="portPreview.x" :cy="portPreview.y" r="5" />
         <polyline v-if="wirePreview" :points="pointsAttr(wirePreview)" class="preview" />
         <polyline v-if="preview" :points="pointsAttr(preview)" class="preview" />
@@ -5297,11 +5503,43 @@ defineExpose({ roundTrip, doc })
     </div>
     <aside class="props">
       <p>Properties</p>
+      <template v-if="!activeSymbol && !oneBlock">
+        <p class="hint">Arrowheads (whole sheet)</p>
+        <label>
+          Diagram default
+          <select data-diagram-arrow-default :value="diagramArrowDefault" @change="commitDiagramArrowDefault">
+            <option value="none">None</option>
+            <option value="automatic">Automatic</option>
+          </select>
+        </label>
+        <p class="hint">You can set Automatic anytime. Arrows appear once a net has one out and at least one in port. Legacy sheets default to None.</p>
+      </template>
       <template v-if="selectedNet && !activePort && !oneBlock">
         <p data-wire-inspector>Wire</p>
         <label>Name <input data-wire-name :value="selectedNet.name" @change="commitNetName" /></label>
         <p class="hint" data-wire-net-id>Net id {{ selectedNet.id }}</p>
         <p class="hint" data-wire-net-info>{{ wireInspectorSummary }}</p>
+        <p class="hint">This segment</p>
+        <label v-if="selectedWireSegment">
+          Segment arrowheads
+          <select data-segment-arrowheads :value="selectedSegmentArrowOverride" @change="commitSegmentArrowOverride">
+            <option value="inherit">Inherit diagram default</option>
+            <option value="none">None</option>
+            <option value="automatic">Automatic</option>
+            <option value="start">Start</option>
+            <option value="end">End</option>
+            <option value="both">Both</option>
+          </select>
+        </label>
+        <p v-if="selectedWireSegment" class="hint" data-effective-arrow-mode>Effective mode: {{ selectedSegmentEffectiveArrowMode }}</p>
+        <button
+          v-if="selectedWireSegment && selectedSegmentArrowOverride !== 'inherit'"
+          type="button"
+          data-reset-segment-arrowheads
+          @click="resetSegmentArrowOverride"
+        >
+          Reset to inherit
+        </button>
         <p
           v-if="selectedNameCollision"
           class="hint"

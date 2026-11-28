@@ -1,8 +1,9 @@
-# S5b — Stable free-endpoint drag
+# S5b.1 — Stable free-endpoint drag
 
 **Status:** **Accepted** by user (26 Nov 2026 — free-endpoint drag works).  
 **Released:** 26 Nov 2026 (after S5a / S5a.1 and pilot-prep acceptance).  
-**RCA:** [d5d0a-s5b-endpoint-drag-investigation.md](d5d0a-s5b-endpoint-drag-investigation.md).
+**RCA:** [d5d0a-s5b-endpoint-drag-investigation.md](d5d0a-s5b-endpoint-drag-investigation.md).  
+**Follow-on:** [S5b.2 snap & connect](d5d0a-s5b2-endpoint-snap-connect.md) (freigabe; gated on P5c/DEL).
 
 ## Behaviour
 
