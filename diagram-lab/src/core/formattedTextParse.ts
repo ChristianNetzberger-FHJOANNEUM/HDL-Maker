@@ -38,6 +38,27 @@ export function countMathSegments(blocks: FormattedBlock[]): number {
   return n
 }
 
+/** Plain multiline captions (A2-P5a) — no Markdown, same paragraph/line rules as P4 gaps. */
+export function parsePlainDisplayText(source: string): ParsedFormattedText {
+  const lines = source.replace(/\r\n/g, '\n').split('\n')
+  const blocks: FormattedBlock[] = []
+  let i = 0
+  while (i < lines.length) {
+    if (lines[i] === '') {
+      blocks.push({ kind: 'gap' })
+      i += 1
+      continue
+    }
+    const paraLines: FormattedLine[] = []
+    while (i < lines.length && lines[i] !== '') {
+      paraLines.push([{ kind: 'text', text: lines[i]!, bold: false, italic: false }])
+      i += 1
+    }
+    if (paraLines.length) blocks.push({ kind: 'paragraph', lines: paraLines })
+  }
+  return { blocks, warnings: [] }
+}
+
 export function parseFormattedText(source: string): ParsedFormattedText {
   const warnings: string[] = []
   const blocks: FormattedBlock[] = []

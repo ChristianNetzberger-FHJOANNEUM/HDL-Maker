@@ -16,7 +16,7 @@
 
 ## 1. Proposed target diagram
 
-**A2 — BPSK modulator with AWGN channel** (small teaching sketch; not yet drawn in the editor).
+**A2 — BPSK modulator with AWGN / coherent receiver** — reference sheet **accepted**; see [bpsk demonstrator](diagram-lab-pilot-a2-bpsk-demonstrator.md).
 
 Suggested signal flow:
 

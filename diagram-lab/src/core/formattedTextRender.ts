@@ -1,17 +1,19 @@
 /**
  * A2-P4 — shared formatted text layout → SVG fragment (prose + mathRender).
- * Layout cache keys: source + em only (colour via currentColor on host).
+ * Layout cache keys: source + em + align (colour via currentColor on host).
  */
 
 import {
   countMathSegments,
   parseFormattedText,
+  parsePlainDisplayText,
   type DisplayMathBlock,
   type FormattedBlock,
   type FormattedLine,
   type FormattedRun,
 } from './formattedTextParse'
 import { renderMath, rewriteSvgIds, type MathRenderOk, type MathRenderResult } from './mathRender'
+import { lineAlignOffset, type TextAlign } from './textTypography'
 
 export type FormattedTextResult =
   | {
@@ -23,6 +25,7 @@ export type FormattedTextResult =
       ascent: number
       source: string
       em: number
+      align: TextAlign
       warnings: string[]
     }
   | { ok: false; error: string; source: string; em: number; warnings: string[] }
@@ -31,6 +34,8 @@ export type FormattedTextLayoutConfig = {
   em: number
   /** Prefix for nested MathJax id rewriting */
   idPrefix?: string
+  /** Line alignment inside the text group (A2-P5a). Default left. */
+  align?: TextAlign
 }
 
 const LAYOUT_CACHE_LIMIT = 32
@@ -40,8 +45,8 @@ type LayoutCacheEntry = FormattedTextResult
 
 const layoutCache = new Map<string, LayoutCacheEntry>()
 
-function layoutCacheKey(source: string, em: number): string {
-  return `${em}|${source}`
+function layoutCacheKey(source: string, em: number, align: TextAlign): string {
+  return `${em}|${align}|${source}`
 }
 
 function touchLayoutCache(key: string, value: LayoutCacheEntry): void {
@@ -127,6 +132,7 @@ function layoutLine(
   em: number,
   math: Map<string, MathRenderResult>,
   prefix: string,
+  xShift = 0,
 ): { placed: PlacedRun[]; width: number; ascent: number; descent: number } {
   const placed: PlacedRun[] = []
   let x = 0
@@ -144,7 +150,7 @@ function layoutLine(
         width: w,
         ascent: m.ascent,
         descent: m.descent,
-        html: proseSvg(run.text, x, yBaseline, em, run.bold, run.italic, false),
+        html: proseSvg(run.text, x + xShift, yBaseline, em, run.bold, run.italic, false),
       })
       x += w
     } else if (run.kind === 'code') {
@@ -157,13 +163,13 @@ function layoutLine(
         width: w,
         ascent: m.ascent,
         descent: m.descent,
-        html: proseSvg(run.text, x, yBaseline, em, false, false, true),
+        html: proseSvg(run.text, x + xShift, yBaseline, em, false, false, true),
       })
       x += w
     } else if (run.kind === 'math') {
       const hit = math.get(`i:${run.source}`)
       if (hit?.ok) {
-        const frag = inlineMathFragment(hit, x, yBaseline, `${prefix}mi${hash(run.source)}_`)
+        const frag = inlineMathFragment(hit, x + xShift, yBaseline, `${prefix}mi${hash(run.source)}_`)
         lineAscent = Math.max(lineAscent, frag.ascent)
         lineDescent = Math.max(lineDescent, frag.descent)
         placed.push(frag)
@@ -177,7 +183,7 @@ function layoutLine(
           width: w,
           ascent: m.ascent,
           descent: m.descent,
-          html: proseSvg(err, x, yBaseline, em, false, true, false),
+          html: proseSvg(err, x + xShift, yBaseline, em, false, true, false),
         })
         x += w
       }
@@ -208,8 +214,8 @@ function buildLayout(
   em: number,
   math: Map<string, MathRenderResult>,
   prefix: string,
+  align: TextAlign,
 ): { parts: string[]; width: number; height: number; ascent: number } {
-  const parts: string[] = []
   const PARA_GAP = em * 0.45
   const LINE_GAP = em * 0.12
   let yTop = 0
@@ -223,19 +229,47 @@ function buildLayout(
     }
     if (block.kind === 'display-math') {
       const hit = math.get(`d:${block.source}`)
+      const w = hit?.ok ? hit.width : measureProse(hit && !hit.ok ? hit.error : 'Math error', em, false, false, true)
+      maxW = Math.max(maxW, w)
+      if (hit?.ok) yTop += hit.height
+      else yTop += em
+      yTop += em * 0.15
+      continue
+    }
+    for (const line of block.lines) {
+      const probe = layoutLine(line, 0, em, math, prefix)
+      const baseline = yTop + probe.ascent
+      maxW = Math.max(maxW, probe.width)
+      yTop = baseline + probe.descent + LINE_GAP
+    }
+    yTop += em * 0.08
+  }
+
+  maxW = Math.max(maxW, 1)
+  const parts: string[] = []
+  yTop = 0
+  firstAscent = em * 0.72
+
+  for (const block of blocks) {
+    if (block.kind === 'gap') {
+      yTop += PARA_GAP
+      continue
+    }
+    if (block.kind === 'display-math') {
+      const hit = math.get(`d:${block.source}`)
       if (hit?.ok) {
-        const frag = displayMathFragment(hit, 0, yTop, `${prefix}md${hash(block.source)}_`)
-        maxW = Math.max(maxW, frag.width)
+        const dx = lineAlignOffset(maxW, hit.width, align)
+        const frag = displayMathFragment(hit, dx, yTop, `${prefix}md${hash(block.source)}_`)
         yTop += frag.height
         parts.push(frag.html)
       } else {
         const err = hit && !hit.ok ? hit.error : 'Math error'
         const m = proseMetrics(em, false)
         const baseline = yTop + m.ascent
-        if (parts.length === 0) firstAscent = m.ascent
-        parts.push(proseSvg(err, 0, baseline, em, false, true, false))
         const w = measureProse(err, em, false, false, true)
-        maxW = Math.max(maxW, w)
+        const dx = lineAlignOffset(maxW, w, align)
+        if (parts.length === 0) firstAscent = m.ascent
+        parts.push(proseSvg(err, dx, baseline, em, false, true, false))
         yTop = baseline + m.descent
       }
       yTop += em * 0.15
@@ -244,10 +278,10 @@ function buildLayout(
     for (const line of block.lines) {
       const probe = layoutLine(line, 0, em, math, prefix)
       const baseline = yTop + probe.ascent
-      const laid = layoutLine(line, baseline, em, math, prefix)
+      const dx = lineAlignOffset(maxW, probe.width, align)
+      const laid = layoutLine(line, baseline, em, math, prefix, dx)
       if (parts.length === 0) firstAscent = laid.ascent
       for (const p of laid.placed) parts.push(p.html)
-      maxW = Math.max(maxW, laid.width)
       yTop = baseline + laid.descent + LINE_GAP
     }
     yTop += em * 0.08
@@ -287,28 +321,28 @@ async function typesetMath(blocks: FormattedBlock[], em: number): Promise<Map<st
   return map
 }
 
-export async function renderFormattedText(
+async function renderLayoutTree(
+  blocks: FormattedBlock[],
   source: string,
-  config: FormattedTextLayoutConfig = { em: 13 },
+  config: FormattedTextLayoutConfig,
+  parseWarnings: string[],
 ): Promise<FormattedTextResult> {
   const em = config.em > 0 ? config.em : 13
-  const key = layoutCacheKey(source, em)
+  const align: TextAlign = config.align ?? 'left'
+  const key = layoutCacheKey(source, em, align)
   const hit = layoutCache.get(key)
   if (hit) {
     touchLayoutCache(key, hit)
     return hit
   }
-
-  const parsed = parseFormattedText(source)
-  const warnings = [...parsed.warnings]
-  if (countMathSegments(parsed.blocks) > MAX_MATH_SEGMENTS) {
+  const warnings = [...parseWarnings]
+  if (countMathSegments(blocks) > MAX_MATH_SEGMENTS) {
     warnings.push(`Math limited to ${MAX_MATH_SEGMENTS} segments.`)
   }
-
   try {
-    const math = await typesetMath(parsed.blocks, em)
+    const math = await typesetMath(blocks, em)
     const prefix = config.idPrefix ?? `fmt${hash(source)}_`
-    const layout = buildLayout(parsed.blocks, em, math, prefix)
+    const layout = buildLayout(blocks, em, math, prefix, align)
     const inner = `<g class="formatted-text" pointer-events="none">${layout.parts.join('')}</g>`
     const svg = wrapFormattedSvg(inner, layout.width, layout.height, layout.ascent)
     const result: FormattedTextResult = {
@@ -319,6 +353,7 @@ export async function renderFormattedText(
       ascent: layout.ascent,
       source,
       em,
+      align,
       warnings,
     }
     if (result.ok) touchLayoutCache(key, result)
@@ -332,6 +367,22 @@ export async function renderFormattedText(
       warnings,
     }
   }
+}
+
+export async function renderPlainDisplayText(
+  source: string,
+  config: FormattedTextLayoutConfig = { em: 12 },
+): Promise<FormattedTextResult> {
+  const parsed = parsePlainDisplayText(source)
+  return renderLayoutTree(parsed.blocks, source, config, parsed.warnings)
+}
+
+export async function renderFormattedText(
+  source: string,
+  config: FormattedTextLayoutConfig = { em: 13 },
+): Promise<FormattedTextResult> {
+  const parsed = parseFormattedText(source)
+  return renderLayoutTree(parsed.blocks, source, config, parsed.warnings)
 }
 
 /** Exposed for selfcheck — parse only */

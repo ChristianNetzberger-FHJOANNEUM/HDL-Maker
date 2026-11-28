@@ -27,6 +27,8 @@ import {
   unusedPortName,
   resizeBox,
   setBlockFields,
+  setBlockTypography,
+  resetBlockTypography,
   setBlockTextFormat,
   setBlockStyle,
   resetBlockStyle,
@@ -84,6 +86,8 @@ import {
   labelTextFormat,
   setLabelDisplayText,
   setLabelTextFormat,
+  setLabelTypography,
+  resetLabelTypography,
   setRouted,
   snapTarget,
   type LabelTextFormat,
@@ -93,14 +97,20 @@ import {
   beginMathRequest,
   endMathConsumer,
   isMathRequestCurrent,
-  MATH_RENDER_DEFAULT_EM,
   renderMath,
   type MathRenderResult,
 } from '../core/mathRender'
-import { renderFormattedText, type FormattedTextResult } from '../core/formattedTextRender'
-
-/** Matches `.block-display` font-size (A2-P3a). */
-const BLOCK_DISPLAY_MATH_EM = 12
+import { renderFormattedText, renderPlainDisplayText, type FormattedTextResult } from '../core/formattedTextRender'
+import {
+  blockDisplayEm,
+  blockDisplayTextAlign,
+  labelDisplayEm,
+  labelDisplayTextAlign,
+  wireLabelAnchorDx,
+  BLOCK_DISPLAY_DEFAULT_EM,
+  LABEL_DISPLAY_DEFAULT_EM,
+} from '../core/textTypography'
+import type { TextAlign } from '../core/textTypography'
 import { finishFree, undoWireStep, wireClick, type WireDraft } from '../core/wiretool'
 import { orthogonalize } from '../core/orthogonalize'
 import { sampleDocument } from '../core/sample'
@@ -530,6 +540,8 @@ const flowNodes = computed(() =>
       displayMath: blockTextFormat(block) === 'latex' ? mathByBlock.get(block.id) ?? null : null,
       displayFormatted:
         blockTextFormat(block) === 'markdown' ? formattedByBlock.get(block.id) ?? null : null,
+      displayPlain:
+        blockTextFormat(block) === 'plain' ? plainByBlock.get(block.id) ?? null : null,
       showDisplayText: block.showDisplayText !== false,
       displayTextOffsetX: block.displayTextOffset?.x ?? 0,
       displayTextOffsetY: block.displayTextOffset?.y ?? 0,
@@ -663,10 +675,40 @@ const mathByLabel = reactive(new Map<string, MathRenderResult>())
 const mathByBlock = reactive(new Map<string, MathRenderResult>())
 const formattedByLabel = reactive(new Map<string, FormattedTextResult>())
 const formattedByBlock = reactive(new Map<string, FormattedTextResult>())
+const plainByLabel = reactive(new Map<string, FormattedTextResult>())
+const plainByBlock = reactive(new Map<string, FormattedTextResult>())
+
+function blockCaptionPayload(block: DiagramDocument['blocks'][number]): string {
+  const text = typeof block.displayText === 'string' ? block.displayText : ''
+  if (!text.trim() || block.showDisplayText === false) return ''
+  const em = blockDisplayEm(block)
+  const align = blockDisplayTextAlign(block)
+  return `${block.id}\n${em}\n${align}\n${text}`
+}
+
+function labelCaptionPayload(label: DiagramDocument['labels'][number]): string {
+  if (label.visible === false) return ''
+  const text = labelText(doc.value, label)
+  if (!text.trim()) return ''
+  const em = labelDisplayEm(label)
+  const align = labelDisplayTextAlign(label)
+  return `${label.id}\n${em}\n${align}\n${text}`
+}
+
+function parseCaptionEntry(entry: string): { id: string; em: number; align: TextAlign; text: string } {
+  const parts = entry.split('\n')
+  const id = parts[0]!
+  const em = Number(parts[1])
+  const align = (parts[2] as TextAlign) ?? 'left'
+  const text = parts.slice(3).join('\n')
+  return { id, em, align, text }
+}
 const mathPreview = ref<MathRenderResult | null>(null)
 const blockMathPreview = ref<MathRenderResult | null>(null)
 const formattedPreview = ref<FormattedTextResult | null>(null)
 const blockFormattedPreview = ref<FormattedTextResult | null>(null)
+const plainPreview = ref<FormattedTextResult | null>(null)
+const blockPlainPreview = ref<FormattedTextResult | null>(null)
 
 const labels = computed(() =>
   doc.value.labels.map((label) => {
@@ -675,12 +717,22 @@ const labels = computed(() =>
     const fontSize = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : null
     const math = format === 'latex' ? mathByLabel.get(label.id) ?? null : null
     const formatted = format === 'markdown' ? formattedByLabel.get(label.id) ?? null : null
+    const plainLayout = format === 'plain' && typeof label.displayText === 'string' ? plainByLabel.get(label.id) ?? null : null
+    const textAlign = labelDisplayTextAlign(label)
+    const layoutWidth =
+      formatted?.ok ? formatted.width : math?.ok ? math.width : plainLayout?.ok ? plainLayout.width : 0
+    const anchorDx = layoutWidth > 0 ? wireLabelAnchorDx(layoutWidth, textAlign) : 0
+    const inheritedOnly = isNameLabel(label) && !label.displayText?.trim()
     return {
       id: label.id,
       text,
       format,
       math,
       formatted,
+      plain: plainLayout,
+      textAlign,
+      anchorDx,
+      inheritedOnly,
       at: labelPlacement(doc.value, label.id),
       fontSize,
       visible: label.visible !== false,
@@ -694,18 +746,14 @@ watch(
       .map((label) => {
         const format = labelTextFormat(label)
         if (format !== 'latex' || label.visible === false) return ''
-        const em = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : MATH_RENDER_DEFAULT_EM
-        return `${label.id}\n${em}\n${labelText(doc.value, label)}`
+        return labelCaptionPayload(label)
       })
       .filter(Boolean)
       .join('\0'),
   (serialized) => {
     const live = new Set<string>()
     const items = serialized
-      ? serialized.split('\0').map((entry) => {
-          const [id, emText, ...rest] = entry.split('\n')
-          return { id: id!, em: Number(emText), text: rest.join('\n') }
-        })
+      ? serialized.split('\0').map((entry) => parseCaptionEntry(entry))
       : []
     for (const item of items) {
       live.add(item.id)
@@ -742,25 +790,22 @@ watch(
       .map((label) => {
         const format = labelTextFormat(label)
         if (format !== 'markdown' || label.visible === false) return ''
-        const em = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : MATH_RENDER_DEFAULT_EM
-        return `${label.id}\n${em}\n${labelText(doc.value, label)}`
+        return labelCaptionPayload(label)
       })
       .filter(Boolean)
       .join('\0'),
   (serialized) => {
     const live = new Set<string>()
     const items = serialized
-      ? serialized.split('\0').map((entry) => {
-          const [id, emText, ...rest] = entry.split('\n')
-          return { id: id!, em: Number(emText), text: rest.join('\n') }
-        })
+      ? serialized.split('\0').map((entry) => parseCaptionEntry(entry))
       : []
     for (const item of items) {
       live.add(item.id)
       const existing = formattedByLabel.get(item.id)
-      if (existing && existing.ok && existing.source === item.text && existing.em === item.em) continue
+      if (existing?.ok && existing.source === item.text && existing.em === item.em && existing.align === item.align)
+        continue
       const token = beginMathRequest(`md:${item.id}`)
-      void renderFormattedText(item.text, { em: item.em, idPrefix: `lbl${item.id}_` })
+      void renderFormattedText(item.text, { em: item.em, align: item.align, idPrefix: `lbl${item.id}_` })
         .then((result) => {
           if (!isMathRequestCurrent(`md:${item.id}`, token)) return
           formattedByLabel.set(item.id, result)
@@ -787,22 +832,62 @@ watch(
 
 watch(
   () =>
+    doc.value.labels
+      .map((label) => {
+        const format = labelTextFormat(label)
+        if (format !== 'plain' || label.visible === false) return ''
+        if (typeof label.displayText !== 'string' || !label.displayText.trim()) return ''
+        return labelCaptionPayload(label)
+      })
+      .filter(Boolean)
+      .join('\0'),
+  (serialized) => {
+    const live = new Set<string>()
+    const items = serialized ? serialized.split('\0').map((entry) => parseCaptionEntry(entry)) : []
+    for (const item of items) {
+      live.add(item.id)
+      const existing = plainByLabel.get(item.id)
+      if (existing?.ok && existing.source === item.text && existing.em === item.em && existing.align === item.align)
+        continue
+      const token = beginMathRequest(`pl:${item.id}`)
+      void renderPlainDisplayText(item.text, { em: item.em, align: item.align, idPrefix: `lpl${item.id}_` })
+        .then((result) => {
+          if (!isMathRequestCurrent(`pl:${item.id}`, token)) return
+          plainByLabel.set(item.id, result)
+        })
+        .catch((err) => {
+          if (!isMathRequestCurrent(`pl:${item.id}`, token)) return
+          plainByLabel.set(item.id, {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+            source: item.text,
+            em: item.em,
+            warnings: [],
+          })
+        })
+    }
+    for (const id of [...plainByLabel.keys()]) {
+      if (live.has(id)) continue
+      plainByLabel.delete(id)
+      endMathConsumer(`pl:${id}`)
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () =>
     doc.value.blocks
       .map((block) => {
         if (blockTextFormat(block) !== 'latex' || block.showDisplayText === false) return ''
-        const text = typeof block.displayText === 'string' ? block.displayText : ''
-        if (!text.trim()) return ''
-        return `${block.id}\n${BLOCK_DISPLAY_MATH_EM}\n${text}`
+        return blockCaptionPayload(block)
       })
       .filter(Boolean)
       .join('\0'),
   (serialized) => {
     const live = new Set<string>()
     const items = serialized
-      ? serialized.split('\0').map((entry) => {
-          const [id, emText, ...rest] = entry.split('\n')
-          return { id: id!, em: Number(emText), text: rest.join('\n') }
-        })
+      ? serialized.split('\0').map((entry) => parseCaptionEntry(entry))
       : []
     for (const item of items) {
       live.add(item.id)
@@ -838,26 +923,20 @@ watch(
     doc.value.blocks
       .map((block) => {
         if (blockTextFormat(block) !== 'markdown' || block.showDisplayText === false) return ''
-        const text = typeof block.displayText === 'string' ? block.displayText : ''
-        if (!text.trim()) return ''
-        return `${block.id}\n${BLOCK_DISPLAY_MATH_EM}\n${text}`
+        return blockCaptionPayload(block)
       })
       .filter(Boolean)
       .join('\0'),
   (serialized) => {
     const live = new Set<string>()
-    const items = serialized
-      ? serialized.split('\0').map((entry) => {
-          const [id, emText, ...rest] = entry.split('\n')
-          return { id: id!, em: Number(emText), text: rest.join('\n') }
-        })
-      : []
+    const items = serialized ? serialized.split('\0').map((entry) => parseCaptionEntry(entry)) : []
     for (const item of items) {
       live.add(item.id)
       const existing = formattedByBlock.get(item.id)
-      if (existing && existing.ok && existing.source === item.text && existing.em === item.em) continue
+      if (existing?.ok && existing.source === item.text && existing.em === item.em && existing.align === item.align)
+        continue
       const token = beginMathRequest(`md:block:${item.id}`)
-      void renderFormattedText(item.text, { em: item.em, idPrefix: `blk${item.id}_` })
+      void renderFormattedText(item.text, { em: item.em, align: item.align, idPrefix: `blk${item.id}_` })
         .then((result) => {
           if (!isMathRequestCurrent(`md:block:${item.id}`, token)) return
           formattedByBlock.set(item.id, result)
@@ -877,6 +956,49 @@ watch(
       if (live.has(id)) continue
       formattedByBlock.delete(id)
       endMathConsumer(`md:block:${id}`)
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () =>
+    doc.value.blocks
+      .map((block) => {
+        if (blockTextFormat(block) !== 'plain' || block.showDisplayText === false) return ''
+        return blockCaptionPayload(block)
+      })
+      .filter(Boolean)
+      .join('\0'),
+  (serialized) => {
+    const live = new Set<string>()
+    const items = serialized ? serialized.split('\0').map((entry) => parseCaptionEntry(entry)) : []
+    for (const item of items) {
+      live.add(item.id)
+      const existing = plainByBlock.get(item.id)
+      if (existing?.ok && existing.source === item.text && existing.em === item.em && existing.align === item.align)
+        continue
+      const token = beginMathRequest(`pl:block:${item.id}`)
+      void renderPlainDisplayText(item.text, { em: item.em, align: item.align, idPrefix: `bpl${item.id}_` })
+        .then((result) => {
+          if (!isMathRequestCurrent(`pl:block:${item.id}`, token)) return
+          plainByBlock.set(item.id, result)
+        })
+        .catch((err) => {
+          if (!isMathRequestCurrent(`pl:block:${item.id}`, token)) return
+          plainByBlock.set(item.id, {
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+            source: item.text,
+            em: item.em,
+            warnings: [],
+          })
+        })
+    }
+    for (const id of [...plainByBlock.keys()]) {
+      if (live.has(id)) continue
+      plainByBlock.delete(id)
+      endMathConsumer(`pl:block:${id}`)
     }
   },
   { immediate: true },
@@ -947,14 +1069,25 @@ const selectedLabelTextFormat = computed((): LabelTextFormat => {
   return label ? labelTextFormat(label) : 'plain'
 })
 
+const selectedLabelDisplayAlign = computed((): TextAlign => {
+  const label = selectedNameLabel.value
+  return label ? labelDisplayTextAlign(label) : 'left'
+})
+
+const selectedLabelDisplayEm = computed(() => {
+  const label = selectedNameLabel.value
+  return label ? labelDisplayEm(label) : LABEL_DISPLAY_DEFAULT_EM
+})
+
 watch(
   () => {
     const label = selectedNameLabel.value
     if (!label || !selectedLabelUsesCustomDisplay.value) return ''
     if (labelTextFormat(label) !== 'latex') return ''
-    const em = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : MATH_RENDER_DEFAULT_EM
+    const em = labelDisplayEm(label)
+    const align = labelDisplayTextAlign(label)
     const text = typeof label.displayText === 'string' ? label.displayText : ''
-    return `${em}\n${text}`
+    return `${em}\n${align}\n${text}`
   },
   (serialized) => {
     if (!serialized) {
@@ -962,9 +1095,10 @@ watch(
       endMathConsumer('__preview__')
       return
     }
-    const newline = serialized.indexOf('\n')
-    const em = Number(serialized.slice(0, newline))
-    const text = serialized.slice(newline + 1)
+    const first = serialized.indexOf('\n')
+    const second = serialized.indexOf('\n', first + 1)
+    const em = Number(serialized.slice(0, first))
+    const text = serialized.slice(second + 1)
     const existing = mathPreview.value
     if (existing && existing.source === text && existing.em === em) return
     const token = beginMathRequest('__preview__')
@@ -991,10 +1125,11 @@ watch(
     const label = selectedNameLabel.value
     if (!label || !selectedLabelUsesCustomDisplay.value) return ''
     if (labelTextFormat(label) !== 'markdown') return ''
-    const em = typeof label.fontSize === 'number' && label.fontSize > 0 ? label.fontSize : MATH_RENDER_DEFAULT_EM
+    const em = labelDisplayEm(label)
+    const align = labelDisplayTextAlign(label)
     const text = typeof label.displayText === 'string' ? label.displayText : ''
     if (!text.trim()) return ''
-    return `${em}\n${text}`
+    return `${em}\n${align}\n${text}`
   },
   (serialized) => {
     if (!serialized) {
@@ -1002,13 +1137,15 @@ watch(
       endMathConsumer('__fmt-preview__')
       return
     }
-    const newline = serialized.indexOf('\n')
-    const em = Number(serialized.slice(0, newline))
-    const text = serialized.slice(newline + 1)
+    const first = serialized.indexOf('\n')
+    const second = serialized.indexOf('\n', first + 1)
+    const em = Number(serialized.slice(0, first))
+    const align = serialized.slice(first + 1, second) as TextAlign
+    const text = serialized.slice(second + 1)
     const existing = formattedPreview.value
-    if (existing && existing.ok && existing.source === text && existing.em === em) return
+    if (existing?.ok && existing.source === text && existing.em === em && existing.align === align) return
     const token = beginMathRequest('__fmt-preview__')
-    void renderFormattedText(text, { em, idPrefix: 'prev_' })
+    void renderFormattedText(text, { em, align, idPrefix: 'prev_' })
       .then((result) => {
         if (!isMathRequestCurrent('__fmt-preview__', token)) return
         formattedPreview.value = result
@@ -1016,6 +1153,50 @@ watch(
       .catch((err) => {
         if (!isMathRequestCurrent('__fmt-preview__', token)) return
         formattedPreview.value = {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          source: text,
+          em,
+          warnings: [],
+        }
+      })
+  },
+  { immediate: true },
+)
+
+watch(
+  () => {
+    const label = selectedNameLabel.value
+    if (!label || !selectedLabelUsesCustomDisplay.value) return ''
+    if (labelTextFormat(label) !== 'plain') return ''
+    const em = labelDisplayEm(label)
+    const align = labelDisplayTextAlign(label)
+    const text = typeof label.displayText === 'string' ? label.displayText : ''
+    if (!text.trim()) return ''
+    return `${em}\n${align}\n${text}`
+  },
+  (serialized) => {
+    if (!serialized) {
+      plainPreview.value = null
+      endMathConsumer('__plain-preview__')
+      return
+    }
+    const first = serialized.indexOf('\n')
+    const second = serialized.indexOf('\n', first + 1)
+    const em = Number(serialized.slice(0, first))
+    const align = serialized.slice(first + 1, second) as TextAlign
+    const text = serialized.slice(second + 1)
+    const existing = plainPreview.value
+    if (existing?.ok && existing.source === text && existing.em === em && existing.align === align) return
+    const token = beginMathRequest('__plain-preview__')
+    void renderPlainDisplayText(text, { em, align, idPrefix: 'lprev_' })
+      .then((result) => {
+        if (!isMathRequestCurrent('__plain-preview__', token)) return
+        plainPreview.value = result
+      })
+      .catch((err) => {
+        if (!isMathRequestCurrent('__plain-preview__', token)) return
+        plainPreview.value = {
           ok: false,
           error: err instanceof Error ? err.message : String(err),
           source: text,
@@ -1058,6 +1239,16 @@ const gridLines = computed(() => {
 
 const oneBlock = computed(() => (selected.value.size === 1 ? doc.value.blocks.find((block) => selected.value.has(block.id)) ?? null : null))
 
+const selectedBlockDisplayAlign = computed((): TextAlign => {
+  const block = oneBlock.value
+  return block ? blockDisplayTextAlign(block) : 'left'
+})
+
+const selectedBlockDisplayEm = computed(() => {
+  const block = oneBlock.value
+  return block ? blockDisplayEm(block) : BLOCK_DISPLAY_DEFAULT_EM
+})
+
 const selectedBlockTextFormat = computed(() => {
   const block = oneBlock.value
   return block ? blockTextFormat(block) : 'plain'
@@ -1068,9 +1259,10 @@ watch(
     const block = oneBlock.value
     if (!block) return ''
     if (blockTextFormat(block) !== 'latex') return ''
+    const em = blockDisplayEm(block)
     const text = typeof block.displayText === 'string' ? block.displayText : ''
     if (!text.trim()) return ''
-    return `${BLOCK_DISPLAY_MATH_EM}\n${text}`
+    return `${em}\n${text}`
   },
   (serialized) => {
     if (!serialized) {
@@ -1107,9 +1299,11 @@ watch(
     const block = oneBlock.value
     if (!block) return ''
     if (blockTextFormat(block) !== 'markdown') return ''
+    const em = blockDisplayEm(block)
+    const align = blockDisplayTextAlign(block)
     const text = typeof block.displayText === 'string' ? block.displayText : ''
     if (!text.trim()) return ''
-    return `${BLOCK_DISPLAY_MATH_EM}\n${text}`
+    return `${em}\n${align}\n${text}`
   },
   (serialized) => {
     if (!serialized) {
@@ -1117,13 +1311,15 @@ watch(
       endMathConsumer('__block-fmt-preview__')
       return
     }
-    const newline = serialized.indexOf('\n')
-    const em = Number(serialized.slice(0, newline))
-    const text = serialized.slice(newline + 1)
+    const first = serialized.indexOf('\n')
+    const second = serialized.indexOf('\n', first + 1)
+    const em = Number(serialized.slice(0, first))
+    const align = serialized.slice(first + 1, second) as TextAlign
+    const text = serialized.slice(second + 1)
     const existing = blockFormattedPreview.value
-    if (existing && existing.ok && existing.source === text && existing.em === em) return
+    if (existing?.ok && existing.source === text && existing.em === em && existing.align === align) return
     const token = beginMathRequest('__block-fmt-preview__')
-    void renderFormattedText(text, { em, idPrefix: 'bprev_' })
+    void renderFormattedText(text, { em, align, idPrefix: 'bprev_' })
       .then((result) => {
         if (!isMathRequestCurrent('__block-fmt-preview__', token)) return
         blockFormattedPreview.value = result
@@ -1131,6 +1327,50 @@ watch(
       .catch((err) => {
         if (!isMathRequestCurrent('__block-fmt-preview__', token)) return
         blockFormattedPreview.value = {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          source: text,
+          em,
+          warnings: [],
+        }
+      })
+  },
+  { immediate: true },
+)
+
+watch(
+  () => {
+    const block = oneBlock.value
+    if (!block) return ''
+    if (blockTextFormat(block) !== 'plain') return ''
+    const em = blockDisplayEm(block)
+    const align = blockDisplayTextAlign(block)
+    const text = typeof block.displayText === 'string' ? block.displayText : ''
+    if (!text.trim()) return ''
+    return `${em}\n${align}\n${text}`
+  },
+  (serialized) => {
+    if (!serialized) {
+      blockPlainPreview.value = null
+      endMathConsumer('__block-plain-preview__')
+      return
+    }
+    const first = serialized.indexOf('\n')
+    const second = serialized.indexOf('\n', first + 1)
+    const em = Number(serialized.slice(0, first))
+    const align = serialized.slice(first + 1, second) as TextAlign
+    const text = serialized.slice(second + 1)
+    const existing = blockPlainPreview.value
+    if (existing?.ok && existing.source === text && existing.em === em && existing.align === align) return
+    const token = beginMathRequest('__block-plain-preview__')
+    void renderPlainDisplayText(text, { em, align, idPrefix: 'bplprev_' })
+      .then((result) => {
+        if (!isMathRequestCurrent('__block-plain-preview__', token)) return
+        blockPlainPreview.value = result
+      })
+      .catch((err) => {
+        if (!isMathRequestCurrent('__block-plain-preview__', token)) return
+        blockPlainPreview.value = {
           ok: false,
           error: err instanceof Error ? err.message : String(err),
           source: text,
@@ -3200,6 +3440,94 @@ function commitDisplayText(event: Event): void {
   status.value = next.length > 0 ? 'Display text updated.' : 'Display text cleared.'
 }
 
+function commitLabelTypographyAlign(event: Event): void {
+  const label = selectedNameLabel.value
+  if (!label || !selectedLabelUsesCustomDisplay.value) return
+  const select = event.target as HTMLSelectElement
+  const value = select.value as TextAlign
+  let changed = false
+  edits().execute((draft) => {
+    changed = setLabelTypography(draft, label.id, { textAlign: value })
+  })
+  if (changed) {
+    refreshHistory()
+    status.value = 'Label typography updated.'
+  }
+}
+
+function commitLabelTypographySize(event: Event): void {
+  const label = selectedNameLabel.value
+  if (!label || !selectedLabelUsesCustomDisplay.value) return
+  const input = event.target as HTMLInputElement
+  const parsed = Number(input.value)
+  if (!Number.isFinite(parsed)) return
+  let changed = false
+  edits().execute((draft) => {
+    changed = setLabelTypography(draft, label.id, { fontSize: parsed })
+  })
+  if (changed) {
+    refreshHistory()
+    status.value = 'Label font size updated.'
+  }
+}
+
+function resetLabelTypographyAction(): void {
+  const label = selectedNameLabel.value
+  if (!label || !selectedLabelUsesCustomDisplay.value) return
+  let changed = false
+  edits().execute((draft) => {
+    changed = resetLabelTypography(draft, label.id)
+  })
+  if (changed) {
+    refreshHistory()
+    status.value = 'Label typography reset.'
+  }
+}
+
+function commitBlockTypographyAlign(event: Event): void {
+  const block = oneBlock.value
+  if (!block || !block.displayText?.trim()) return
+  const select = event.target as HTMLSelectElement
+  const value = select.value as TextAlign
+  let changed = false
+  edits().execute((draft) => {
+    changed = setBlockTypography(draft, block.id, { textAlign: value })
+  })
+  if (changed) {
+    refreshHistory()
+    status.value = 'Block typography updated.'
+  }
+}
+
+function commitBlockTypographySize(event: Event): void {
+  const block = oneBlock.value
+  if (!block || !block.displayText?.trim()) return
+  const input = event.target as HTMLInputElement
+  const parsed = Number(input.value)
+  if (!Number.isFinite(parsed)) return
+  let changed = false
+  edits().execute((draft) => {
+    changed = setBlockTypography(draft, block.id, { fontSize: parsed })
+  })
+  if (changed) {
+    refreshHistory()
+    status.value = 'Block font size updated.'
+  }
+}
+
+function resetBlockTypographyAction(): void {
+  const block = oneBlock.value
+  if (!block || !block.displayText?.trim()) return
+  let changed = false
+  edits().execute((draft) => {
+    changed = resetBlockTypography(draft, block.id)
+  })
+  if (changed) {
+    refreshHistory()
+    status.value = 'Block typography reset.'
+  }
+}
+
 function commitBlockTextFormat(event: Event): void {
   const block = oneBlock.value
   if (!block) return
@@ -4783,6 +5111,7 @@ defineExpose({ roundTrip, doc })
             :display-text-format="nodeProps.data.displayTextFormat"
             :display-math="nodeProps.data.displayMath"
             :display-formatted="nodeProps.data.displayFormatted"
+            :display-plain="nodeProps.data.displayPlain"
             :show-display-text="nodeProps.data.showDisplayText"
             :display-text-offset-x="nodeProps.data.displayTextOffsetX"
             :display-text-offset-y="nodeProps.data.displayTextOffsetY"
@@ -4903,16 +5232,23 @@ defineExpose({ roundTrip, doc })
           <g
             v-if="label.format === 'latex' && label.math?.ok && label.at"
             class="label math"
-            :transform="`translate(${label.at.x}, ${label.at.y})`"
+            :transform="`translate(${label.at.x + label.anchorDx}, ${label.at.y})`"
             pointer-events="none"
             v-html="label.math.svg"
           />
           <g
             v-else-if="label.format === 'markdown' && label.formatted?.ok && label.at"
             class="label formatted"
-            :transform="`translate(${label.at.x}, ${label.at.y})`"
+            :transform="`translate(${label.at.x + label.anchorDx}, ${label.at.y})`"
             pointer-events="none"
             v-html="label.formatted.svg"
+          />
+          <g
+            v-else-if="label.format === 'plain' && label.plain?.ok && label.at"
+            class="label formatted"
+            :transform="`translate(${label.at.x + label.anchorDx}, ${label.at.y})`"
+            pointer-events="none"
+            v-html="label.plain.svg"
           />
           <text
             v-else
@@ -4923,6 +5259,7 @@ defineExpose({ roundTrip, doc })
             }"
             :x="label.at?.x"
             :y="label.at?.y"
+            :text-anchor="label.textAlign === 'center' ? 'middle' : label.textAlign === 'right' ? 'end' : 'start'"
             :style="label.fontSize ? { fontSize: `${label.fontSize}px` } : undefined"
           >{{ label.text }}</text>
         </g>
@@ -4993,6 +5330,30 @@ defineExpose({ roundTrip, doc })
               </p>
               <p v-else class="hint">Typesetting…</p>
             </div>
+            <template v-if="selectedLabelUsesCustomDisplay && selectedLabelDisplayText.trim().length > 0">
+              <p class="hint">Typography</p>
+              <label>
+                Alignment
+                <select data-label-text-align :value="selectedLabelDisplayAlign" @change="commitLabelTypographyAlign">
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
+              </label>
+              <label>
+                Font size
+                <input
+                  data-label-font-size
+                  type="number"
+                  min="8"
+                  max="48"
+                  step="1"
+                  :value="selectedLabelDisplayEm"
+                  @change="commitLabelTypographySize"
+                />
+              </label>
+              <button type="button" data-reset-label-typography @click="resetLabelTypographyAction">Reset typography</button>
+            </template>
             <div
               v-if="selectedLabelTextFormat === 'markdown' && selectedLabelDisplayText.trim().length > 0"
               class="math-preview"
@@ -5006,6 +5367,22 @@ defineExpose({ roundTrip, doc })
               />
               <p v-else-if="formattedPreview && !formattedPreview.ok" class="hint math-error">
                 {{ formattedPreview.error }}
+              </p>
+              <p v-else class="hint">Typesetting…</p>
+            </div>
+            <div
+              v-if="selectedLabelTextFormat === 'plain' && selectedLabelDisplayText.trim().length > 0"
+              class="math-preview"
+              data-wire-plain-preview
+            >
+              <p class="hint">Preview</p>
+              <div
+                v-if="plainPreview?.ok"
+                class="math-preview-svg formatted-preview-host"
+                v-html="plainPreview.svg"
+              />
+              <p v-else-if="plainPreview && !plainPreview.ok" class="hint math-error">
+                {{ plainPreview.error }}
               </p>
               <p v-else class="hint">Typesetting…</p>
             </div>
@@ -5147,6 +5524,30 @@ defineExpose({ roundTrip, doc })
             @change="commitDisplayText"
           />
         </label>
+        <template v-if="(oneBlock.displayText?.trim().length ?? 0) > 0">
+          <p class="hint">Typography</p>
+          <label>
+            Alignment
+            <select data-block-text-align :value="selectedBlockDisplayAlign" @change="commitBlockTypographyAlign">
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </label>
+          <label>
+            Font size
+            <input
+              data-block-font-size
+              type="number"
+              min="8"
+              max="48"
+              step="1"
+              :value="selectedBlockDisplayEm"
+              @change="commitBlockTypographySize"
+            />
+          </label>
+          <button type="button" data-reset-block-typography @click="resetBlockTypographyAction">Reset typography</button>
+        </template>
         <div
           v-if="selectedBlockTextFormat === 'latex' && (oneBlock.displayText?.trim().length ?? 0) > 0"
           class="math-preview"
@@ -5176,6 +5577,22 @@ defineExpose({ roundTrip, doc })
           />
           <p v-else-if="blockFormattedPreview && !blockFormattedPreview.ok" class="hint math-error">
             {{ blockFormattedPreview.error }}
+          </p>
+          <p v-else class="hint">Typesetting…</p>
+        </div>
+        <div
+          v-if="selectedBlockTextFormat === 'plain' && (oneBlock.displayText?.trim().length ?? 0) > 0"
+          class="math-preview"
+          data-block-plain-preview
+        >
+          <p class="hint">Preview</p>
+          <div
+            v-if="blockPlainPreview?.ok"
+            class="math-preview-svg formatted-preview-host"
+            v-html="blockPlainPreview.svg"
+          />
+          <p v-else-if="blockPlainPreview && !blockPlainPreview.ok" class="hint math-error">
+            {{ blockPlainPreview.error }}
           </p>
           <p v-else class="hint">Typesetting…</p>
         </div>

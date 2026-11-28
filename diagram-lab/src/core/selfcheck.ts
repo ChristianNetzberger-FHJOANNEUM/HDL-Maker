@@ -24,9 +24,9 @@ import {
   translateSegmentGeometry,
 } from './geometry'
 import { netFixture } from './fixture'
-import { addNameLabel, commitWire, crossings, deleteSegment, ensureNetByName, labelText, labelTextFormat, mergeNets, mergeNetsByName, moveJunction, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeFreeEnd, placeLabelAt, placeSpan, probeWire, renameNet, removeSegmentNameLabels, resetLabelPosition, setLabelDisplay, setLabelDisplayText, setLabelOffset, setLabelTextFormat, setRouted, snapTarget } from './nets'
+import { addNameLabel, commitWire, crossings, deleteSegment, ensureNetByName, isNameLabel, labelText, labelTextFormat, mergeNets, mergeNetsByName, moveJunction, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeFreeEnd, placeLabelAt, placeSpan, probeWire, renameNet, removeSegmentNameLabels, resetLabelPosition, resetLabelTypography, setLabelDisplay, setLabelDisplayText, setLabelOffset, setLabelTextFormat, setLabelTypography, setRouted, snapTarget } from './nets'
 import { countMathSegments, parseFormattedText } from './formattedTextParse'
-import { clearFormattedTextLayoutCache, renderFormattedText } from './formattedTextRender'
+import { clearFormattedTextLayoutCache, renderFormattedText, renderPlainDisplayText } from './formattedTextRender'
 import {
   clearMathRenderCache,
   ensureMathEngine,
@@ -57,6 +57,8 @@ import {
   resizeBox,
   blockTextFormat,
   setBlockFields,
+  setBlockTypography,
+  resetBlockTypography,
   setBlockTextFormat,
   setBlockStyle,
   resetBlockStyle,
@@ -76,6 +78,13 @@ import {
   DUPLICATE_OFFSET,
   NUDGE_DISTANCE,
 } from './edit'
+import {
+  blockDefaultTextAlign,
+  blockDisplayEm,
+  blockDisplayTextAlign,
+  labelDisplayTextAlign,
+  lineAlignOffset,
+} from './textTypography'
 import {
   DEFAULT_EDITOR_PREFERENCES,
   loadEditorPreferences,
@@ -6272,6 +6281,151 @@ $y(t)=x(t)+n(t)$ $n\sim\mathcal{N}(0,\sigma_n^2)$
   if (awgn.ok) {
     check(hasMathGlyph(awgn.svg), 'A2-P4-Fix1: AWGN math visible in svg')
     check(textYValues(awgn.svg).length >= 3, 'A2-P4-Fix1: AWGN multiline prose baselines')
+  }
+
+  // --- A2-P5a: text typography (alignment + font size) ---
+  check(lineAlignOffset(80, 50, 'left') === 0, 'A2-P5a: lineAlignOffset left')
+  check(Math.abs(lineAlignOffset(80, 50, 'center') - 15) < 1e-6, 'A2-P5a: lineAlignOffset center')
+  check(lineAlignOffset(80, 50, 'right') === 30, 'A2-P5a: lineAlignOffset right')
+  check(blockDefaultTextAlign('plain') === 'center', 'A2-P5a: plain block default align center')
+  check(blockDefaultTextAlign('markdown') === 'left', 'A2-P5a: markdown block default align left')
+
+  function proseTextXs(svg: string): number[] {
+    return [...svg.matchAll(/<text[^>]*\sx="([^"]+)"/g)].map((match) => Number(match[1]))
+  }
+
+  const alignSource = 'Wide line\nN'
+  clearFormattedTextLayoutCache()
+  const plainLeft = await renderPlainDisplayText(alignSource, { em: 12, align: 'left', idPrefix: 'p5a-' })
+  const plainCenter = await renderPlainDisplayText(alignSource, { em: 12, align: 'center', idPrefix: 'p5a-' })
+  check(plainLeft.ok && plainCenter.ok, 'A2-P5a: plain multiline typesets')
+  if (plainLeft.ok && plainCenter.ok) {
+    const xsLeft = proseTextXs(plainLeft.svg)
+    const xsCenter = proseTextXs(plainCenter.svg)
+    check(xsLeft.length >= 2 && xsCenter.length >= 2, 'A2-P5a: plain two prose lines')
+    check(xsCenter[1]! > xsLeft[1]!, 'A2-P5a: plain center shifts narrow line')
+    check(plainLeft.em === 12 && plainCenter.align === 'center', 'A2-P5a: plain layout records align')
+  }
+
+  const sized = await renderFormattedText('Line', { em: 12, idPrefix: 'p5a-s-' })
+  const sizedUp = await renderFormattedText('Line', { em: 20, idPrefix: 'p5a-s-' })
+  check(sized.ok && sizedUp.ok && sizedUp.width > sized.width, 'A2-P5a: larger em widens layout')
+
+  clearFormattedTextLayoutCache()
+  const mdLeft = await renderFormattedText('**a**\n$b$', { em: 13, align: 'left', idPrefix: 'p5a-md-' })
+  const mdCenter = await renderFormattedText('**a**\n$b$', { em: 13, align: 'center', idPrefix: 'p5a-md-' })
+  check(mdLeft.ok && mdCenter.ok, 'A2-P5a: markdown mixed align typesets')
+  if (mdLeft.ok && mdCenter.ok) {
+    check(mdLeft.svg !== mdCenter.svg, 'A2-P5a: align changes formatted svg')
+    const cached = await renderFormattedText('**a**\n$b$', { em: 13, align: 'center', idPrefix: 'p5a-md-' })
+    check(cached.ok && mdCenter.ok && cached.svg === mdCenter.svg, 'A2-P5a: layout cache includes align')
+  }
+
+  const legacyTypoDoc = emptyDocument()
+  const legacyBlkId = createId('blk')
+  legacyTypoDoc.blocks.push({
+    id: legacyBlkId,
+    name: 'Cap',
+    x: 0,
+    y: 0,
+    width: 120,
+    height: 60,
+    displayText: 'Legacy\nplain',
+    textFormat: 'markdown',
+  })
+  const legacyBlk = legacyTypoDoc.blocks[0]!
+  check(blockDisplayTextAlign(legacyBlk) === 'left', 'A2-P5a: legacy markdown block stays left-default')
+  check(blockDisplayEm(legacyBlk) === 12, 'A2-P5a: legacy block font default 12')
+  const legacyRound = parseDocument(serialize(legacyTypoDoc))
+  const legacyLoaded = legacyRound.blocks.find((item) => item.id === legacyBlkId)!
+  check(!('textAlign' in legacyLoaded) && !('fontSize' in legacyLoaded), 'A2-P5a: legacy save/load omits typography fields')
+  check(blockDisplayTextAlign(legacyLoaded) === 'left', 'A2-P5a: legacy loaded markdown still left-default')
+
+  const typoDoc = emptyDocument()
+  typoDoc.blocks.push({
+    id: 'tb',
+    name: 'T',
+    x: 40,
+    y: 40,
+    width: 100,
+    height: 50,
+    displayText: 'Caption',
+    textFormat: 'markdown',
+  })
+  const typoSession = new EditSession(
+    () => typoDoc,
+    (next) => {
+      typoDoc.blocks = next.blocks
+      typoDoc.ports = next.ports
+      typoDoc.segments = next.segments
+      typoDoc.nets = next.nets
+      typoDoc.labels = next.labels
+    },
+  )
+  typoSession.execute((draft) => {
+    setBlockTypography(draft, 'tb', { fontSize: 16, textAlign: 'right' })
+  })
+  const typed = typoDoc.blocks.find((item) => item.id === 'tb')!
+  check(typed.fontSize === 16 && typed.textAlign === 'right', 'A2-P5a: block typography stored')
+  typoSession.execute((draft) => {
+    setBlockTypography(draft, 'tb', { textAlign: 'left' })
+  })
+  check(!typoDoc.blocks.find((item) => item.id === 'tb')!.textAlign, 'A2-P5a: canonical left removed from markdown block')
+  typoSession.execute((draft) => {
+    setBlockTypography(draft, 'tb', { textAlign: 'right' })
+  })
+  typoSession.undo()
+  check(!typoDoc.blocks.find((item) => item.id === 'tb')!.textAlign, 'A2-P5a: undo block align')
+  typoSession.execute((draft) => resetBlockTypography(draft, 'tb'))
+  check(!typoDoc.blocks.find((item) => item.id === 'tb')!.fontSize, 'A2-P5a: reset block typography')
+
+  const plainTypo = emptyDocument()
+  plainTypo.blocks.push({
+    id: 'tp',
+    name: 'P',
+    x: 0,
+    y: 0,
+    width: 80,
+    height: 40,
+    displayText: 'Left me',
+  })
+  setBlockTypography(plainTypo, 'tp', { textAlign: 'left' })
+  check(plainTypo.blocks[0]!.textAlign === 'left', 'A2-P5a: explicit left on plain block preserved')
+  setBlockTypography(plainTypo, 'tp', { textAlign: 'center' })
+  check(!plainTypo.blocks[0]!.textAlign, 'A2-P5a: center on plain block is canonical default')
+
+  const dupTypo = emptyDocument()
+  dupTypo.blocks.push({
+    id: 'db',
+    name: 'D',
+    x: 0,
+    y: 0,
+    width: 90,
+    height: 44,
+    displayText: 'Dup',
+    fontSize: 14,
+    textAlign: 'right',
+  })
+  const typoDupMap = duplicateBlocks(dupTypo, ['db'], DUPLICATE_OFFSET, 0)
+  const typoDupId = typoDupMap.get('db')
+  const dupBlk = dupTypo.blocks.find((item) => item.id === typoDupId)
+  check(dupBlk?.fontSize === 14 && dupBlk?.textAlign === 'right', 'A2-P5a: duplicate copies block typography')
+
+  const wired = netFixture()
+  const typoLabelId = wired.labels.find((label) => isNameLabel(label))?.id
+  check(Boolean(typoLabelId), 'A2-P5a: fixture label')
+  if (typoLabelId) {
+    setLabelDisplayText(wired, typoLabelId, 'Wire cap')
+    setLabelTextFormat(wired, typoLabelId, 'markdown')
+    setLabelTypography(wired, typoLabelId, { fontSize: 15, textAlign: 'center' })
+    const lbl = wired.labels.find((item) => item.id === typoLabelId)!
+    check(lbl.fontSize === 15 && lbl.textAlign === 'center', 'A2-P5a: label typography stored')
+    check(labelDisplayTextAlign(lbl) === 'center', 'A2-P5a: label align resolves')
+    const lblRound = parseDocument(serialize(wired)).labels.find((item) => item.id === typoLabelId)!
+    check(lblRound.fontSize === 15 && lblRound.textAlign === 'center', 'A2-P5a: label typography save/load')
+    resetLabelTypography(wired, typoLabelId)
+    const cleared = wired.labels.find((item) => item.id === typoLabelId)!
+    check(!cleared.fontSize && !cleared.textAlign, 'A2-P5a: reset label typography')
   }
 }
 

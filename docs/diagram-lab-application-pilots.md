@@ -67,7 +67,7 @@ Plain `BLOCK_TEMPLATES` remain available alongside symbols.
 | ID | Diagram | Intent |
 | --- | --- | --- |
 | **A1** | Synchronous 4-bit counter (clk, en, rst, Q) | **Formally closed** — [final](diagram-lab-pilot-a1-final-evaluation.md); findings [here](diagram-lab-pilot-a1-presentation-findings.md) |
-| **A2** | BPSK modulator + AWGN channel | **Execution kit ready** — [findings](diagram-lab-pilot-a2-findings.md); [prep](diagram-lab-pilot-a2-preparation.md); await user A2.1–A2.3 |
+| **A2** | BPSK modulator + AWGN / coherent RX | **Demonstrator accepted** — [bpsk demonstrator](diagram-lab-pilot-a2-bpsk-demonstrator.md); [P5 roadmap](diagram-lab-pilot-a2-p5-roadmap.md); A2.2–A2.3 library lifecycle optional |
 
 **Acceptance (practical):** Completing A1/A2 without dead-end edits; stubs/names/junctions usable; missing features logged as defects vs enhancements vs architecture limits.
 
@@ -182,4 +182,4 @@ Preserve S-series gates and D5d priorities.
 
 ## 10. Stop for review
 
-**A2-P1 → A2-P4 closed** — through [p4](diagram-lab-pilot-a2-p4-markdown-math.md) (Markdown+Math, wire + block; visual accept Nov 2026). **Next:** BPSK demonstrator (A2 sheet). Keep **D5d** independent.
+**A2-P1 → P5a closed**; **BPSK application demonstrator accepted** (Nov 2026). **Next freigabe:** [A2-P5b port direction](diagram-lab-pilot-a2-p5-roadmap.md#2-a2-p5b--port-direction-semantics). Keep **D5d** independent.

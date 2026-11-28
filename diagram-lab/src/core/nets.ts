@@ -1,4 +1,5 @@
 import { createId, type DiagramDocument, type Endpoint, type Junction, type Label, type Point, type Segment, type Waypoint } from './document'
+import type { TextAlign } from './textTypography'
 import { endpointPoint, orthogonalTo, pointOnEdge, portAnchor, refreshAll, refreshSegment, samePoint, simplifyOrthogonal } from './geometry'
 
 export const SNAP = 14
@@ -67,6 +68,14 @@ export function setLabelDisplayText(doc: DiagramDocument, labelId: string, value
       delete label.textFormat
       changed = true
     }
+    if (label.textAlign !== undefined) {
+      delete label.textAlign
+      changed = true
+    }
+    if (label.fontSize !== undefined) {
+      delete label.fontSize
+      changed = true
+    }
     return changed
   }
   if (before === trimmed) return false
@@ -111,6 +120,48 @@ export function setLabelDisplay(
     if (setLabelTextFormat(doc, labelId, fields.format)) changed = true
   }
   return changed
+}
+
+/** A2-P5a — wire label typography (custom display only). */
+export function setLabelTypography(
+  doc: DiagramDocument,
+  labelId: string,
+  fields: { fontSize?: number | null; textAlign?: TextAlign | null },
+): boolean {
+  const label = doc.labels.find((item) => item.id === labelId)
+  if (!label || !isNameLabel(label)) return false
+  const custom = typeof label.displayText === 'string' ? label.displayText.trim() : ''
+  if (custom.length === 0) return false
+  let changed = false
+  if (fields.fontSize !== undefined) {
+    const before = label.fontSize
+    if (fields.fontSize === null || !Number.isFinite(fields.fontSize) || fields.fontSize <= 0) {
+      if (before !== undefined) {
+        delete label.fontSize
+        changed = true
+      }
+    } else if (before !== fields.fontSize) {
+      label.fontSize = fields.fontSize
+      changed = true
+    }
+  }
+  if (fields.textAlign !== undefined) {
+    const before = label.textAlign
+    if (fields.textAlign === null || fields.textAlign === 'left') {
+      if (before !== undefined) {
+        delete label.textAlign
+        changed = true
+      }
+    } else if (before !== fields.textAlign) {
+      label.textAlign = fields.textAlign
+      changed = true
+    }
+  }
+  return changed
+}
+
+export function resetLabelTypography(doc: DiagramDocument, labelId: string): boolean {
+  return setLabelTypography(doc, labelId, { fontSize: null, textAlign: null })
 }
 
 export function netPortIds(doc: DiagramDocument, netId: string): string[] {

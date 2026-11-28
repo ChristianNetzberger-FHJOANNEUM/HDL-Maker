@@ -158,7 +158,7 @@ Aggregate pass **accepted** (27 Nov 2026) — user visual sign-off covering bloc
 
 ## 10. Handoff
 
-**Immediate:** complete **BPSK demonstrator** (A2 application pilot) using Markdown captions and wire labels.
+**Done:** [BPSK demonstrator accepted](diagram-lab-pilot-a2-bpsk-demonstrator.md). **P5a typography closed:** [p5a](diagram-lab-pilot-a2-p5a-text-typography.md). **Next:** [A2-P5b](diagram-lab-pilot-a2-p5-roadmap.md#2-a2-p5b--port-direction-semantics).
 
 **Roadmap (unchanged gates):** S5b → D5d (performance) → **D5e** (SVG export, publication vectors) → **D5f** (reusable Vue surface). P4 layout + `mathRender` is the bridge toward Webskriptum-style scientific figures.
 

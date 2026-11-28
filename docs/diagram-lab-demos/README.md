@@ -4,6 +4,7 @@ Curated screenshots for documentation and (optionally) publication figures. Stor
 
 | File | Source package | Description |
 | --- | --- | --- |
-| [a2-p4-markdown-math-demonstrator.png](a2-p4-markdown-math-demonstrator.png) | A2-P4 | Scientific block captions and multiline wire labels (Markdown + MathJax SVG) — user acceptance capture, Nov 2026 |
+| [a2-bpsk-coherent-receiver.png](a2-bpsk-coherent-receiver.png) | **A2 application pilot** | Full BPSK TX / AWGN / RX reference diagram — user capture, Nov 2026 |
+| [a2-p4-markdown-math-demonstrator.png](a2-p4-markdown-math-demonstrator.png) | A2-P4 acceptance | Earlier P4 close-out capture (inspector + wire label detail); see [P4 §11](../diagram-lab-pilot-a2-p4-markdown-math.md) |
 
-If the image file is not yet in git, copy your accepted screenshot into this folder under the name above so [`diagram-lab-pilot-a2-p4-markdown-math.md`](../diagram-lab-pilot-a2-p4-markdown-math.md) §11 can render it.
+See [`diagram-lab-pilot-a2-bpsk-demonstrator.md`](../diagram-lab-pilot-a2-bpsk-demonstrator.md) for the canonical system figure.

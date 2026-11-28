@@ -68,6 +68,13 @@ export type Block = {
    * Omitted ≡ plain. LaTeX applies only when `displayText` is set.
    */
   textFormat?: 'plain' | 'latex' | 'markdown'
+  /**
+   * Caption font size in diagram px (A2-P5a). Omitted ≡ 12 for layout.
+   * Independent of viewport zoom.
+   */
+  fontSize?: number
+  /** Line alignment inside the caption group (A2-P5a). Omitted uses format-specific default. */
+  textAlign?: 'left' | 'center' | 'right'
   /** Instance-level appearance overrides (P3). Does not alter the symbol library. */
   style?: BlockStyle
 }
@@ -279,6 +286,8 @@ export type Label = {
   textFormat?: 'plain' | 'latex' | 'markdown'
   /** Optional drawing size in CSS px. Omit for the stage default (~13px). */
   fontSize?: number
+  /** Horizontal alignment of the label text group at its anchor (A2-P5a). Omitted ≡ left. */
+  textAlign?: 'left' | 'center' | 'right'
   /**
    * When false, the label is not painted. Omitted or true keeps today’s appearance.
    * Net name and identity are unchanged (P1).

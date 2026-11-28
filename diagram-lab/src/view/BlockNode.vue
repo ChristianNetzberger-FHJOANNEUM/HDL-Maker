@@ -37,6 +37,7 @@ const props = defineProps<{
   displayMath?: MathRenderResult | null
   /** Runtime formatted SVG for Markdown (A2-P4). */
   displayFormatted?: FormattedTextResult | null
+  displayPlain?: FormattedTextResult | null
   /** P2: omit/true draws display text when set; false hides it. */
   showDisplayText?: boolean
   /** P3a: offset from block centre in diagram units; omit/0 = centred. */
@@ -271,8 +272,13 @@ function onKey(event: KeyboardEvent): void {
         />
         <span v-else class="block-display-line block-display-math-fallback">{{ displayText }}</span>
       </template>
-      <template v-else>
-        <span v-for="(line, index) in displayLines" :key="index" class="block-display-line">{{ line.length ? line : '\u00a0' }}</span>
+      <template v-else-if="displayFormat === 'plain'">
+        <div
+          v-if="displayPlain?.ok"
+          class="block-display-formatted"
+          v-html="displayPlain.svg"
+        />
+        <span v-else class="block-display-line block-display-math-fallback">{{ displayText }}</span>
       </template>
     </div>
     <svg v-if="drawnShapes" class="symbol-node" :viewBox="`0 0 ${width} ${height}`" :width="width" :height="height">

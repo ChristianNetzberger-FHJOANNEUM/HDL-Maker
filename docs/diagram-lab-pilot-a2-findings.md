@@ -1,6 +1,6 @@
 # Application Pilot A2 — Findings and execution kit
 
-**Status:** Execution kit prepared (27 Nov 2026) — **awaiting user manual runs** of A2.1–A2.3. No editor code changes.  
+**Status:** **A2.1 BPSK demonstrator accepted** (28 Nov 2026) — [close-out](diagram-lab-pilot-a2-bpsk-demonstrator.md). A2.2–A2.3 library lifecycle remain optional.  
 **Baseline:** A1 closed @ `730dfb6`. Prep accepted — [a2-preparation](diagram-lab-pilot-a2-preparation.md).  
 **Related:** [application pilots](diagram-lab-application-pilots.md), [D5d handoff](status-handoff-2026-11-26-d5d.md).
 
@@ -216,4 +216,4 @@ A2 execution kit + **A2-P1…P4 closed**. Library Manager, Symbol Designer, poly
 
 ## 9. Stop
 
-**A2-P1…P4 closed.** Next: **BPSK demonstrator** sheet; then roadmap S5b, D5d, D5e, D5f. Object Snap deferred.
+**A2-P1…P5a closed**; **BPSK demonstrator accepted.** Next: freigabe **[A2-P5b](diagram-lab-pilot-a2-p5-roadmap.md#2-a2-p5b--port-direction-semantics)**; parallel S5b, D5d, D5e, D5f. Object Snap deferred.

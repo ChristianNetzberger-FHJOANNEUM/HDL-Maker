@@ -24,6 +24,7 @@ import {
 } from './geometry'
 import { ensureNetByName, reassignComponents } from './nets'
 import { DEFAULT_SNAP_SPACING, normalizeSpacing } from './preferences'
+import { blockDefaultTextAlign, type TextAlign } from './textTypography'
 
 /** Fixed minimum block edge (P4b) — independent of snap/grid spacing. */
 export const MIN_BLOCK_SIZE = 20
@@ -318,6 +319,55 @@ export function blockTextFormat(block: Pick<DiagramDocument['blocks'][number], '
   return 'plain'
 }
 
+export function setBlockTypography(
+  doc: DiagramDocument,
+  blockId: string,
+  fields: { fontSize?: number | null; textAlign?: TextAlign | null },
+): boolean {
+  const block = doc.blocks.find((item) => item.id === blockId)
+  if (!block) return false
+  const hasText = typeof block.displayText === 'string' && block.displayText.trim().length > 0
+  if (!hasText) return false
+  let changed = false
+  if (fields.fontSize !== undefined) {
+    const before = block.fontSize
+    if (fields.fontSize === null || !Number.isFinite(fields.fontSize) || fields.fontSize <= 0) {
+      if (before !== undefined) {
+        delete block.fontSize
+        changed = true
+      }
+    } else if (before !== fields.fontSize) {
+      block.fontSize = fields.fontSize
+      changed = true
+    }
+  }
+  if (fields.textAlign !== undefined) {
+    if (fields.textAlign === null) {
+      if (block.textAlign !== undefined) {
+        delete block.textAlign
+        changed = true
+      }
+    } else {
+      const defaultAlign = blockDefaultTextAlign(blockTextFormat(block))
+      if (fields.textAlign === defaultAlign) {
+        if (block.textAlign !== undefined) {
+          delete block.textAlign
+          changed = true
+        }
+      } else if (block.textAlign !== fields.textAlign) {
+        block.textAlign = fields.textAlign
+        changed = true
+      }
+    }
+  }
+  if (changed) refreshAll(doc)
+  return changed
+}
+
+export function resetBlockTypography(doc: DiagramDocument, blockId: string): boolean {
+  return setBlockTypography(doc, blockId, { fontSize: null, textAlign: null })
+}
+
 export function setBlockTextFormat(doc: DiagramDocument, blockId: string, format: BlockTextFormat): void {
   const block = doc.blocks.find((item) => item.id === blockId)
   if (!block) return
@@ -332,7 +382,18 @@ export function setBlockFields(
   fields: Partial<
     Pick<
       DiagramDocument['blocks'][number],
-      'name' | 'x' | 'y' | 'width' | 'height' | 'showName' | 'showPortNames' | 'displayText' | 'showDisplayText' | 'textFormat'
+      | 'name'
+      | 'x'
+      | 'y'
+      | 'width'
+      | 'height'
+      | 'showName'
+      | 'showPortNames'
+      | 'displayText'
+      | 'showDisplayText'
+      | 'textFormat'
+      | 'fontSize'
+      | 'textAlign'
     >
   >,
 ): void {
@@ -359,11 +420,22 @@ export function setBlockFields(
     if (fields.displayText.length === 0) {
       delete block.displayText
       delete block.textFormat
+      delete block.fontSize
+      delete block.textAlign
     } else block.displayText = fields.displayText
   }
   if (fields.textFormat !== undefined) {
     if (fields.textFormat === 'plain') delete block.textFormat
     else block.textFormat = fields.textFormat
+  }
+  if (fields.fontSize !== undefined) {
+    if (fields.fontSize === null || !Number.isFinite(fields.fontSize) || fields.fontSize <= 0) delete block.fontSize
+    else block.fontSize = fields.fontSize
+  }
+  if (fields.textAlign !== undefined) {
+    const defaultAlign = blockDefaultTextAlign(blockTextFormat(block))
+    if (fields.textAlign === defaultAlign) delete block.textAlign
+    else block.textAlign = fields.textAlign
   }
   if (fields.showDisplayText !== undefined) {
     if (fields.showDisplayText) delete block.showDisplayText
@@ -671,6 +743,7 @@ export function pasteFragment(doc: DiagramDocument, fragment: Fragment, dx: numb
           ? { textFormat: 'markdown' as const }
           : {}),
       fontSize: label.fontSize,
+      ...(label.textAlign ? { textAlign: label.textAlign } : {}),
       visible: label.visible,
       anchor: { ...label.anchor, segmentId },
     })
@@ -800,6 +873,7 @@ function copySegmentLabels(doc: DiagramDocument, sourceSegmentId: string, nextSe
           ? { textFormat: 'markdown' as const }
           : {}),
       fontSize: label.fontSize,
+      ...(label.textAlign ? { textAlign: label.textAlign } : {}),
       visible: label.visible,
       anchor: { ...label.anchor, segmentId: nextSegmentId },
     })

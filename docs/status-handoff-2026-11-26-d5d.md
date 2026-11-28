@@ -58,7 +58,7 @@ Earlier same-day baseline (D5b–D5c): [status-handoff-2026-11-26.md](status-han
 | A1 presentation P5a | **Accepted** | `diagram-lab-pilot-a1-p5a-label-position.md` |
 | A1 presentation P5b | **Accepted** (Remove fix + user confirm) | `diagram-lab-pilot-a1-p5b-remove-label.md` |
 | **A1 final pilot evaluation** | **Formally closed** | `diagram-lab-pilot-a1-final-evaluation.md` |
-| A2 BPSK + AWGN (symbol library) | **A2-P1–P4 closed**; **BPSK demo sheet** next | `diagram-lab-pilot-a2-p4-markdown-math.md`, `diagram-lab-demos/` |
+| A2 BPSK + AWGN (symbol library) | **P1–P5a closed**; **BPSK demonstrator accepted**; **P5b** next | `diagram-lab-pilot-a2-p5a-text-typography.md`, `diagram-lab-pilot-a2-p5-roadmap.md` |
 | Vertex-handle / edge / vertex drag (“S5a.2”) | Discussed only — **not** an open work package | needs separate freigabe |
 | D5d.0 performance campaign | **Not released** — after S5a/S5b | prep + generator docs |
 
@@ -143,7 +143,7 @@ Lab: typically `http://localhost:5174/`.
 | 3 | **S5a** Port-originated stub drawing | **Double-click accepted** |
 | 3b | **S5a.1** Incremental wire drawing undo | **Accepted** |
 | 4 | **S5b** Stable free-endpoint drag | **Accepted** |
-| 5 | Manual application pilots A1→A2→B2→B3→B1 | **A1 / A2-P1…P4 closed**; **A2 BPSK demo** next; D5d independent… |
+| 5 | Manual application pilots A1→A2→B2→B3→B1 | **A1 closed**; **A2 demonstrator accepted**; **A2-P5a** spec ready; D5d independent… |
 | — | ADR geometry / style / animation; strategic vision | Documented only |
 | 6 | D5d.0 performance campaign (B–D as freigegeben) | Independent high priority |
 | 7 | D5d.1+ optimisations | Only after measurements |
@@ -166,4 +166,4 @@ Do **not** reopen S1/S2, D5c.7, edge/vertex-drag (“S5a.2”), or style work wi
 
 ## 9. One-line summary
 
-**S3/S5a/S5a.1/S5b accepted; A1 + A2-P1…P4 closed (P4 Markdown+Math visual accept, Fix1/Fix2); next A2 BPSK demonstrator; roadmap D5d→D5e→D5f; Object Snap deferred; S4 port drag TBD; no commit unless asked.**
+**S3/S5a/S5a.1/S5b accepted; A1 + A2-P1…P5a closed; A2 BPSK demonstrator accepted; next A2-P5b freigabe; D5d→D5e→D5f; Object Snap deferred; no commit unless asked.**
