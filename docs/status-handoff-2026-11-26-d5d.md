@@ -166,4 +166,4 @@ Do **not** reopen S1/S2, D5c.7, edge/vertex-drag (“S5a.2”), or style work wi
 
 ## 9. One-line summary
 
-**Checkpoint `b5297fc` (Unique Net Naming, P5c, DEL10). S5b.2 **implemented** in working tree — [S1–S12](d5d0a-s5b2-endpoint-snap-connect.md) manual pending; P5d after S5b.2.**
+**S5b.2 closed (12/12)** — `ec66672` + acceptance docs — [spec](d5d0a-s5b2-endpoint-snap-connect.md). **P5d Generic Circle** — [preparation](diagram-lab-pilot-a2-p5d-generic-circle.md); implement after architecture approval. Checkpoint chain: `b5297fc` → `ec66672`.**

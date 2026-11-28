@@ -216,4 +216,4 @@ A2 execution kit + **A2-P1…P4 closed**. Library Manager, Symbol Designer, poly
 
 ## 9. Stop
 
-**P5c 18/18 accepted**; **P5c-DEL 9/10** — [DEL10](diagram-lab-del10-net-split-investigation.md); **S5b.2/P5d/checkpoint** gated on DEL10 fix. **BPSK demonstrator accepted.**
+**P5c 18/18**, **P5c-DEL 10/10**, **DEL10 R1–R7**, **S5b.2 12/12** accepted. **P5d** preparation approved — [p5d](diagram-lab-pilot-a2-p5d-generic-circle.md); code gated on architecture sign-off. **BPSK demonstrator** accepted; refresh after P5d.

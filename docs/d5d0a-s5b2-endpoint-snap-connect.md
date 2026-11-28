@@ -1,6 +1,6 @@
 # S5b.2 — Free endpoint snap & connect (operation A)
 
-**Status:** **Implemented** (28 Nov 2026) — manual **S1–S12: 0/12** pending. Checkpoint `b5297fc` (Unique Net Naming + P5c + DEL10). **Not committed** until user acceptance.  
+**Status:** **Closed — accepted** (28 Nov 2026). Manual **S1–S12: 12/12** passed. Implementation commit `ec66672`; acceptance close-out after verification. Checkpoint `b5297fc` (Unique Net Naming + P5c + DEL10).  
 **Investigation:** [diagram-lab-s5b-endpoint-snap-connect-investigation.md](diagram-lab-s5b-endpoint-snap-connect-investigation.md) (**accepted**).  
 **Prerequisite:** [S5b.1 free-end move](d5d0a-s5b-stub-endpoint-drag.md) (shipped; re-verify in S5b.2 acceptance).
 
@@ -106,7 +106,7 @@ npm run check
 
 ---
 
-## 6. Manual acceptance (browser) — **0/12** until signed off
+## 6. Manual acceptance (browser) — **12/12 passed** (28 Nov 2026)
 
 | ID | Case | Expected |
 | --- | --- | --- |
@@ -135,7 +135,7 @@ Re-exercise **S5b.1** move stability (zoom, snap on/off) during S5b.2 pass.
 | P5c-DEL | DEL10 fix landed — **manual 10/10 + R1–R7** |
 | Git checkpoint | User-requested after above (optional before S5b.2) |
 
-**P5d** remains **locked** until **S5b.2 manual 12/12**.
+**P5d** — **preparation approved** after S5b.2 **12/12** — [P5d prep](diagram-lab-pilot-a2-p5d-generic-circle.md) (documentation only until architecture sign-off).
 
 ---
 
@@ -152,4 +152,15 @@ Re-exercise **S5b.1** move stability (zoom, snap on/off) during S5b.2 pass.
 
 ## 9. One-line summary
 
-**Wire Tool–grade port snap on `freeEndDrag`, compose `placeFreeEnd` + `reconnectEnd`, conservative cross-net refuse (M1), three-state feedback — implement only after P5c/DEL sign-off.**
+**Wire Tool–grade port snap on `freeEndDrag`, compose `placeFreeEnd` + `reconnectEnd`, conservative cross-net refuse (M1), three-state feedback — shipped and accepted (12/12).**
+
+---
+
+## 10. Close-out record
+
+| Item | Result |
+| --- | --- |
+| Automated | `npm run selfcheck` + `npm run check` green at acceptance |
+| Manual | S1–S12 all passed (straight/reverse/multi-bend, snap off, off-grid, reject, Esc, undo, identity, labels/arrows, save/load) |
+| Implementation | `ec66672` — `probeConnectFreeEnd` / `connectFreeEnd`, `DiagramStage` free-end snap UI |
+| Next | **A2-P5d** — [preparation doc](diagram-lab-pilot-a2-p5d-generic-circle.md); **no implementation** until architecture approval |

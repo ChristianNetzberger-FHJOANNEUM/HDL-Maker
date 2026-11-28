@@ -1,8 +1,8 @@
 # A2-P5 roadmap — BPSK follow-on packages (specification)
 
-**Status:** **P5a–P5b + Unique Net Naming closed**. **P5c** — canonical semantics implemented; **manual 14/14 + DEL pending** — [p5c](diagram-lab-pilot-a2-p5c-wire-arrowheads.md). **S5b.2** — [freigabe](d5d0a-s5b2-endpoint-snap-connect.md), implement after P5c/DEL. **P5d:** gated after **S5b.2** acceptance.  
+**Status:** **P5a–P5b + Unique Net Naming + P5c + P5c-DEL + DEL10 + S5b.2 closed**. **P5d** — [preparation](diagram-lab-pilot-a2-p5d-generic-circle.md) approved; **implementation blocked** until architecture sign-off on that doc.  
 **Trigger:** [BPSK demonstrator accepted](diagram-lab-pilot-a2-bpsk-demonstrator.md).  
-**Recommended order:** **P5a → P5b → Unique Net Naming → P5c → (checkpoint) → S5b.2 → P5d** (28 Nov 2026 user).
+**Recommended order:** **P5a → P5b → Unique Net Naming → P5c → (checkpoint) → S5b.2 → P5d** (28 Nov 2026 user). **Current slice:** P5d prep → implement after approval.
 
 ---
 
@@ -159,4 +159,4 @@ Inspected 28 Nov 2026 — implementers must **extend** these surfaces, not dupli
 - No Symbol Designer, Library Manager, or full CommonMark in P5a–P5d.  
 - No commit/push from this roadmap doc.
 
-**Next implementation slice:** **S5b.2** after **P5c + P5c-DEL** manual acceptance; then **A2-P5d** (generic circle) after **S5b.2 12/12**.
+**Next implementation slice:** **A2-P5d** (generic circle) per [p5d prep](diagram-lab-pilot-a2-p5d-generic-circle.md) after architecture approval; then BPSK demonstrator refresh.

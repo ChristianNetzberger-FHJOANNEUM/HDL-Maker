@@ -308,9 +308,9 @@ Distinguish: **selfcheck** = core semantics; **manual** = highlight, tolerance f
 | P5c-DEL | **9/10** — **DEL10** — [investigation](diagram-lab-del10-net-split-investigation.md) |
 | S5b.2 code | **Blocked** until DEL10 fix + **DEL 10/10** |
 | Git checkpoint | After DEL 10/10 (user request) |
-| P5d | **Blocked** until S5b.2 **12/12** |
+| P5d | **Preparation approved** — [p5d prep](diagram-lab-pilot-a2-p5d-generic-circle.md); implementation after architecture sign-off |
 
-**Next:** Complete P5c/DEL manual acceptance → implement S5b.2 per spec → manual S1–S12 → then P5d.
+**Next:** S5b.2 **12/12 closed** — P5d architecture review → implement generic circle per prep doc (no silent changes to Adder/Multiplier/Oscillator).
 
 ---
 
