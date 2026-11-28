@@ -12,8 +12,11 @@ export type FacePin = {
   y: number
   missing?: boolean
   free?: boolean
-  /** Guided pin (A2-P1) — name layout like a free pin. */
+  /** Guided pin (A2-P1) — radial pins use interior label anchor when set. */
   guided?: boolean
+  /** Presentation-only label position (block/symbol local); horizontal text anchor is always middle. */
+  labelX?: number
+  labelY?: number
 }
 
 export type FaceLead = { x1: number; y1: number; x2: number; y2: number }
@@ -101,6 +104,9 @@ const closedPaintStyle = computed(() => {
 })
 
 function nameAt(pin: FacePin): { x: number; y: number; anchor: 'start' | 'middle' | 'end' } {
+  if (pin.guided && typeof pin.labelX === 'number' && typeof pin.labelY === 'number') {
+    return { x: pin.labelX, y: pin.labelY + 3, anchor: 'middle' }
+  }
   if (pin.free || pin.guided) return { x: pin.x, y: pin.y - 8, anchor: 'middle' }
   if (props.flushBody) {
     if (pin.side === 'left') return { x: pin.x + 8, y: pin.y + 3, anchor: 'start' }

@@ -216,4 +216,4 @@ A2 execution kit + **A2-P1…P4 closed**. Library Manager, Symbol Designer, poly
 
 ## 9. Stop
 
-**P5c 18/18**, **P5c-DEL 10/10**, **DEL10 R1–R7**, **S5b.2 12/12** accepted. **P5d** preparation approved — [p5d](diagram-lab-pilot-a2-p5d-generic-circle.md); code gated on architecture sign-off. **BPSK demonstrator** accepted; refresh after P5d.
+**P5c 18/18**, **P5c-DEL 10/10**, **DEL10 R1–R7**, **S5b.2 12/12**, **P5d 14/14**, **P5d-F3 9/9** accepted (28 Nov 2026) — [p5d](diagram-lab-pilot-a2-p5d-generic-circle.md), [fix3](diagram-lab-p5d-fix3-port-ownership-investigation.md). **[P5e](diagram-lab-multi-object-property-editing.md)** architecture approved; impl gated. **Next:** BPSK demonstrator 2 (incl. workflow efficiency), then D5d.

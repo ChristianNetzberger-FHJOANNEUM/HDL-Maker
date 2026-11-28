@@ -12,7 +12,7 @@ const props = defineProps<{
   name: string
   width: number
   height: number
-  ports: Array<Port & { top?: number; left?: number; missing?: boolean; guided?: boolean }>
+  ports: Array<Port & { top?: number; left?: number; labelLeft?: number; labelTop?: number; missing?: boolean; guided?: boolean }>
   /** Derived radial connection leads (A2-P1). */
   leads?: FaceLead[]
   shapes: SymbolShape[] | null
@@ -162,6 +162,8 @@ const symbolPins = computed<FacePin[]>(() =>
     missing: port.missing,
     free: typeof port.x === 'number' && typeof port.y === 'number',
     guided: Boolean(port.guided),
+    labelX: port.labelLeft,
+    labelY: port.labelTop,
   })),
 )
 

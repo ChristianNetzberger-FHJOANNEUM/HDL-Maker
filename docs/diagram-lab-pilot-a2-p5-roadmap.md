@@ -1,8 +1,8 @@
 # A2-P5 roadmap — BPSK follow-on packages (specification)
 
-**Status:** **P5a–P5b + Unique Net Naming + P5c + P5c-DEL + DEL10 + S5b.2 closed**. **P5d** — [preparation](diagram-lab-pilot-a2-p5d-generic-circle.md) approved; **implementation blocked** until architecture sign-off on that doc.  
+**Status:** **P5d accepted 14/14** (28 Nov 2026). **[P5e architecture approved](diagram-lab-multi-object-property-editing.md)** (impl **locked**). **Current:** BPSK demonstrator 2 → **D5d** → P5e impl after freigabe.  
 **Trigger:** [BPSK demonstrator accepted](diagram-lab-pilot-a2-bpsk-demonstrator.md).  
-**Recommended order:** **P5a → P5b → Unique Net Naming → P5c → (checkpoint) → S5b.2 → P5d** (28 Nov 2026 user). **Current slice:** P5d prep → implement after approval.
+**Recommended order:** **P5a → P5b → Unique Net Naming → P5c → S5b.2 → P5d** — **P5d closed**.
 
 ---
 
@@ -101,6 +101,8 @@ direction?: 'unspecified' | 'in' | 'out' | 'inout'  // default omitted ≡ unspe
 
 ## 4. A2-P5d — Generic circle block
 
+**Status:** **Accepted** 28 Nov 2026 — [spec / close-out](diagram-lab-pilot-a2-p5d-generic-circle.md) (14/14, F3 9/9).
+
 **Goal:** reusable **circle** primitive with ports on circumference — Adder/Multiplier pattern generalised.
 
 **Reuse (do not reimplement):**
@@ -130,7 +132,7 @@ Inspected 28 Nov 2026 — implementers must **extend** these surfaces, not dupli
 | **Typography** | `Label.fontSize?` (wire labels → `mathRender` / `renderFormattedText` `em`); block captions use fixed `BLOCK_DISPLAY_MATH_EM = 12` in `DiagramStage.vue`; `displayTextOffset` on `Block` | No `textAlign`; no block-level `fontSize`; layout always left-aligned in `formattedTextRender.ts` |
 | **Port record** | `Port` in `document.ts`: `side`, `t`, `placed`, `x/y`, `guideU`, `interfacePortId` (hierarchy binding) | No `direction`, no bus width |
 | **Symbol port record** | `SymbolPort`: `guideId`, `u`, `lead`, `leadGuideId` | No `direction`; bus width N/A |
-| **Ellipse geometry** | `SymbolGuide`, `pointOnEllipseGuide`, `radialLeadSegment`, catalog adder/multiplier | No generic circle **template**; `BLOCK_TEMPLATES` are rects only |
+| **Ellipse geometry** | `SymbolGuide`, `pointOnEllipseGuide`, `radialLeadSegment`, catalog adder/multiplier | **P5d:** `sym_generic_circle` in General library; `resizeAspect` on definition |
 | **Wire arrows** | ADR documents `Segment.style?` markers; renderer uses plain `.wire` polylines | No persisted markers; no auto-flow algorithm |
 | **Formatted text service** | `formattedTextParse` + `formattedTextRender` + shared `mathRender` | P5a hooks layout; optional later P5 “extract” for `SymbolLabel` |
 
@@ -139,6 +141,14 @@ Inspected 28 Nov 2026 — implementers must **extend** these surfaces, not dupli
 - Do not use `interfacePortId` for signal direction.  
 - Do not tie arrow semantics to VHDL net direction without a future HDL-specific layer.  
 - Do not add a second ellipse math or a parallel MathJax path for alignment scaling.
+
+---
+
+## 5b. A2-P5e — Multi-object property editing
+
+**Architecture:** [diagram-lab-multi-object-property-editing.md](diagram-lab-multi-object-property-editing.md) — **approved** 28 Nov 2026 (placeholder swatch, indeterminate checkboxes, typography gate). **Implementation not released.**
+
+**Order:** BPSK 2 → D5d (incl. `setBlockStyle` / `refreshAll` hypothesis) → P5e implementation after explicit freigabe. **Not** D5e export.
 
 ---
 
@@ -159,4 +169,4 @@ Inspected 28 Nov 2026 — implementers must **extend** these surfaces, not dupli
 - No Symbol Designer, Library Manager, or full CommonMark in P5a–P5d.  
 - No commit/push from this roadmap doc.
 
-**Next implementation slice:** **A2-P5d** (generic circle) per [p5d prep](diagram-lab-pilot-a2-p5d-generic-circle.md) after architecture approval; then BPSK demonstrator refresh.
+**Next:** **BPSK demonstrator 2** → **D5d** → **P5e** (after freigabe).

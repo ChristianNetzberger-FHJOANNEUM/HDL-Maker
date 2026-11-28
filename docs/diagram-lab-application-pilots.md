@@ -182,4 +182,4 @@ Preserve S-series gates and D5d priorities.
 
 ## 10. Stop for review
 
-**A2-P1 → P5b closed**; **P5c arrowheads implemented** (accept pending); BPSK demonstrator accepted. **Next:** P5c manual acceptance → P5d. Keep **D5d** independent.
+**A2-P1 → P5d closed** (P5d 14/14, F3 9/9, 28 Nov 2026); BPSK demonstrator 1 accepted. **Next:** BPSK demonstrator 2 → D5d. **P5e** architecture approved; impl gated.

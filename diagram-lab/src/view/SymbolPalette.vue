@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { SymbolDefinition } from '../core/document'
-import { guidedPinPoint, isFreePin, isGuidedPin, pinPoint, radialLeadSegment } from '../core/geometry'
+import { guidedPinPoint, guidedPortLabelPlacement, isFreePin, isGuidedPin, pinPoint, radialLeadSegment } from '../core/geometry'
 import type { LibraryDiagnostic, SymbolLibrary } from '../core/library'
 import SymbolFace, { type FaceLead, type FacePin } from './SymbolFace.vue'
 
@@ -45,7 +45,18 @@ function pinsOf(symbol: SymbolDefinition): FacePin[] {
     const at = guided
       ? guidedPinPoint(symbol, pin, symbol.width, symbol.height) ?? pinPoint(symbol.width, symbol.height, pin)
       : pinPoint(symbol.width, symbol.height, pin)
-    return { id: pin.id, name: pin.name, side: pin.side, x: at.x, y: at.y, free: isFreePin(pin), guided }
+    const label = guided ? guidedPortLabelPlacement(symbol, pin, symbol.width, symbol.height, pin.name, pin.u) : null
+    return {
+      id: pin.id,
+      name: pin.name,
+      side: pin.side,
+      x: at.x,
+      y: at.y,
+      free: isFreePin(pin),
+      guided,
+      labelX: label?.x,
+      labelY: label?.y,
+    }
   })
 }
 

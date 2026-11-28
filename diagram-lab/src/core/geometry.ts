@@ -42,6 +42,22 @@ export function isFreePin(pin: { x?: number; y?: number }): boolean {
 }
 
 /** True when the pin uses a symbol guide (A2-P1). */
+/** Default normalised `u` for a guided port placed on a box side (ellipse guide convention). */
+export function defaultGuideUForSide(side: PortSide): number {
+  if (side === 'right') return 0
+  if (side === 'bottom') return 0.25
+  if (side === 'left') return 0.5
+  return 0.75
+}
+
+/** Concentric `guide_ports` / `guide_body` ellipse pair used by catalog circular symbols. */
+export function symbolGuidedPortRing(symbol: Pick<SymbolDefinition, 'guides'>): { outerId: string; innerId: string } | null {
+  const outer = symbol.guides?.find((guide) => guide.kind === 'ellipse' && guide.id === 'guide_ports')
+  const inner = symbol.guides?.find((guide) => guide.kind === 'ellipse' && guide.id === 'guide_body')
+  if (!outer || !inner) return null
+  return { outerId: 'guide_ports', innerId: 'guide_body' }
+}
+
 export function isGuidedPin(pin: Pick<SymbolPort, 'guideId' | 'u'>): boolean {
   return typeof pin.guideId === 'string' && pin.guideId.length > 0 && typeof pin.u === 'number'
 }
@@ -99,6 +115,93 @@ export function continuousGuideU(previous: number, next: number): number {
   return candidate
 }
 
+/** Pick a guide parameter near `preferredU` that does not collide with existing `u` values. */
+export function pickAvailableGuideUValues(used: number[], preferredU: number, minSeparation = 0.02): number {
+  const u0 = clampGuideU(preferredU)
+  const collides = (candidate: number) =>
+    used.some((existing) => {
+      const delta = Math.abs(existing - candidate)
+      return Math.min(delta, 1 - delta) < minSeparation
+    })
+  if (!collides(u0)) return u0
+  for (let step = 1; step <= 180; step += 1) {
+    const forward = clampGuideU(u0 + step / 180)
+    if (!collides(forward)) return forward
+    const backward = clampGuideU(u0 - step / 180)
+    if (!collides(backward)) return backward
+  }
+  return u0
+}
+
+/** Pick a guide parameter near `preferredU` that does not collide with existing guided pins (P5d-Fix1). */
+export function pickAvailableGuideU(
+  ports: Array<Pick<SymbolPort, 'u' | 'guideId'>>,
+  preferredU: number,
+  minSeparation = 0.02,
+): number {
+  const used = ports.filter((port) => typeof port.u === 'number').map((port) => port.u!)
+  return pickAvailableGuideUValues(used, preferredU, minSeparation)
+}
+
+export function symbolUsesInstancePortPolicy(symbol: Pick<SymbolDefinition, 'portPolicy'> | undefined): boolean {
+  return symbol?.portPolicy === 'instance'
+}
+
+export function isInstanceOwnedGuidedPort(
+  port: Pick<Port, 'symbolPortId' | 'placed' | 'guideU'>,
+  symbol: Pick<SymbolDefinition, 'portPolicy' | 'guides'> | undefined,
+): boolean {
+  if (port.placed || port.symbolPortId) return false
+  if (!symbol || !symbolUsesInstancePortPolicy(symbol)) return false
+  return typeof port.guideU === 'number' && Boolean(symbolGuidedPortRing(symbol))
+}
+
+/** Ephemeral radial pin for geometry on instance-owned guided ports (P5d-Fix3). */
+export function syntheticRadialGuidedPin(symbol: SymbolDefinition, u: number): SymbolPort {
+  const ring = symbolGuidedPortRing(symbol)!
+  return {
+    id: '_instance',
+    name: '',
+    side: 'left',
+    t: 0.5,
+    guideId: ring.outerId,
+    leadGuideId: ring.innerId,
+    lead: 'radial',
+    u,
+  }
+}
+
+export function resolveGuidedPortModel(
+  symbol: SymbolDefinition | undefined,
+  port: Port,
+  symbolPort: SymbolPort | undefined,
+): { pin: SymbolPort; u: number } | null {
+  if (!symbol || port.placed) return null
+  if (symbolPort && isGuidedPin(symbolPort)) {
+    return { pin: symbolPort, u: port.guideU ?? symbolPort.u ?? 0 }
+  }
+  if (isInstanceOwnedGuidedPort(port, symbol)) {
+    return { pin: syntheticRadialGuidedPin(symbol, port.guideU!), u: port.guideU! }
+  }
+  return null
+}
+
+/** Effective guide `u` values already used on one block instance (definition + instance-owned). */
+export function blockGuideUValues(doc: DiagramDocument, blockId: string, symbol: SymbolDefinition): number[] {
+  const used: number[] = []
+  for (const port of doc.ports.filter((item) => item.blockId === blockId)) {
+    if (typeof port.guideU === 'number') {
+      used.push(port.guideU)
+      continue
+    }
+    if (port.symbolPortId) {
+      const pin = symbol.ports.find((item) => item.id === port.symbolPortId)
+      if (pin && typeof pin.u === 'number') used.push(pin.u)
+    }
+  }
+  return used
+}
+
 export function findSymbolGuide(symbol: SymbolDefinition, guideId: string | undefined): SymbolGuide | undefined {
   if (!guideId || !symbol.guides) return undefined
   return symbol.guides.find((guide) => guide.id === guideId)
@@ -145,6 +248,50 @@ export function radialLeadSegment(
   const a = pointOnEllipseGuide(outer, u)
   const b = pointOnEllipseGuide(inner, u)
   return { x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+}
+
+/** Clearance from artwork contour toward block centre (P5d-Fix2, presentation only). */
+const GUIDED_PORT_LABEL_CLEARANCE = 8
+const GUIDED_PORT_LABEL_PER_CHAR = 2.5
+const GUIDED_PORT_LABEL_NAME_CAP = 28
+
+/**
+ * Interior port name anchor for radial guided pins — inset from inner lead endpoint toward guide centre.
+ * Same parametric `u` as `guidedPinPoint`; scales with instance size and name length (no persistence).
+ */
+export function guidedPortLabelPlacement(
+  symbol: SymbolDefinition,
+  pin: SymbolPort,
+  instanceWidth: number,
+  instanceHeight: number,
+  portName: string,
+  uOverride?: number,
+): Point | null {
+  if (pin.lead !== 'radial' || !pin.leadGuideId) return null
+  const segment = radialLeadSegment(symbol, pin, instanceWidth, instanceHeight, uOverride)
+  if (!segment) return null
+  const innerDef = findSymbolGuide(symbol, pin.leadGuideId)
+  if (!innerDef || innerDef.kind !== 'ellipse') return null
+  const sx = symbol.width > 0 ? instanceWidth / symbol.width : 1
+  const sy = symbol.height > 0 ? instanceHeight / symbol.height : 1
+  const centerX = innerDef.cx * sx
+  const centerY = innerDef.cy * sy
+  const ix = segment.x2
+  const iy = segment.y2
+  let ux = centerX - ix
+  let uy = centerY - iy
+  const inward = Math.hypot(ux, uy)
+  if (inward > 1e-9) {
+    ux /= inward
+    uy /= inward
+  } else {
+    ux = 0
+    uy = -1
+  }
+  const trimmed = portName.trim()
+  const extra = Math.min(trimmed.length * GUIDED_PORT_LABEL_PER_CHAR, GUIDED_PORT_LABEL_NAME_CAP)
+  const d = GUIDED_PORT_LABEL_CLEARANCE + extra
+  return { x: ix + ux * d, y: iy + uy * d }
 }
 
 /** A free pin uses fractions of the symbol box. A side pin uses `t` along that side. Guided pins need `guidedPinPoint`. */
@@ -198,11 +345,11 @@ export function portAnchor(
     const local = pinLocal(block.width, block.height, port.side, port.t ?? 0.5)
     return { x: origin.x + local.x, y: origin.y + local.y }
   }
-  const symbol =
-    port.symbolPortId && block.symbolId ? doc.symbols?.find((item) => item.id === block.symbolId) : undefined
+  const symbol = block.symbolId ? doc.symbols?.find((item) => item.id === block.symbolId) : undefined
   const symbolPort = port.symbolPortId ? symbol?.ports.find((item) => item.id === port.symbolPortId) : undefined
-  if (symbol && symbolPort && isGuidedPin(symbolPort)) {
-    const local = guidedPinPoint(symbol, symbolPort, block.width, block.height, port.guideU ?? symbolPort.u)
+  const guided = symbol ? resolveGuidedPortModel(symbol, port, symbolPort) : null
+  if (symbol && guided) {
+    const local = guidedPinPoint(symbol, guided.pin, block.width, block.height, guided.u)
     if (local) return { x: origin.x + local.x, y: origin.y + local.y }
   }
   if (symbolPort) {

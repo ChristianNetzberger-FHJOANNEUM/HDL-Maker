@@ -1,8 +1,7 @@
 import { imageAssetIds, storeAsset, type AssetDraft } from './assets'
 import { symbolFingerprint } from './compare'
 import { createId, type DiagramDocument, type Point, type SymbolDefinition, type SymbolPort, type SymbolShape } from './document'
-import { portIsWired } from './edit'
-import { refreshAll } from './geometry'
+import { defaultGuideUForSide, refreshAll, symbolGuidedPortRing } from './geometry'
 import { setSymbolPortDirection as applySymbolPortDirection, type PortDirection } from './portDirection'
 
 export type SymbolDiagnostic = {
@@ -51,7 +50,11 @@ export function releaseUnboundSymbolPorts(doc: DiagramDocument, blockId: string)
   if (!block?.componentId) return
   doc.ports = doc.ports.filter((port) => {
     if (port.blockId !== blockId || !port.symbolPortId || port.interfacePortId) return true
-    return portIsWired(doc, port.id)
+    return doc.segments.some(
+      (segment) =>
+        (segment.start.kind === 'port' && segment.start.portId === port.id) ||
+        (segment.end.kind === 'port' && segment.end.portId === port.id),
+    )
   })
 }
 
@@ -90,7 +93,10 @@ export function setComponent(doc: DiagramDocument, blockId: string, componentId:
   else delete block.componentId
 }
 
-/** Copy the definition's size and pin sides onto every instance. Pin ids and wires stay. */
+/**
+ * Copy the definition's size and pin sides onto every instance. Pin ids and wires stay.
+ * Instance-owned guided ports (`portPolicy: 'instance'`, no `symbolPortId`, `guideU` set) are never removed here.
+ */
 export function applySymbol(doc: DiagramDocument, symbolId: string): void {
   const symbol = doc.symbols.find((item) => item.id === symbolId)
   if (!symbol) return
@@ -270,14 +276,26 @@ export function addSymbolPort(doc: DiagramDocument, symbolId: string, port: Omit
   const symbol = doc.symbols.find((item) => item.id === symbolId)
   if (!symbol) return null
   const id = port.id ?? createId('pin')
-  symbol.ports.push({
+  const isFree = typeof port.x === 'number' && typeof port.y === 'number'
+  const ring = symbolGuidedPortRing(symbol)
+  const useGuided = Boolean((port.guideId || (ring && !isFree)) && ring)
+  const next: SymbolPort = {
     id,
     name: port.name,
     side: port.side,
     t: port.t,
-    ...(typeof port.x === 'number' && typeof port.y === 'number' ? { x: port.x, y: port.y } : {}),
     ...(port.direction ? { direction: port.direction } : {}),
-  })
+  }
+  if (isFree) {
+    next.x = port.x
+    next.y = port.y
+  } else if (useGuided && ring) {
+    next.guideId = port.guideId ?? ring.outerId
+    next.lead = port.lead ?? 'radial'
+    next.leadGuideId = port.leadGuideId ?? ring.innerId
+    next.u = typeof port.u === 'number' ? port.u : defaultGuideUForSide(port.side)
+  }
+  symbol.ports.push(next)
   applySymbol(doc, symbolId)
   return id
 }

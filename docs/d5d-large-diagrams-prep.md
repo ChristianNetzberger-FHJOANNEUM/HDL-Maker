@@ -25,6 +25,18 @@ Same four rules as the consolidation baseline:
 3. Sheet net-name identity (D5c.5).  
 4. Toolbar = chrome, not viewport content.
 
+### 2.1 Editor mutator hypotheses (D5d measurement)
+
+Recorded from [P5e architecture approval](diagram-lab-multi-object-property-editing.md) (28 Nov 2026). **Hypotheses only** — validate during D5d.0-D; **no** product optimisation before baseline.
+
+| Id | Hypothesis | How to exercise (future harness) |
+| --- | --- | --- |
+| **D5d-H-P5e-1** | Each `setBlockStyle` call runs `refreshAll` → full segment re-route | Node: N sequential `setBlockStyle` on a 500-block synthetic sheet; count `refreshAll` invocations or time router with/without patch. |
+| **D5d-H-P5e-2** | Batch colour on 500 blocks ⇒ **500** router passes today; target **0** (style-only) or **1** (batch) after verified dependency cut | Same sheet; one `execute` loop vs future batch helper; compare wall time and segment point churn. |
+| **D5d-H-P5e-3** | Style-only edits do not require net geometry updates | Compare segment `points` fingerprints before/after uniform fill on selection with no block move/resize. |
+
+P5e implementation must **not** ship refresh skipping until **D5d-H-P5e-3** (or equivalent) is measured and signed off.
+
 Additional constraints for benchmark infrastructure:
 
 - The generic diagram editor must not know whether a document came from HDL Designer, a synthetic generator, or another app.  

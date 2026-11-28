@@ -5,6 +5,9 @@ import {
   continuousGuideU,
   fitSymbolShapes,
   guidedPinPoint,
+  guidedPortLabelPlacement,
+  resolveGuidedPortModel,
+  syntheticRadialGuidedPin,
   isBlockAttachedStub,
   isGuidedPin,
   isPortAttachedStub,
@@ -70,6 +73,8 @@ import {
   captureFragment,
   pasteFragment,
   resizeBox,
+  resizeBoxUniform,
+  symbolResizePreservesAspect,
   blockTextFormat,
   setBlockFields,
   setBlockTypography,
@@ -5894,6 +5899,285 @@ function isPortFreeLike(segment: { start: { kind: string }; end: { kind: string 
   const again = parseDocument(serialize(round))
   const againSym = again.symbols.find((item) => item.id === 'sym_multiplier')!
   check(!againSym.guides && againSym.revision === 1, 'A2-P1: stale embedded body survives save/load without catalog pull')
+}
+
+{
+  // --- A2-P5d: generic circle ---
+  const general = builtinLibraries().find((library) => library.id === 'lib_general')!
+  const signal = builtinLibraries().find((library) => library.id === 'lib_signal')!
+  const circleDef = general.symbols.find((item) => item.id === 'sym_generic_circle')!
+  const addDef = signal.symbols.find((item) => item.id === 'sym_adder')!
+  const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps
+  const outer = circleDef.guides?.find((item) => item.id === 'guide_ports')
+
+  check(circleDef.portPolicy === 'instance', 'P5d-R1: sym_generic_circle portPolicy instance')
+  check(circleDef.resizeAspect === 'preserve' && symbolResizePreservesAspect(circleDef), 'P5d-R1: sym_generic_circle + preserve aspect')
+  check(
+    Boolean(outer && outer.rx === outer.ry && outer.rx === 60),
+    'P5d-R1: guide_ports is a true circle',
+  )
+  check(
+    circleDef.ports.length === 2 &&
+      circleDef.ports.every((port) => isGuidedPin(port) && port.lead === 'radial'),
+    'P5d-R2: default ports guided radial',
+  )
+  check(circleDef.ports.find((port) => port.id === 'pin_circle_in')?.direction === 'in', 'P5d-R2: default in direction')
+  check(circleDef.ports.find((port) => port.id === 'pin_circle_out')?.direction === 'out', 'P5d-R2: default out direction')
+  for (const item of [
+    { u: 0, x: 120, y: 60 },
+    { u: 0.25, x: 60, y: 120 },
+    { u: 0.5, x: 0, y: 60 },
+    { u: 0.75, x: 60, y: 0 },
+  ]) {
+    const at = pointOnEllipseGuide(outer!, item.u)
+    check(near(at.x, item.x) && near(at.y, item.y), `P5d-R3: cardinal u=${item.u}`)
+  }
+  const diagU = 0.125
+  const diagPin = { ...circleDef.ports[0]!, u: diagU }
+  check(Boolean(guidedPinPoint(circleDef, diagPin, circleDef.width, circleDef.height)), 'P5d-R3: arbitrary u anchor')
+
+  let sheet = emptyDocument()
+  const placed = placeLibrarySymbol(sheet, circleDef, { x: 80, y: 80 }, undefined, general.assets ?? [])
+  check(placed.ok, 'P5d-R3: place generic circle')
+  if (!placed.ok) throw new Error('P5d place circle failed')
+  const block = sheet.blocks.find((item) => item.id === placed.blockId)!
+  const emb = sheet.symbols.find((item) => item.id === 'sym_generic_circle')!
+  check(emb.resizeAspect === 'preserve', 'P5d-R8: embedded resizeAspect')
+  const portIn = sheet.ports.find((item) => item.blockId === block.id && item.symbolPortId === 'pin_circle_in')!
+  const portOut = sheet.ports.find((item) => item.blockId === block.id && item.symbolPortId === 'pin_circle_out')!
+
+  placeGuidedPort(sheet, portIn.id, diagU)
+  check(near(portIn.guideU ?? -1, diagU), 'P5d-R4: guided move commits guideU')
+  const stubNet = createId('net')
+  sheet.nets.push({ id: stubNet, name: 'stub_net' })
+  const anchorBefore = portAnchor(sheet, portIn.id)!
+  sheet.segments.push({
+    id: createId('seg'),
+    netId: stubNet,
+    routed: 'manual',
+    points: [
+      { x: anchorBefore.x, y: anchorBefore.y },
+      { x: anchorBefore.x - 40, y: anchorBefore.y },
+    ],
+    start: { kind: 'port', portId: portIn.id },
+    end: { kind: 'free', x: anchorBefore.x - 40, y: anchorBefore.y },
+  })
+  placeGuidedPort(sheet, portIn.id, 0.75)
+  const afterMove = portAnchor(sheet, portIn.id)!
+  const stub = sheet.segments.find((item) => item.start.kind === 'port' && item.start.portId === portIn.id)!
+  check(near(stub.points[0]!.x, afterMove.x, 1e-6) && near(stub.points[0]!.y, afterMove.y, 1e-6), 'P5d-R10: stub follows guided port')
+
+  const uKeep = portIn.guideU!
+  const uniform = resizeBoxUniform(
+    { x: block.x, y: block.y, width: block.width, height: block.height },
+    'se',
+    { x: block.x + block.width * 1.6, y: block.y + block.height * 1.1 },
+    false,
+  )
+  setBlockFields(sheet, block.id, uniform)
+  check(near(block.width, block.height), 'P5d-R5: uniform resize keeps square block')
+  check(near(portIn.guideU ?? -1, uKeep), 'P5d-R5: resize preserves guideU')
+  const scaled = scaleEllipseGuide(outer!, block.width / circleDef.width, block.height / circleDef.height)
+  check(near(scaled.rx, scaled.ry), 'P5d-R5: scaled port guide stays circular')
+
+  const skewAttempt = resizeBox(
+    { x: block.x, y: block.y, width: block.width, height: block.height },
+    'se',
+    { x: block.x + block.width * 1.5, y: block.y + block.height * 1.1 },
+    false,
+  )
+  check(!near(skewAttempt.width, skewAttempt.height), 'P5d-R6: free resizeBox can skew (control)')
+  const locked = resizeBoxUniform(
+    { x: block.x, y: block.y, width: block.width, height: block.height },
+    'se',
+    { x: block.x + block.width * 1.5, y: block.y + block.height * 1.1 },
+    false,
+  )
+  check(near(locked.width, locked.height), 'P5d-R6: resizeBoxUniform stays square on asymmetric drag')
+
+  // P5d-Fix1 — instance-owned guided add on sheet (Fix3 path).
+  const defPortCount = emb.ports.length
+  const uiAdded = addPortAt(sheet, block.id, 'bottom', 0.5)!
+  const uiInst = sheet.ports.find((port) => port.id === uiAdded)!
+  const uiPin = syntheticRadialGuidedPin(emb, uiInst.guideU!)
+  check(Boolean(uiAdded && typeof uiInst.guideU === 'number' && !uiInst.symbolPortId), 'P5d-Fix1: instance guided port')
+  check(emb.ports.length === defPortCount, 'P5d-Fix1: definition port count unchanged')
+  check(Boolean(radialLeadSegment(emb, uiPin, block.width, block.height)), 'P5d-Fix1: radial lead segment')
+  const uiLocal = guidedPinPoint(emb, uiPin, block.width, block.height, uiInst.guideU)!
+  const uiAt = portAnchor(sheet, uiAdded)!
+  check(near(uiAt.x, block.x + uiLocal.x) && near(uiAt.y, block.y + uiLocal.y), 'P5d-Fix1: anchor on outer guide')
+  const secondUi = addPortAt(sheet, block.id, 'right', 0.35)!
+  check(Boolean(secondUi && sheet.ports.filter((item) => item.blockId === block.id).length === 4), 'P5d-Fix1: second sheet add on same block')
+
+  // P5d-Fix2 — interior port labels from radial guide geometry (use ui port so `portIn.guideU` stays stable).
+  const inner = circleDef.guides?.find((item) => item.id === 'guide_body')!
+  const sxLbl = block.width / circleDef.width
+  const syLbl = block.height / circleDef.height
+  const scaledInner = scaleEllipseGuide(inner, sxLbl, syLbl)
+  const center = { x: inner.cx * sxLbl, y: inner.cy * syLbl }
+  const labelInst = sheet.ports.find((port) => port.id === uiAdded)!
+  for (const u of [0, 0.125, 0.5]) {
+    placeGuidedPort(sheet, labelInst.id, u)
+    const symPin = syntheticRadialGuidedPin(emb, labelInst.guideU ?? u)
+    const label = guidedPortLabelPlacement(emb, symPin, block.width, block.height, 'sample', labelInst.guideU)
+    const innerAt = pointOnEllipseGuide(scaledInner, labelInst.guideU ?? u)
+    const outerAt = guidedPinPoint(emb, symPin, block.width, block.height, labelInst.guideU)!
+    check(Boolean(label), `P5d-Fix2: label at u=${u}`)
+    const dLabel = Math.hypot(label!.x - center.x, label!.y - center.y)
+    const dInner = Math.hypot(innerAt.x - center.x, innerAt.y - center.y)
+    const dOuter = Math.hypot(outerAt.x - center.x, outerAt.y - center.y)
+    check(dLabel < dInner - 1, `P5d-Fix2: label inside inner contour u=${u}`)
+    check(dLabel < dOuter - 1, `P5d-Fix2: label inside outer anchor u=${u}`)
+  }
+  const shortLabel = guidedPortLabelPlacement(emb, uiPin, block.width, block.height, 'p', uiInst.guideU!)
+  const longLabel = guidedPortLabelPlacement(emb, uiPin, block.width, block.height, 'verylongportname', uiInst.guideU!)
+  check(
+    Boolean(longLabel && shortLabel) &&
+      Math.hypot(longLabel!.x - center.x, longLabel!.y - center.y) <
+        Math.hypot(shortLabel!.x - center.x, shortLabel!.y - center.y),
+    'P5d-Fix2: longer name gains extra inward inset',
+  )
+
+  const extraId = addSymbolPort(sheet, 'sym_generic_circle', { name: 'p3', side: 'bottom', t: 0.5 })!
+  const extraDef = emb.ports.find((port) => port.id === extraId)
+  check(Boolean(extraDef && isGuidedPin(extraDef) && near(extraDef.u ?? -1, 0.25)), 'P5d-R7: addSymbolPort guided bottom')
+  const extraInst = sheet.ports.find((port) => port.symbolPortId === extraId)!
+  check(Boolean(extraInst), 'P5d-R7: instance port materialised')
+  removeSymbolPort(sheet, 'sym_generic_circle', extraId)
+  check(!emb.ports.some((port) => port.id === extraId), 'P5d: remove unconnected symbol port')
+
+  removeSymbolPort(sheet, 'sym_generic_circle', 'pin_circle_out')
+  check(!emb.ports.some((port) => port.id === 'pin_circle_out'), 'P5d: remove default out port when unwired')
+  addSymbolPort(sheet, 'sym_generic_circle', { name: 'out', side: 'right', t: 0.5, direction: 'out', u: 0 })
+
+  const round = parseDocument(serialize(sheet))
+  const roundEmb = round.symbols.find((item) => item.id === 'sym_generic_circle')!
+  check(roundEmb.resizeAspect === 'preserve' && roundEmb.portPolicy === 'instance' && Boolean(roundEmb.guides?.length), 'P5d-R8: save/load guides + policies')
+  check(near(round.ports.find((item) => item.symbolPortId === 'pin_circle_in')?.guideU ?? -1, uKeep), 'P5d-R8: guideU round-trip')
+
+  const outSym = emb.ports.find((port) => port.name === 'out')!
+  const snapPort = sheet.ports.find((port) => port.symbolPortId === outSym.id)!
+  placeGuidedPort(sheet, snapPort.id, 0.125)
+  const freeSegId = createId('seg')
+  const freeSnapNet = createId('net')
+  sheet.nets.push({ id: freeSnapNet, name: 'free_snap' })
+  const freeTarget = portAnchor(sheet, snapPort.id)!
+  sheet.segments.push({
+    id: freeSegId,
+    netId: freeSnapNet,
+    routed: 'manual',
+    points: [
+      { x: freeTarget.x - 50, y: freeTarget.y },
+      { x: freeTarget.x - 10, y: freeTarget.y },
+    ],
+    start: { kind: 'free', x: freeTarget.x - 50, y: freeTarget.y },
+    end: { kind: 'free', x: freeTarget.x - 10, y: freeTarget.y },
+  })
+  const snap = probeConnectFreeEnd(sheet, freeSegId, 'end', { kind: 'port', portId: snapPort.id, point: freeTarget })
+  check(snap.ok, 'P5d-R9: S5b.2 probe at non-cardinal port')
+
+  const frag = captureFragment(sheet, [block.id])
+  pasteFragment(sheet, frag, 200, 0)
+  const copyBlock = sheet.blocks.find((item) => item.id !== block.id && item.symbolId === 'sym_generic_circle')!
+  const copyIn = sheet.ports.find((item) => item.blockId === copyBlock.id && item.symbolPortId === 'pin_circle_in')!
+  check(near(copyIn?.guideU ?? -1, uKeep), 'P5d-R10: copy preserves guideU')
+
+  setPortDirection(sheet, portIn.id, 'out')
+  check(sheet.ports.find((item) => item.id === portIn.id)?.direction === 'out', 'P5d: port direction instance override')
+
+  check(!addDef.resizeAspect, 'P5d compat: adder still free resize')
+  const addPlace = placeLibrarySymbol(sheet, addDef, { x: 400, y: 400 }, undefined, signal.assets ?? [])
+  check(addPlace.ok, 'P5d compat: place adder')
+  if (!addPlace.ok) throw new Error('P5d place adder failed')
+  const addBlock = sheet.blocks.find((item) => item.id === addPlace.blockId)!
+  const skewAdd = resizeBox(
+    { x: addBlock.x, y: addBlock.y, width: addBlock.width, height: addBlock.height },
+    'se',
+    { x: addBlock.x + addBlock.width * 1.5, y: addBlock.y + addBlock.height * 1.2 },
+    false,
+  )
+  setBlockFields(sheet, addBlock.id, skewAdd)
+  check(!near(addBlock.width, addBlock.height), 'P5d compat: adder non-uniform resize unchanged')
+
+  // --- P5d-Fix3: instance port ownership ---
+  let fix3 = emptyDocument()
+  const fixGen = builtinLibraries().find((library) => library.id === 'lib_general')!
+  const fixCircle = fixGen.symbols.find((item) => item.id === 'sym_generic_circle')!
+  const fixA = placeLibrarySymbol(fix3, fixCircle, { x: 40, y: 40 }, 'A', fixGen.assets ?? [])
+  const fixB = placeLibrarySymbol(fix3, fixCircle, { x: 280, y: 40 }, 'B', fixGen.assets ?? [])
+  check(fixA.ok && fixB.ok, 'Fix3-R1: place two circles')
+  if (!fixA.ok || !fixB.ok) throw new Error('Fix3 place failed')
+  const symFix = fix3.symbols.find((item) => item.id === 'sym_generic_circle')!
+  const defCount = symFix.ports.length
+  check(fix3.ports.filter((port) => port.blockId === fixA.blockId).length === 2, 'Fix3-R1: defaults on A')
+  check(fix3.ports.filter((port) => port.blockId === fixB.blockId).length === 2, 'Fix3-R1: defaults on B')
+  const fixAdded = addPortAt(fix3, fixA.blockId, 'bottom', 0.5)!
+  check(Boolean(fixAdded), 'Fix3-R1: add guided port on A')
+  check(fix3.ports.filter((port) => port.blockId === fixA.blockId).length === 3, 'Fix3-R1: A has extra port')
+  check(fix3.ports.filter((port) => port.blockId === fixB.blockId).length === 2, 'Fix3-R1: B unchanged')
+  check(symFix.ports.length === defCount, 'Fix3-R2: definition port list unchanged')
+  const fixInst = fix3.ports.find((port) => port.id === fixAdded)!
+  check(!fixInst.symbolPortId && typeof fixInst.guideU === 'number', 'Fix3-R2: instance-owned guided')
+  const fixPin = syntheticRadialGuidedPin(symFix, fixInst.guideU!)
+  check(Boolean(radialLeadSegment(symFix, fixPin, fix3.blocks.find((b) => b.id === fixA.blockId)!.width, 120)), 'Fix3-R2: radial lead on instance port')
+  placeGuidedPort(fix3, fixInst.id, 0.2)
+  applySymbol(fix3, 'sym_generic_circle')
+  check(fix3.ports.some((port) => port.id === fixAdded && near(port.guideU ?? -1, 0.2)), 'Fix3-R6: applySymbol keeps instance port + guideU')
+  check(fix3.ports.filter((port) => port.blockId === fixB.blockId).length === 2, 'Fix3-R6: B still two ports after applySymbol')
+  const fixC = placeLibrarySymbol(fix3, fixCircle, { x: 520, y: 40 }, 'C', fixGen.assets ?? [])
+  check(fixC.ok && fix3.ports.filter((port) => port.blockId === fixC.blockId).length === 2, 'Fix3-R5: new instance defaults only')
+  removeUnwiredPort(fix3, fixAdded)
+  check(!fix3.ports.some((port) => port.id === fixAdded), 'Fix3-R4: remove unwired from A')
+  check(fix3.ports.filter((port) => port.blockId === fixB.blockId).length === 2, 'Fix3-R4: B after A remove')
+  const dupMap = duplicateBlocks(fix3, [fixA.blockId], 50, 0)
+  const dupId = dupMap.get(fixA.blockId)!
+  check(fix3.ports.filter((port) => port.blockId === dupId).length === fix3.ports.filter((port) => port.blockId === fixA.blockId).length, 'Fix3-R7: duplicate copies port count')
+  addPortAt(fix3, dupId, 'top', 0.5)
+  check(
+    fix3.ports.filter((port) => port.blockId === fixA.blockId).length < fix3.ports.filter((port) => port.blockId === dupId).length,
+    'Fix3-R7: copy port edits independent',
+  )
+  const fixRound = parseDocument(serialize(fix3))
+  check(
+    fixRound.symbols.find((item) => item.id === 'sym_generic_circle')?.portPolicy === 'instance',
+    'Fix3-R8: portPolicy round-trip',
+  )
+  const instOnly = fixRound.ports.filter((port) => !port.symbolPortId && typeof port.guideU === 'number')
+  check(instOnly.length >= 1, 'Fix3-R8: instance-owned ports survive save/load')
+  const addShared = placeLibrarySymbol(fix3, addDef, { x: 40, y: 300 }, 'Add1', signal.assets ?? [])
+  const addSharedB = placeLibrarySymbol(fix3, addDef, { x: 280, y: 300 }, 'Add2', signal.assets ?? [])
+  check(addShared.ok && addSharedB.ok, 'Fix3-R8: two adders')
+  if (!addShared.ok || !addSharedB.ok) throw new Error('Fix3 adder place failed')
+  const symAdd = fix3.symbols.find((item) => item.id === 'sym_adder')!
+  const beforeAddPins = symAdd.ports.length
+  const sharedAdd = addSymbolPort(fix3, 'sym_adder', { name: 'extra', side: 'top', t: 0.5 })!
+  check(symAdd.ports.length === beforeAddPins + 1, 'Fix3-R8: shared policy addSymbolPort mutates definition')
+  check(
+    fix3.ports.filter((port) => port.blockId === addShared.blockId && port.symbolPortId === sharedAdd).length === 1 &&
+      fix3.ports.filter((port) => port.blockId === addSharedB.blockId && port.symbolPortId === sharedAdd).length === 1,
+    'Fix3-R8: shared symbol propagates new pin to all instances',
+  )
+
+  const wiredId = addSymbolPort(sheet, 'sym_generic_circle', { name: 'tie', side: 'top', t: 0.5 })!
+  const wiredInst = sheet.ports.find((port) => port.symbolPortId === wiredId)!
+  const wNet = createId('net')
+  sheet.nets.push({ id: wNet, name: 'wired' })
+  const wAnchor = portAnchor(sheet, wiredInst.id)!
+  sheet.segments.push({
+    id: createId('seg'),
+    netId: wNet,
+    routed: 'manual',
+    points: [
+      { x: wAnchor.x, y: wAnchor.y },
+      { x: wAnchor.x, y: wAnchor.y - 30 },
+    ],
+    start: { kind: 'port', portId: wiredInst.id },
+    end: { kind: 'free', x: wAnchor.x, y: wAnchor.y - 30 },
+  })
+  removeSymbolPort(sheet, 'sym_generic_circle', wiredId)
+  check(!emb.ports.some((port) => port.id === wiredId), 'P5d: wired symbol pin removed from definition')
+  check(sheet.ports.some((port) => port.id === wiredInst.id), 'P5d: wired instance port survives removal')
+  check(symbolDiagnostics(sheet).some((item) => item.kind === 'missing-port'), 'P5d: diagnostic for missing symbol pin with wire')
 }
 
 {

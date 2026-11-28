@@ -166,4 +166,4 @@ Do **not** reopen S1/S2, D5c.7, edge/vertex-drag (“S5a.2”), or style work wi
 
 ## 9. One-line summary
 
-**S5b.2 closed (12/12)** — `ec66672` + acceptance docs — [spec](d5d0a-s5b2-endpoint-snap-connect.md). **P5d Generic Circle** — [preparation](diagram-lab-pilot-a2-p5d-generic-circle.md); implement after architecture approval. Checkpoint chain: `b5297fc` → `ec66672`.**
+**P5d accepted** 14/14 + F3 9/9 (28 Nov 2026) — [p5d](diagram-lab-pilot-a2-p5d-generic-circle.md). [P5e](diagram-lab-multi-object-property-editing.md) architecture approved; impl after D5d. **Next:** BPSK demonstrator 2, then D5d.

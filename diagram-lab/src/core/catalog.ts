@@ -57,7 +57,7 @@ function guidedEllipseSymbol(
   categoryId: string,
   id: string,
   name: string,
-  ports: Array<{ id: string; name: string; side: SymbolPort['side']; t: number; u: number }>,
+  ports: Array<{ id: string; name: string; side: SymbolPort['side']; t: number; u: number; direction?: SymbolPort['direction'] }>,
   labels: SymbolLabel[],
 ): SymbolDefinition {
   const size = 120
@@ -75,8 +75,18 @@ function guidedEllipseSymbol(
     u: port.u,
     lead: 'radial',
     leadGuideId: 'guide_body',
+    ...(port.direction ? { direction: port.direction } : {}),
   }))
   return symbol(libraryId, 1, categoryId, id, name, [body], pins, labels, size, size, 4, guides)
+}
+
+/** P5d — neutral circular block; uniform resize; configurable guided ports. */
+function genericCircleSymbol(libraryId: string, categoryId: string): SymbolDefinition {
+  const def = guidedEllipseSymbol(libraryId, categoryId, 'sym_generic_circle', 'Generic circle', [
+    { id: 'pin_circle_in', name: 'in', side: 'left', t: 0.5, u: 0.5, direction: 'in' },
+    { id: 'pin_circle_out', name: 'out', side: 'right', t: 0.5, u: 0, direction: 'out' },
+  ], [])
+  return { ...def, revision: 1, resizeAspect: 'preserve', portPolicy: 'instance' }
 }
 
 function library(
@@ -130,6 +140,7 @@ function generalLibrary(): SymbolLibrary {
       2,
     ),
     symbol(id, 1, category, 'sym_textbox', 'Text box', [rect()], [], [text('lbl_textbox', 'Text', 28, 36)]),
+    genericCircleSymbol(id, category),
   ])
 }
 

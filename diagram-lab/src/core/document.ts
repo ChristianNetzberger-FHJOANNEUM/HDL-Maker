@@ -219,6 +219,17 @@ export type SymbolDefinition = {
   revision?: number
   /** Content fingerprint recorded at the last explicit stamp. A comparison still reads the picture and the pins. */
   bodyChecksum?: string
+  /**
+   * Instance resize policy hook (P5d). `preserve` forces equal width and height on the sheet block.
+   * Reserved for a future general resize-policy model (`free`, `fixedSize`, …).
+   */
+  resizeAspect?: 'preserve'
+  /**
+   * Port ownership on the sheet (P5d-Fix3).
+   * `instance` — add/move/remove extra ports on each block without mutating this definition.
+   * `shared` or omitted — definition pins propagate via `applySymbol` (legacy default).
+   */
+  portPolicy?: 'instance' | 'shared'
 }
 
 /** Electrical identity. Coordinates do not belong here. */

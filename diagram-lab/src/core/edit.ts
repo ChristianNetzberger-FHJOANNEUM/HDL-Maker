@@ -13,16 +13,23 @@ import {
 } from './document'
 import {
   capturePortAnchors,
+  findSymbolGuide,
   isBlockAttachedStub,
   moveBlock,
   pinLocal,
   pinOnBorder,
+  blockGuideUValues,
+  pickAvailableGuideUValues,
   portAnchor,
   portAnchorDeltas,
+  projectOntoEllipseGuide,
   refreshAll,
+  symbolGuidedPortRing,
+  symbolUsesInstancePortPolicy,
   translateAttachedStubsByPortDeltas,
 } from './geometry'
 import { ensureNetByName, reassignComponents } from './nets'
+import { addSymbolPort } from './symbols'
 import { DEFAULT_SNAP_SPACING, normalizeSpacing } from './preferences'
 import { setInstancePortDirection, type PortDirection } from './portDirection'
 import { blockDefaultTextAlign, type TextAlign } from './textTypography'
@@ -172,10 +179,52 @@ export function portNameTaken(names: string[], name: string, except?: string): b
   return names.some((item) => item !== except && item.toLowerCase() === key)
 }
 
-/** A new instance port on the chosen edge. It has no symbol pin and no logical port. */
+/**
+ * A new port on the block edge (pointer projects to nearest side + `t`).
+ * Rectangular blocks: instance-only `placed` port on the AABB.
+ * Guided symbols (e.g. Generic Circle): canonical symbol pin on the ellipse guide via `addSymbolPort`.
+ */
 export function addPortAt(doc: DiagramDocument, blockId: string, side: Port['side'], t: number): string | null {
   const block = doc.blocks.find((item) => item.id === blockId)
   if (!block) return null
+  const symbol = block.symbolId ? doc.symbols.find((item) => item.id === block.symbolId) : undefined
+  const ring = symbol ? symbolGuidedPortRing(symbol) : null
+  if (symbol && ring) {
+    const outer = findSymbolGuide(symbol, ring.outerId)
+    if (outer?.kind === 'ellipse') {
+      const unit = clampUnit(t)
+      const local = pinLocal(symbol.width, symbol.height, side, unit)
+      const preferredU = projectOntoEllipseGuide(outer, local)
+      if (symbolUsesInstancePortPolicy(symbol)) {
+        const u = pickAvailableGuideUValues(blockGuideUValues(doc, blockId, symbol), preferredU)
+        const blockNames = doc.ports.filter((item) => item.blockId === blockId).map((item) => item.name)
+        const id = createId('prt')
+        doc.ports.push({
+          id,
+          blockId,
+          name: unusedPortName(blockNames),
+          side,
+          t: unit,
+          guideU: u,
+        })
+        refreshAll(doc)
+        return id
+      }
+      const u = pickAvailableGuideUValues(
+        symbol.ports.filter((port) => typeof port.u === 'number').map((port) => port.u!),
+        preferredU,
+      )
+      const blockNames = doc.ports.filter((item) => item.blockId === blockId).map((item) => item.name)
+      const symPinId = addSymbolPort(doc, symbol.id, {
+        name: unusedPortName([...symbol.ports.map((item) => item.name), ...blockNames]),
+        side,
+        t: unit,
+        u,
+      })
+      if (!symPinId) return null
+      return doc.ports.find((item) => item.blockId === blockId && item.symbolPortId === symPinId)?.id ?? null
+    }
+  }
   const name = unusedPortName(doc.ports.filter((item) => item.blockId === blockId).map((item) => item.name))
   const id = createId('prt')
   doc.ports.push({ id, blockId, name, side, t: clampUnit(t), placed: true })
@@ -269,6 +318,44 @@ export function resizeBox(
     height = bottom - edge
   }
   return { x, y, width, height }
+}
+
+/** P5d — symbol hook for uniform block resize (future general policy may extend this). */
+export function symbolResizePreservesAspect(symbol: { resizeAspect?: 'preserve' } | undefined): boolean {
+  return symbol?.resizeAspect === 'preserve'
+}
+
+/**
+ * Square resize: width === height. Reuses snap and fixed-opposite-edge semantics from `resizeBox`,
+ * then applies a single size. Edge handles center the block on the axis they do not move.
+ */
+export function resizeBoxUniform(
+  origin: { x: number; y: number; width: number; height: number },
+  handle: ResizeHandle,
+  pointer: Point,
+  snap: boolean,
+  spacing: number = DEFAULT_SNAP_SPACING,
+): { x: number; y: number; width: number; height: number } {
+  const free = resizeBox(origin, handle, pointer, snap, spacing)
+  const right = origin.x + origin.width
+  const bottom = origin.y + origin.height
+  const east = handle === 'ne' || handle === 'e' || handle === 'se'
+  const west = handle === 'nw' || handle === 'w' || handle === 'sw'
+  const south = handle === 'sw' || handle === 's' || handle === 'se'
+  const north = handle === 'nw' || handle === 'n' || handle === 'ne'
+  const corner = (east || west) && (north || south)
+  let size = Math.max(MIN_BLOCK_SIZE, free.width, free.height)
+  if (!corner) {
+    if (east || west) size = Math.max(MIN_BLOCK_SIZE, free.width)
+    else if (north || south) size = Math.max(MIN_BLOCK_SIZE, free.height)
+  }
+  let x = origin.x
+  let y = origin.y
+  if (west && !east) x = right - size
+  if (north && !south) y = bottom - size
+  if ((east || west) && !north && !south) y = origin.y + (origin.height - size) / 2
+  if ((north || south) && !east && !west) x = origin.x + (origin.width - size) / 2
+  return { x, y, width: size, height: size }
 }
 
 export function addBlock(

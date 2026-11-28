@@ -1,6 +1,6 @@
 # A2-P5d — Generic circle block (preparation)
 
-**Status:** **Preparation only** — architecture approval required before any code.  
+**Status:** **Closed and accepted** (28 Nov 2026). **P5d-S1…S14: 14/14**; **F3-1…F3-9: 9/9**; Fix1/Fix2 visually confirmed. `npm run selfcheck` + `npm run check` green. [Port ownership](diagram-lab-p5d-fix3-port-ownership-investigation.md). **Next:** BPSK demonstrator 2 → D5d → P5e (gated).  
 **Gate:** S5b.2 endpoint snap & connect **12/12 accepted** — [close-out](d5d0a-s5b2-endpoint-snap-connect.md).  
 **Related:** [roadmap §4](diagram-lab-pilot-a2-p5-roadmap.md#4-a2-p5d--generic-circle-block), [ADR symbol geometry](adr-symbol-geometry-and-port-guides.md), [A2-P1 symbol connections](diagram-lab-pilot-a2-p1-symbol-connections.md).
 
@@ -18,7 +18,7 @@ The user places or edits a **generic circle** and configures:
 - Wires, stubs, S5b.2 free-end snap to off-grid port anchors.
 - Copy, Shift+Drag, Undo/Redo, Save/Load.
 
-**Non-goals for P5d:** Symbol Designer UI, polygon guides, free-angle autorouting, bus width, block-level uniform-resize policy (decision below), changing shipped Adder/Multiplier/Oscillator definitions.
+**Non-goals for P5d:** Symbol Designer UI, polygon guides, free-angle autorouting, bus width, general resize-policy framework, changing shipped Adder/Multiplier/Oscillator definitions.
 
 ---
 
@@ -153,9 +153,22 @@ Reuse existing **A2-P1** cases for adder/multiplier as regression guard — must
 
 ---
 
-## 7. Browser acceptance checklist (proposed)
+## 7. Browser acceptance — **14/14 accepted** (28 Nov 2026)
 
-Manual **P5d-S1…S14** after implementation (stop for sign-off like S5b.2):
+| Track | Result |
+| --- | --- |
+| **P5d-S1…S14** | **14/14 PASSED** (S9 corner resize / square aspect — final sign-off 28 Nov 2026) |
+| **F3-1…F3-9** | **9/9 PASSED** — [Fix3](diagram-lab-p5d-fix3-port-ownership-investigation.md) |
+
+Screenshot review (28 Nov 2026): dual-circle integration — independent ports/names, guided geometry, radial leads, interior labels, per-instance styling, port-direction arrows; no acceptance-blocking defects.
+
+**Accepted limitations (deferred, not defects):**
+
+- No automatic port-label collision avoidance.
+- Flow arrows terminate at **outer port anchor** (radial lead is symbol geometry, not net).
+- No automatic migration for sheets saved during the defective Fix1 window (manual cleanup — §9).
+
+Checklist record:
 
 | ID | Case | Expected |
 | --- | --- | --- |
@@ -167,8 +180,8 @@ Manual **P5d-S1…S14** after implementation (stop for sign-off like S5b.2):
 | P5d-S6 | Wire from diagonal `u` (e.g. 0.125) | Connects at outer anchor; routing acceptable |
 | P5d-S7 | S5b.2 snap free end to off-grid port | Connect without grid snap |
 | P5d-S8 | Grid snap off | P5d-S2 + P5d-S7 still work |
-| P5d-S9 | Uniform resize | Circle proportions maintained |
-| P5d-S10 | Non-uniform resize | Ports stay on outline (ellipse OK per D2-A) |
+| P5d-S9 | Resize corner handle asymmetric | Block stays **square**; circle stays circular — **PASSED** |
+| P5d-S10 | Resize edge handle | Block stays square; instance centred on the orthogonal axis |
 | P5d-S11 | Fill / border / text Plain+LaTeX+Markdown | P5a behaviour |
 | P5d-S12 | Port direction arrows (P5b) | Correct rendering |
 | P5d-S13 | Undo/Redo port move + resize | Restores `guideU` |
@@ -178,21 +191,106 @@ Manual **P5d-S1…S14** after implementation (stop for sign-off like S5b.2):
 
 ---
 
-## 8. Architecture approval checklist (before coding)
+## 8. Architecture approval — **accepted** (28 Nov 2026)
 
-| # | Decision | Proposed answer |
+| # | Decision | Accepted |
 | --- | --- | --- |
-| 1 | Ellipse guide for circle (`rx=ry`) | Yes |
-| 2 | Resize policy D2 | **A** unless user chooses B |
-| 3 | Orthogonal nets + radial leads | No routing change |
-| 4 | `addSymbolPort` guided extension | Yes — minimal |
-| 5 | New symbol only | `sym_generic_circle` — no silent edits to adder/multiplier/oscillator |
-| 6 | Symbol Editor guides | Out of scope for v1 |
-
-**Stop here** until the user confirms §8 (especially **D2** and default port count on the builtin symbol).
+| 1 | Ellipse guide (`rx=ry`) | Yes |
+| 2 | Resize D2 variant **B** | Yes — square block, circular guide |
+| 3 | Orthogonal nets + radial leads | Yes |
+| 4 | `addSymbolPort` guided extension | Yes |
+| 5 | Builtin `sym_generic_circle` only | Yes |
+| 6 | Default ports `in` / `out` with directions | Yes |
+| 7 | Symbol Editor guides | Deferred |
 
 ---
 
-## 9. One-line summary
+## 9. P5d-Fix1 — dynamically added ports (sheet UI)
 
-**P5d ships one builtin guided-ellipse circle symbol by reusing A2-P1 guides, radial leads, and port drag — extend add-port for `guideId`/`u` if needed; decide resize-to-ellipse vs uniform lock before implementation.**
+### Root cause
+
+| Path | Behaviour |
+| --- | --- |
+| Default ports | Defined on `sym_generic_circle` with `guideId` / `u` / `lead: radial` |
+| **Add port on sheet** (click block edge) | Called `addPortAt` → instance port with **`placed: true`** on the **AABB** |
+| Render / drag | `port.placed` skips guided anchor + radial lead; `guidedPortContext` returns null |
+
+`addSymbolPort` was already guided-capable, but the **canonical sheet entry point** bypassed it.
+
+### Correction (superseded by Fix3 for Generic Circle)
+
+Initial Fix1 used `addSymbolPort` (definition mutation). **Fix3** routes `portPolicy: 'instance'` symbols to instance `guideU` only — see [Fix3](diagram-lab-p5d-fix3-port-ownership-investigation.md). Shared guided symbols still use definition add when `portPolicy` is omitted/`shared`.
+
+### Recovery (defective saves)
+
+Sheets created during the buggy build may contain `pN` ports with `placed: true` and **no** `symbolPortId`. These are **not** auto-migrated. **Manual:** remove unwired `pN` ports, re-add on the circle edge (Fix1 path). Wired legacy ports stay on the AABB until reworked.
+
+### Fix1 automated checks
+
+`P5d-Fix1` in `selfcheck`: `addPortAt` on placed Generic Circle → guided pin, radial lead, outer anchor, default ports unchanged.
+
+---
+
+## 9b. P5d-Fix2 — interior port name placement
+
+### Problem
+
+Guided ports used `nameAt` fallback **above the outer anchor** (`y - 8`), so names sat on radial leads.
+
+### Correction
+
+`guidedPortLabelPlacement` (`geometry.ts`): from inner lead endpoint `(x2,y2)`, step toward guide centre by `clearance + f(name length)`; **horizontal** `text-anchor: middle` in `SymbolFace`. Wired into `DiagramStage` / palette / symbol editor previews. **Not persisted** — derived each frame from `u`, block size, and name.
+
+Adder/Multiplier/generic circle share the same radial-lead rule; rectangular `placed` / side ports unchanged.
+
+### Fix2 automated checks
+
+`P5d-Fix2` in `selfcheck`: label radius &lt; inner contour and &lt; outer anchor; long names inset further.
+
+---
+
+## 10. Implementation summary (shipped)
+
+| Piece | Location |
+| --- | --- |
+| Builtin **Generic circle** (`sym_generic_circle`) | `catalog.ts` — General library; neutral ellipse artwork; `in` (u=0.5) + `out` (u=0) |
+| Uniform resize | `SymbolDefinition.resizeAspect: 'preserve'`; `resizeBoxUniform` + `DiagramStage` resize |
+| Port policy | `portPolicy: 'instance'` on Generic Circle |
+| Guided add-port (sheet) | **`addPortAt`** → instance `guideU` (Fix3); **Symbol editor** still `addSymbolPort` |
+| Regression | `selfcheck` P5d-R1…R10 + compat adder skew resize |
+
+**Minimal schema addition:** optional `resizeAspect?: 'preserve'` on `SymbolDefinition` (forward-compatible with a future `free` / `preserveAspectRatio` / `fixedSize` policy). No change to net or segment records.
+
+**Verification:** `npm run selfcheck` + `npm run check` green.
+
+---
+
+## 11. Fix1 manual smoke (before full P5d pass)
+
+| ID | Expected |
+| --- | --- |
+| F1 | New port on same circumference as `in` / `out` |
+| F2 | Radial lead drawn automatically |
+| F3 | Drag along full circle (not box edges) |
+| F4 | Adding ports does not move existing ports |
+| F5 | Wires/stubs follow port motion |
+| F6 | Resize keeps circle + radial geometry |
+
+---
+
+## 12. Close-out
+
+| Item | Date | Result |
+| --- | --- | --- |
+| Architecture | 28 Nov 2026 | Accepted (§8) |
+| Fix1 / Fix2 / Fix3 | 28 Nov 2026 | Shipped + accepted |
+| Manual P5d-S + F3 | 28 Nov 2026 | **14/14 + 9/9** |
+| Git checkpoint | 28 Nov 2026 | `P5d generic circle accepted` (local) |
+
+**Related:** [P5e architecture](diagram-lab-multi-object-property-editing.md) approved; implementation **not** released.
+
+---
+
+## 13. One-line summary
+
+**Generic circle in General library: A2-P1 ellipse guides, `resizeAspect` square resize, instance `portPolicy` ports (Fix3), interior labels (Fix2) — P5d accepted 14/14.**

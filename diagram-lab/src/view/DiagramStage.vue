@@ -3,7 +3,7 @@ import { VueFlow, type NodeDragEvent, type ViewportTransform } from '@vue-flow/c
 import { getStroke } from 'perfect-freehand'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { adoptWire, addStroke, removeStroke } from '../core/commands'
-import { parseDocument, serialize, type DiagramDocument, type Point, type PortSide, type SymbolDefinition } from '../core/document'
+import { parseDocument, serialize, type DiagramDocument, type Point, type Port, type PortSide, type SymbolDefinition } from '../core/document'
 import {
   BLOCK_TEMPLATES,
   type BlockTemplate,
@@ -26,6 +26,8 @@ import {
   renameInstancePort,
   unusedPortName,
   resizeBox,
+  resizeBoxUniform,
+  symbolResizePreservesAspect,
   setBlockFields,
   setBlockTypography,
   resetBlockTypography,
@@ -54,6 +56,7 @@ import {
   continuousGuideU,
   findSymbolGuide,
   guidedPinPoint,
+  guidedPortLabelPlacement,
   isGuidedPin,
   labelPlacement,
   moveBlock,
@@ -62,6 +65,7 @@ import {
   portAnchor,
   projectOntoEllipseGuide,
   radialLeadSegment,
+  resolveGuidedPortModel,
   scaleEllipseGuide,
 } from '../core/geometry'
 import { netFixture } from '../core/fixture'
@@ -591,12 +595,27 @@ const flowNodes = computed(() =>
         .map((port) => {
           const at = portAnchor(doc.value, port.id)
           const symbolPort = port.symbolPortId ? symbol?.ports.find((pin) => pin.id === port.symbolPortId) : undefined
-          const guided = Boolean(symbol && symbolPort && isGuidedPin(symbolPort) && !port.placed)
+          const guidedModel = symbol && !port.placed ? resolveGuidedPortModel(symbol, port, symbolPort) : null
+          const guided = Boolean(guidedModel)
+          const portName = logicalPortName(project.value, port)
+          const label =
+            guided && symbol && guidedModel
+              ? guidedPortLabelPlacement(
+                  symbol,
+                  guidedModel.pin,
+                  block.width,
+                  block.height,
+                  portName,
+                  guidedModel.u,
+                )
+              : null
           return {
             ...port,
-            name: logicalPortName(project.value, port),
+            name: portName,
             top: (at?.y ?? block.y) - block.y,
             left: (at?.x ?? block.x) - block.x,
+            labelLeft: label?.x,
+            labelTop: label?.y,
             missing: Boolean(port.symbolPortId && symbol && !symbol.ports.some((pin) => pin.id === port.symbolPortId)),
             guided,
           }
@@ -606,8 +625,9 @@ const flowNodes = computed(() =>
             .filter((port) => port.blockId === block.id && !port.placed)
             .map((port) => {
               const symbolPort = port.symbolPortId ? symbol.ports.find((pin) => pin.id === port.symbolPortId) : undefined
-              if (!symbolPort) return null
-              return radialLeadSegment(symbol, symbolPort, block.width, block.height, port.guideU ?? symbolPort.u)
+              const model = resolveGuidedPortModel(symbol, port, symbolPort)
+              if (!model) return null
+              return radialLeadSegment(symbol, model.pin, block.width, block.height, model.u)
             })
             .filter((lead): lead is NonNullable<typeof lead> => lead !== null)
         : [],
@@ -1914,6 +1934,7 @@ function facePins(symbol: SymbolDefinition): FacePin[] {
     const at = guided
       ? guidedPinPoint(symbol, pin, symbol.width, symbol.height) ?? pinPoint(symbol.width, symbol.height, pin)
       : pinPoint(symbol.width, symbol.height, pin)
+    const label = guided ? guidedPortLabelPlacement(symbol, pin, symbol.width, symbol.height, pin.name, pin.u) : null
     return {
       id: pin.id,
       name: pin.name,
@@ -1922,6 +1943,8 @@ function facePins(symbol: SymbolDefinition): FacePin[] {
       y: at.y,
       free: typeof pin.x === 'number' && typeof pin.y === 'number',
       guided,
+      labelX: label?.x,
+      labelY: label?.y,
     }
   })
 }
@@ -2849,7 +2872,12 @@ function onResizeMove(event: PointerEvent): void {
   if (!current || current.cancelled || gestureLatch.isClosing) return
   const world = clientToWorld(event)
   edits().preview((draft) => {
-    const box = resizeBox(current.origin, current.handle, world, activeSnapEnabled(), activeSnapSpacing())
+    const block = draft.blocks.find((item) => item.id === current.blockId)
+    const symbol = block?.symbolId ? draft.symbols.find((item) => item.id === block.symbolId) : undefined
+    const uniform = symbolResizePreservesAspect(symbol)
+    const box = uniform
+      ? resizeBoxUniform(current.origin, current.handle, world, activeSnapEnabled(), activeSnapSpacing())
+      : resizeBox(current.origin, current.handle, world, activeSnapEnabled(), activeSnapSpacing())
     setBlockFields(draft, current.blockId, box)
   })
 }
@@ -3311,17 +3339,18 @@ function stopPortListeners(): void {
   window.removeEventListener('pointercancel', onPortCancel)
 }
 
-function guidedPortContext(port: { blockId: string; symbolPortId?: string | null; placed?: boolean; guideU?: number }) {
+function guidedPortContext(port: { blockId: string; symbolPortId?: string | null; placed?: boolean; guideU?: number; side: Port['side']; t?: number }) {
   if (port.placed) return null
   const block = doc.value.blocks.find((item) => item.id === port.blockId)
   if (!block?.symbolId) return null
   const symbol = doc.value.symbols.find((item) => item.id === block.symbolId)
   if (!symbol) return null
-  const pin = port.symbolPortId ? symbol.ports.find((item) => item.id === port.symbolPortId) : undefined
-  if (!pin || !isGuidedPin(pin) || !pin.guideId) return null
-  const guide = findSymbolGuide(symbol, pin.guideId)
+  const symbolPort = port.symbolPortId ? symbol.ports.find((item) => item.id === port.symbolPortId) : undefined
+  const model = resolveGuidedPortModel(symbol, port as Port, symbolPort)
+  if (!model || !model.pin.guideId) return null
+  const guide = findSymbolGuide(symbol, model.pin.guideId)
   if (!guide || guide.kind !== 'ellipse') return null
-  return { block, symbol, pin, guide }
+  return { block, symbol, pin: model.pin, guide }
 }
 
 function onPortDown(blockId: string, portId: string, event: PointerEvent): void {

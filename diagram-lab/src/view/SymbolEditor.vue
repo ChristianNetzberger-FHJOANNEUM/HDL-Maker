@@ -2,7 +2,15 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { inspectImage } from '../core/assets'
 import type { DiagramDocument, ImageAsset, Point, SymbolDefinition, SymbolShape } from '../core/document'
-import { guidedPinPoint, isFreePin, isGuidedPin, pinOnBorder, pinPoint, radialLeadSegment } from '../core/geometry'
+import {
+  guidedPinPoint,
+  guidedPortLabelPlacement,
+  isFreePin,
+  isGuidedPin,
+  pinOnBorder,
+  pinPoint,
+  radialLeadSegment,
+} from '../core/geometry'
 import type { PortDirection } from '../core/portDirection'
 import {
   addImageAsset,
@@ -68,7 +76,18 @@ const pins = computed<FacePin[]>(() =>
     const at = guided
       ? guidedPinPoint(props.symbol, pin, props.symbol.width, props.symbol.height) ?? pinPoint(props.symbol.width, props.symbol.height, pin)
       : pinPoint(props.symbol.width, props.symbol.height, pin)
-    return { id: pin.id, name: pin.name, side: pin.side, x: at.x, y: at.y, free: isFreePin(pin), guided }
+    const label = guided ? guidedPortLabelPlacement(props.symbol, pin, props.symbol.width, props.symbol.height, pin.name, pin.u) : null
+    return {
+      id: pin.id,
+      name: pin.name,
+      side: pin.side,
+      x: at.x,
+      y: at.y,
+      free: isFreePin(pin),
+      guided,
+      labelX: label?.x,
+      labelY: label?.y,
+    }
   }),
 )
 
