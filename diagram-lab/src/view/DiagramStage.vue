@@ -68,6 +68,7 @@ import { netFixture } from '../core/fixture'
 import {
   addNameLabel,
   commitWire,
+  connectFreeEnd,
   deleteSegment,
   labelText,
   mergeNets,
@@ -79,6 +80,7 @@ import {
   placeFreeEnd,
   placeLabelAt,
   placeSpan,
+  probeConnectFreeEnd,
   probeWire,
   renameNet,
   removeSegmentNameLabels,
@@ -259,6 +261,8 @@ const status = ref('New diagram.')
 const selected = ref<Set<string>>(new Set())
 const selectedPort = ref<string | null>(null)
 const portPreview = ref<{ x: number; y: number; side: PortSide; t: number } | null>(null)
+/** S5b.2: port snap target while dragging a free wire end. */
+const freeEndSnapPort = ref<{ portId: string; x: number; y: number; allow: boolean } | null>(null)
 const selectedStroke = ref<string | null>(null)
 const preview = ref<Point[] | null>(null)
 const drawing = ref<Array<Point & { pressure: number }> | null>(null)
@@ -1591,6 +1595,26 @@ function wireHoverFromWorld(world: Point): Point {
   return { ...hit.point }
 }
 
+type FreeEndTarget = { point: Point; port: { portId: string; allow: boolean; reason: string } | null }
+
+/** P4a / S5b.2: connectivity snap for ports; grid only for free space. */
+function freeEndTargetAt(world: Point, dragState: FreeEndDrag): FreeEndTarget {
+  const hit = snapTarget(doc.value, world)
+  if (hit.kind === 'port') {
+    const probe = probeConnectFreeEnd(doc.value, dragState.segmentId, dragState.which, hit)
+    return {
+      point: { ...hit.point },
+      port: {
+        portId: hit.portId,
+        allow: probe.ok,
+        reason: probe.ok ? '' : probe.reason,
+      },
+    }
+  }
+  const point = hit.kind === 'free' || hit.kind === 'ambiguous' ? gridSnapPoint(world) : { ...hit.point }
+  return { point, port: null }
+}
+
 function refreshWireHoverFromClient(): void {
   if (!wireDraft.value || !lastPointerClient) return
   wireHover.value = wireHoverFromWorld(clientPointToWorld(lastPointerClient.x, lastPointerClient.y))
@@ -2116,6 +2140,7 @@ function clearUiGestureState(): void {
   if (labelDrag) labelDrag.cancelled = true
   if (displayTextDrag) displayTextDrag.cancelled = true
   portPreview.value = null
+  freeEndSnapPort.value = null
   resizing.value = false
   resizeDrag = null
   portDrag = null
@@ -4039,11 +4064,11 @@ function onPointerMove(event: PointerEvent): void {
   }
   if (freeEndDrag) {
     const dragState = freeEndDrag
-    const at = {
-      x: snapValue(point.x, activeSnapEnabled(), activeSnapSpacing()),
-      y: snapValue(point.y, activeSnapEnabled(), activeSnapSpacing()),
-    }
-    edits().preview((draft) => placeFreeEnd(draft, dragState.segmentId, dragState.which, at))
+    const target = freeEndTargetAt(point, dragState)
+    freeEndSnapPort.value = target.port
+      ? { portId: target.port.portId, allow: target.port.allow, x: target.point.x, y: target.point.y }
+      : null
+    edits().preview((draft) => placeFreeEnd(draft, dragState.segmentId, dragState.which, target.point))
     return
   }
   if (spanDrag) {
@@ -4104,23 +4129,20 @@ function onPointerUp(event: PointerEvent): void {
       return
     }
     const dragState = freeEndDrag
+    const world = clientToWorld(event)
+    const target = freeEndTargetAt(world, dragState)
     freeEndDrag = null
+    freeEndSnapPort.value = null
+    if (target.port && !target.port.allow) {
+      cancelActiveDocumentGesture(target.port.reason)
+      return
+    }
+    let connected = false
     commitDocumentGesture((draft) => {
-      if (!activeSnapEnabled()) return
-      const spacing = activeSnapSpacing()
-      const segment = draft.segments.find((item) => item.id === dragState.segmentId)
-      if (!segment) return
-      const tip =
-        dragState.which === 'end'
-          ? segment.points[segment.points.length - 1]
-          : segment.points[0]
-      if (!tip) return
-      placeFreeEnd(draft, dragState.segmentId, dragState.which, {
-        x: snapValue(tip.x, true, spacing),
-        y: snapValue(tip.y, true, spacing),
-      })
+      const outcome = connectFreeEnd(draft, dragState.segmentId, dragState.which, world, gridSnapPoint)
+      if (outcome.ok && target.port?.allow) connected = true
     })
-    status.value = 'Free end moved.'
+    status.value = connected ? 'Wire connected to port.' : 'Free end moved.'
     return
   }
   if (spanDrag) {
@@ -4266,6 +4288,7 @@ function freeEndNear(segment: { start: { kind: string; x?: number; y?: number };
 function startFreeEnd(segmentId: string, which: 'start' | 'end', event: PointerEvent): void {
   event.stopPropagation()
   focusSegmentSelection(segmentId)
+  freeEndSnapPort.value = null
   freeEndDrag = { segmentId, which }
   if (edits().isGesturing) cancelActiveDocumentGesture()
   beginDocumentGesture()
@@ -5383,6 +5406,14 @@ defineExpose({ roundTrip, doc })
           :marker-end="wire.markerEnd ? 'url(#dl-arrow-end)' : undefined"
         />
         <circle v-if="portPreview" class="port-preview" :cx="portPreview.x" :cy="portPreview.y" r="5" />
+        <circle
+          v-if="freeEndSnapPort"
+          class="port-preview"
+          :class="{ 'port-preview-reject': !freeEndSnapPort.allow }"
+          :cx="freeEndSnapPort.x"
+          :cy="freeEndSnapPort.y"
+          r="6"
+        />
         <polyline v-if="wirePreview" :points="pointsAttr(wirePreview)" class="preview" />
         <polyline v-if="preview" :points="pointsAttr(preview)" class="preview" />
         <circle

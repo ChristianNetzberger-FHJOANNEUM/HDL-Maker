@@ -24,7 +24,7 @@ import {
   translateSegmentGeometry,
 } from './geometry'
 import { netFixture } from './fixture'
-import { addNameLabel, allocateUniqueNetName, commitWire, crossings, createIndependentNet, deleteSegment, ensureNetByName, isNameLabel, labelText, labelTextFormat, mergeNets, mergeNetsByName, moveJunction, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeFreeEnd, placeLabelAt, placeSpan, probeWire, renameNet, removeSegmentNameLabels, resetLabelPosition, resetLabelTypography, setLabelDisplay, setLabelDisplayText, setLabelOffset, setLabelTextFormat, setLabelTypography, setRouted, snapTarget } from './nets'
+import { addNameLabel, allocateUniqueNetName, commitWire, connectFreeEnd, crossings, createIndependentNet, deleteSegment, ensureNetByName, isNameLabel, labelText, labelTextFormat, mergeNets, mergeNetsByName, moveJunction, moveLabelAlong, nameCollisions, netsNamed, netPortIds, placeFreeEnd, placeLabelAt, placeSpan, probeConnectFreeEnd, probeWire, reconnectEnd, renameNet, removeSegmentNameLabels, resetLabelPosition, resetLabelTypography, setLabelDisplay, setLabelDisplayText, setLabelOffset, setLabelTextFormat, setLabelTypography, setRouted, snapTarget } from './nets'
 import { countMathSegments, parseFormattedText } from './formattedTextParse'
 import { clearFormattedTextLayoutCache, renderFormattedText, renderPlainDisplayText } from './formattedTextRender'
 import {
@@ -6927,6 +6927,97 @@ $y(t)=x(t)+n(t)$ $n\sim\mathcal{N}(0,\sigma_n^2)$
     setDiagramArrowheadDefault(doc, 'automatic')
     deleteSegment(doc, inIds[0]!)
     check(automaticNetStatus(doc, netId).ok, 'DEL10-R10: automatic arrows ok on canonical net after delete')
+  }
+
+  // --- S5b.2: free end snap & connect ---
+  {
+    const sheet = emptyDocument()
+    const src = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    const dst = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+    sheet.blocks.find((block) => block.id === dst)!.x = 320
+    const pOut = addPortAt(sheet, src, 'right', 0.5) ?? ''
+    const pIn = addPortAt(sheet, dst, 'left', 0.5) ?? ''
+    setPortDirection(sheet, pOut, 'out')
+    setPortDirection(sheet, pIn, 'in')
+    const outAt = portAnchor(sheet, pOut)!
+    const free = { x: outAt.x + 60, y: outAt.y }
+    commitWire(sheet, [outAt, free], { kind: 'port', portId: pOut, point: outAt }, { kind: 'free', point: free })
+    const seg = sheet.segments[0]!
+    const segId = seg.id
+    const netId = seg.netId
+    const netName = sheet.nets.find((net) => net.id === netId)?.name ?? ''
+    addNameLabel(sheet, segId, 0, 16, 14)
+    setSegmentArrowheads(sheet, segId, 'end')
+  const rejectSelf = probeConnectFreeEnd(sheet, segId, 'end', { kind: 'port', portId: pOut, point: outAt })
+  check(!rejectSelf.ok, 'S5b.2: self port rejected')
+  const otherNet = createIndependentNet(sheet, 'other')
+  const lone = placeTemplate(sheet, BLOCK_TEMPLATES[1], false)
+  sheet.blocks.find((block) => block.id === lone)!.y = 300
+  const pIso = addPortAt(sheet, lone, 'left', 0.5) ?? ''
+  const isoAt = portAnchor(sheet, pIso)!
+  sheet.segments.push({
+    id: createId('seg'),
+    netId: otherNet,
+    routed: 'manual',
+    points: [{ x: isoAt.x - 40, y: isoAt.y }, isoAt],
+    start: { kind: 'free', x: isoAt.x - 40, y: isoAt.y },
+    end: { kind: 'port', portId: pIso },
+  })
+  const cross = probeConnectFreeEnd(sheet, segId, 'end', { kind: 'port', portId: pIso, point: isoAt })
+  check(!cross.ok && cross.reason.includes('Merge'), 'S5b.2: cross-net rejected (M1)')
+  const inAt = portAnchor(sheet, pIn)!
+  const linked = connectFreeEnd(sheet, segId, 'end', inAt, (point) => point)
+  check(linked.ok, 'S5b.2: connect free end to port')
+  const main = sheet.segments.find((item) => item.id === segId)!
+  check(main.id === segId, 'S5b.2: same segment id')
+  check(main.netId === netId, 'S5b.2: same net id')
+  check(sheet.nets.find((net) => net.id === netId)?.name === netName, 'S5b.2: net name preserved')
+  check(main.end.kind === 'port' && main.end.portId === pIn, 'S5b.2: end bound to port')
+  check(main.arrowheads === 'end', 'S5b.2: arrowhead override preserved')
+  check(sheet.labels.some((label) => label.anchor.kind === 'segment' && label.anchor.segmentId === segId), 'S5b.2: label kept')
+  check(reconnectEnd(sheet, segId, 'end', { kind: 'port', portId: pIn, point: inAt }).ok, 'S5b.2: reconnectEnd idempotent')
+  check(parseDocument(serialize(sheet)).segments.find((item) => item.id === segId)!.end.kind === 'port', 'S5b.2: save/load keeps port bind')
+    const rev = emptyDocument()
+    const rSrc = placeTemplate(rev, BLOCK_TEMPLATES[1], false)
+    const rDst = placeTemplate(rev, BLOCK_TEMPLATES[1], false)
+    rev.blocks.find((block) => block.id === rDst)!.x = 320
+    const rIn = addPortAt(rev, rSrc, 'left', 0.5) ?? ''
+    const rOut = addPortAt(rev, rDst, 'right', 0.5) ?? ''
+    const rInAt = portAnchor(rev, rIn)!
+    const rFree = { x: rInAt.x - 50, y: rInAt.y }
+    commitWire(rev, [rFree, rInAt], { kind: 'free', point: rFree }, { kind: 'port', portId: rIn, point: rInAt })
+    const revSeg = rev.segments[0]!.id
+    const rOutAt = portAnchor(rev, rOut)!
+    check(connectFreeEnd(rev, revSeg, 'start', rOutAt, (point) => point).ok, 'S5b.2: free-at-start connect')
+    check(rev.segments[0]!.start.kind === 'port' && rev.segments[0]!.start.portId === rOut, 'S5b.2: start bound')
+    let undoSheet = emptyDocument()
+    const uA = placeTemplate(undoSheet, BLOCK_TEMPLATES[1], false)
+    const uB = placeTemplate(undoSheet, BLOCK_TEMPLATES[1], false)
+    undoSheet.blocks.find((block) => block.id === uB)!.x = 300
+    const uOut = addPortAt(undoSheet, uA, 'right', 0.5) ?? ''
+    const uIn = addPortAt(undoSheet, uB, 'left', 0.5) ?? ''
+    const uOutAt = portAnchor(undoSheet, uOut)!
+    const uFree = { x: uOutAt.x + 50, y: uOutAt.y }
+    commitWire(
+      undoSheet,
+      [uOutAt, uFree],
+      { kind: 'port', portId: uOut, point: uOutAt },
+      { kind: 'free', point: uFree },
+    )
+    const uSeg = undoSheet.segments[0]!.id
+    const uInAt = portAnchor(undoSheet, uIn)!
+    const beforeUndo = serialize(undoSheet)
+    const undoSess = new EditSession(
+      () => undoSheet,
+      (next) => {
+        undoSheet = next
+      },
+    )
+    undoSess.execute((draft) => {
+      connectFreeEnd(draft, uSeg, 'end', uInAt, (point) => point)
+    })
+    undoSess.undo()
+    check(serialize(undoSheet) === beforeUndo, 'S5b.2: undo after connect')
   }
 
   check(

@@ -1,6 +1,6 @@
 # S5b.2 — Free endpoint snap & connect (operation A)
 
-**Status:** **Freigabe 28 Nov 2026** — implementation **gated** until **P5c-DEL 10/10** DEL10 **code landed** — [re-test](diagram-lab-del10-fix-acceptance.md) pending. P5c **18/18**.  
+**Status:** **Implemented** (28 Nov 2026) — manual **S1–S12: 0/12** pending. Checkpoint `b5297fc` (Unique Net Naming + P5c + DEL10). **Not committed** until user acceptance.  
 **Investigation:** [diagram-lab-s5b-endpoint-snap-connect-investigation.md](diagram-lab-s5b-endpoint-snap-connect-investigation.md) (**accepted**).  
 **Prerequisite:** [S5b.1 free-end move](d5d0a-s5b-stub-endpoint-drag.md) (shipped; re-verify in S5b.2 acceptance).
 
@@ -106,7 +106,7 @@ npm run check
 
 ---
 
-## 6. Manual acceptance (browser) — 0/12 until signed off
+## 6. Manual acceptance (browser) — **0/12** until signed off
 
 | ID | Case | Expected |
 | --- | --- | --- |

@@ -638,6 +638,11 @@ button:disabled {
   vector-effect: non-scaling-stroke;
 }
 
+.port-preview-reject {
+  stroke: #c0392b;
+  fill: #ffe8e6;
+}
+
 .sym-pin text {
   font-size: 11px;
   fill: #243140;

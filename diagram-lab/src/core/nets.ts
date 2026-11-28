@@ -668,6 +668,58 @@ export function removeBend(doc: DiagramDocument, segmentId: string, index: numbe
   reanchor(doc, segment.id, previous, segment.points)
 }
 
+/** Whether a free stub end may bind to `hit` (S5b.2 / port reconnect). */
+export function probeConnectFreeEnd(
+  doc: DiagramDocument,
+  segmentId: string,
+  which: 'start' | 'end',
+  hit: SnapHit,
+): WireResult {
+  if (hit.kind !== 'port') return { ok: false, reason: 'Target is not a port.', netIds: [] }
+  const segment = doc.segments.find((item) => item.id === segmentId)
+  if (!segment) return { ok: false, reason: 'Segment not found.', netIds: [] }
+  const free = which === 'start' ? segment.start : segment.end
+  if (free.kind !== 'free') return { ok: false, reason: 'This end is not free.', netIds: [] }
+  const fixed = which === 'start' ? segment.end : segment.start
+  if (fixed.kind === 'port' && fixed.portId === hit.portId) {
+    return { ok: false, reason: 'That port is already on this wire.', netIds: [] }
+  }
+  const otherHit = endpointToHit(doc, fixed)
+  const probe = probeWire(doc, which === 'start' ? hit : otherHit, which === 'end' ? hit : otherHit)
+  if (!probe.ok) return probe
+  if (probe.netId && probe.netId !== segment.netId && netsTouching(doc, hit).length > 0) {
+    return { ok: false, reason: 'Two nets meet. Merge them explicitly.', netIds: [segment.netId, probe.netId] }
+  }
+  return { ok: true, netId: segment.netId, segmentId, createdNet: false }
+}
+
+/** Move a free end or snap-connect it to a port without creating a new segment (S5b.2). */
+export function connectFreeEnd(
+  doc: DiagramDocument,
+  segmentId: string,
+  which: 'start' | 'end',
+  world: Point,
+  snapFree: (point: Point) => Point,
+): WireResult {
+  const hit = snapTarget(doc, world)
+  if (hit.kind !== 'port') {
+    const at = hit.kind === 'free' || hit.kind === 'ambiguous' ? snapFree(world) : { ...hit.point }
+    if (!placeFreeEnd(doc, segmentId, which, at)) {
+      return { ok: false, reason: 'Could not move the free end.', netIds: [] }
+    }
+    const segment = doc.segments.find((item) => item.id === segmentId)
+    return segment
+      ? { ok: true, netId: segment.netId, segmentId, createdNet: false }
+      : { ok: false, reason: 'Segment not found.', netIds: [] }
+  }
+  const allowed = probeConnectFreeEnd(doc, segmentId, which, hit)
+  if (!allowed.ok) return allowed
+  if (!placeFreeEnd(doc, segmentId, which, hit.point)) {
+    return { ok: false, reason: 'Could not reach the port.', netIds: [] }
+  }
+  return reconnectEnd(doc, segmentId, which, hit)
+}
+
 export function reconnectEnd(doc: DiagramDocument, segmentId: string, which: 'start' | 'end', hit: SnapHit): WireResult {
   const segment = doc.segments.find((item) => item.id === segmentId)
   if (!segment) return { ok: false, reason: 'Segment not found.', netIds: [] }

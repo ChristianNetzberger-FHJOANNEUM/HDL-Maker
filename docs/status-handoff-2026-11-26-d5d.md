@@ -166,4 +166,4 @@ Do **not** reopen S1/S2, D5c.7, edge/vertex-drag (“S5a.2”), or style work wi
 
 ## 9. One-line summary
 
-**Unique Net Naming 12/12; P5c 18/18; P5c-DEL 10/10; DEL10 closed (R1–R7). Checkpoint landed. Next: [S5b.2](d5d0a-s5b2-endpoint-snap-connect.md) implement → manual S1–S12; P5d after.**
+**Checkpoint `b5297fc` (Unique Net Naming, P5c, DEL10). S5b.2 **implemented** in working tree — [S1–S12](d5d0a-s5b2-endpoint-snap-connect.md) manual pending; P5d after S5b.2.**
