@@ -81,6 +81,9 @@ export type Block = {
 
 export type PortSide = 'left' | 'right' | 'top' | 'bottom'
 
+/** Semantic flow / interface direction (A2-P5b). Omitted ≡ inherit symbol or unspecified. */
+export type PortDirectionValue = 'in' | 'out' | 'inout'
+
 export type Port = {
   id: string
   blockId: string
@@ -110,6 +113,11 @@ export type Port = {
    * Absent ⇒ use the definition’s `u`. Does not rewrite the library definition.
    */
   guideU?: number
+  /**
+   * Instance override of symbol pin direction (A2-P5b).
+   * Absent ⇒ use the symbol pin’s `direction`, if any.
+   */
+  direction?: PortDirectionValue
 }
 
 /** A drawing primitive owned by a symbol. Coordinates are inside the symbol, not on the sheet. */
@@ -165,6 +173,8 @@ export type SymbolPort = {
   lead?: 'none' | 'radial'
   /** Inner contour guide for `lead: 'radial'`. */
   leadGuideId?: string
+  /** Default semantic direction for instantiated ports (A2-P5b). Omitted ≡ unspecified. */
+  direction?: PortDirectionValue
 }
 
 export type ImageMime = 'image/svg+xml' | 'image/png' | 'image/jpeg' | 'image/webp'

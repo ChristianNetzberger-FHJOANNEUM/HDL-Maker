@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { inspectImage } from '../core/assets'
 import type { DiagramDocument, ImageAsset, Point, SymbolDefinition, SymbolShape } from '../core/document'
 import { guidedPinPoint, isFreePin, isGuidedPin, pinOnBorder, pinPoint, radialLeadSegment } from '../core/geometry'
+import type { PortDirection } from '../core/portDirection'
 import {
   addImageAsset,
   addSymbolLabel,
@@ -17,6 +18,7 @@ import {
   removeSymbolShape,
   renameSymbol,
   renameSymbolPort,
+  setSymbolPortDirection,
   setSymbolCategory,
   replaceSymbolShape,
   setSymbolLabelText,
@@ -390,6 +392,13 @@ function commitPinT(event: Event): void {
   emit('execute', (doc) => moveSymbolPort(doc, props.symbol.id, pin.id, pin.side, t))
 }
 
+function commitPinDirection(event: Event): void {
+  const pin = selectedPin.value
+  if (!pin) return
+  const direction = (event.target as HTMLSelectElement).value as PortDirection
+  emit('execute', (doc) => setSymbolPortDirection(doc, props.symbol.id, pin.id, direction))
+}
+
 function commitCategory(event: Event): void {
   const categoryId = (event.target as HTMLSelectElement).value
   emit('execute', (doc) => setSymbolCategory(doc, props.symbol.id, categoryId))
@@ -602,6 +611,15 @@ defineExpose({ removeSelected, finishPolygon, cancelDraft, abandonGesture })
         </select>
       </label>
       <label>Position <input :value="selectedPin.t" type="number" min="0" max="1" step="0.05" @change="commitPinT" /></label>
+      <label>
+        Direction
+        <select data-symbol-pin-direction :value="selectedPin.direction ?? 'unspecified'" @change="commitPinDirection">
+          <option value="unspecified">Unspecified</option>
+          <option value="in">Input</option>
+          <option value="out">Output</option>
+          <option value="inout">Bidirectional</option>
+        </select>
+      </label>
       <template v-if="typeof selectedPin.x === 'number'">
         <label>X <input :value="selectedPin.x" type="number" min="0" max="1" step="0.01" @change="commitFree('x', $event)" /></label>
         <label>Y <input :value="selectedPin.y" type="number" min="0" max="1" step="0.01" @change="commitFree('y', $event)" /></label>

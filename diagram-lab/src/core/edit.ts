@@ -24,6 +24,7 @@ import {
 } from './geometry'
 import { ensureNetByName, reassignComponents } from './nets'
 import { DEFAULT_SNAP_SPACING, normalizeSpacing } from './preferences'
+import { setInstancePortDirection, type PortDirection } from './portDirection'
 import { blockDefaultTextAlign, type TextAlign } from './textTypography'
 
 /** Fixed minimum block edge (P4b) — independent of snap/grid spacing. */
@@ -210,6 +211,13 @@ export function removeUnwiredPort(doc: DiagramDocument, portId: string): boolean
 }
 
 /** Rename one instance port. A name already used on that block, ignoring case, is refused. */
+/** A2-P5b — instance port direction (geometry unchanged). */
+export function setPortDirection(doc: DiagramDocument, portId: string, direction: PortDirection): boolean {
+  const changed = setInstancePortDirection(doc, portId, direction)
+  if (changed) refreshAll(doc)
+  return changed
+}
+
 export function renameInstancePort(doc: DiagramDocument, portId: string, name: string): boolean {
   const port = doc.ports.find((item) => item.id === portId)
   const trimmed = name.trim()

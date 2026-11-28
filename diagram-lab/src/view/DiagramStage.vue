@@ -29,6 +29,7 @@ import {
   setBlockFields,
   setBlockTypography,
   resetBlockTypography,
+  setPortDirection,
   setBlockTextFormat,
   setBlockStyle,
   resetBlockStyle,
@@ -111,6 +112,7 @@ import {
   LABEL_DISPLAY_DEFAULT_EM,
 } from '../core/textTypography'
 import type { TextAlign } from '../core/textTypography'
+import { resolvePortDirection, symbolPinForPort, type PortDirection } from '../core/portDirection'
 import { finishFree, undoWireStep, wireClick, type WireDraft } from '../core/wiretool'
 import { orthogonalize } from '../core/orthogonalize'
 import { sampleDocument } from '../core/sample'
@@ -3026,6 +3028,19 @@ function confirmPort(hit: { blockId: string; side: PortSide; t: number }): void 
 
 const activePort = computed(() => doc.value.ports.find((port) => port.id === selectedPort.value) ?? null)
 
+const activePortEffectiveDirection = computed((): PortDirection => {
+  const port = activePort.value
+  return port ? resolvePortDirection(doc.value, port) : 'unspecified'
+})
+
+const activePortDirectionHint = computed(() => {
+  const port = activePort.value
+  if (!port?.direction) return ''
+  const pin = symbolPinForPort(doc.value, port)
+  if (pin?.direction) return `Instance override (symbol default: ${pin.direction}).`
+  return 'Instance override.'
+})
+
 function commitPortName(event: Event): void {
   const port = activePort.value
   if (!port) return
@@ -3064,6 +3079,20 @@ function commitPortT(event: Event): void {
   edits().execute((draft) => placePort(draft, port.id, port.side, t))
   refreshHistory()
   status.value = 'Port moved.'
+}
+
+function commitPortDirection(event: Event): void {
+  const port = activePort.value
+  if (!port) return
+  const choice = (event.target as HTMLSelectElement).value as PortDirection
+  let changed = false
+  edits().execute((draft) => {
+    changed = setPortDirection(draft, port.id, choice)
+  })
+  if (changed) {
+    refreshHistory()
+    status.value = 'Port direction updated.'
+  }
 }
 
 function deleteActivePort(): void {
@@ -5488,6 +5517,16 @@ defineExpose({ roundTrip, doc })
       <p v-if="sharedLabel" class="hint">{{ sharedLabel }}</p>
       <template v-if="activePort">
         <label>Port <input :value="activePort.name" data-port-instance-name @change="commitPortName" /></label>
+        <label>
+          Direction
+          <select data-port-direction :value="activePortEffectiveDirection" @change="commitPortDirection">
+            <option value="unspecified">Unspecified</option>
+            <option value="in">Input</option>
+            <option value="out">Output</option>
+            <option value="inout">Bidirectional</option>
+          </select>
+        </label>
+        <p v-if="activePortDirectionHint" class="hint" data-port-direction-hint>{{ activePortDirectionHint }}</p>
         <label>Side
           <select :value="activePort.side" data-port-instance-side @change="commitPortSide">
             <option value="left">left</option>

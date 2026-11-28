@@ -58,7 +58,7 @@ Earlier same-day baseline (D5b–D5c): [status-handoff-2026-11-26.md](status-han
 | A1 presentation P5a | **Accepted** | `diagram-lab-pilot-a1-p5a-label-position.md` |
 | A1 presentation P5b | **Accepted** (Remove fix + user confirm) | `diagram-lab-pilot-a1-p5b-remove-label.md` |
 | **A1 final pilot evaluation** | **Formally closed** | `diagram-lab-pilot-a1-final-evaluation.md` |
-| A2 BPSK + AWGN (symbol library) | **P1–P5a closed**; **BPSK demonstrator accepted**; **P5b** next | `diagram-lab-pilot-a2-p5a-text-typography.md`, `diagram-lab-pilot-a2-p5-roadmap.md` |
+| A2 BPSK + AWGN (symbol library) | **P1–P5b closed**; next **P5c** | `diagram-lab-pilot-a2-p5b-port-direction.md`, `diagram-lab-pilot-a2-p5-roadmap.md` |
 | Vertex-handle / edge / vertex drag (“S5a.2”) | Discussed only — **not** an open work package | needs separate freigabe |
 | D5d.0 performance campaign | **Not released** — after S5a/S5b | prep + generator docs |
 
@@ -166,4 +166,4 @@ Do **not** reopen S1/S2, D5c.7, edge/vertex-drag (“S5a.2”), or style work wi
 
 ## 9. One-line summary
 
-**S3/S5a/S5a.1/S5b accepted; A1 + A2-P1…P5a closed; A2 BPSK demonstrator accepted; next A2-P5b freigabe; D5d→D5e→D5f; Object Snap deferred; no commit unless asked.**
+**S3/S5a/S5a.1/S5b accepted; A1 + A2-P1…P5b closed; A2 BPSK accepted; next A2-P5c freigabe; D5d→D5e→D5f; Object Snap deferred; no commit unless asked.**

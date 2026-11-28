@@ -37,7 +37,22 @@ import {
 } from './mathRender'
 import { canUndoWireStep, finishFree, stubGeometrySane, undoWireStep, wireClick, WIRE_DRAW_HINT } from './wiretool'
 import { symbolSheet } from './symbolsheet'
-import { addImageAsset, addSymbolLabel, addSymbolPort, addSymbolShape, applySymbol, defineSymbol, instantiateSymbol, moveFreeSymbolPort, moveSymbolPort, removeSymbolPort, setComponent, setSymbolSize, symbolDiagnostics } from './symbols'
+import {
+  addImageAsset,
+  addSymbolLabel,
+  addSymbolPort,
+  addSymbolShape,
+  applySymbol,
+  defineSymbol,
+  instantiateSymbol,
+  moveFreeSymbolPort,
+  moveSymbolPort,
+  removeSymbolPort,
+  setComponent,
+  setSymbolPortDirection,
+  setSymbolSize,
+  symbolDiagnostics,
+} from './symbols'
 import { auditAssets, base64ToBytes, inspectImage, sha256, sha256Sync } from './assets'
 import { PICTURE_SOURCES, pictureAssets } from './pictures'
 import { builtinLibraries } from './catalog'
@@ -59,6 +74,7 @@ import {
   setBlockFields,
   setBlockTypography,
   resetBlockTypography,
+  setPortDirection,
   setBlockTextFormat,
   setBlockStyle,
   resetBlockStyle,
@@ -85,6 +101,7 @@ import {
   labelDisplayTextAlign,
   lineAlignOffset,
 } from './textTypography'
+import { resolvePortDirection } from './portDirection'
 import {
   DEFAULT_EDITOR_PREFERENCES,
   loadEditorPreferences,
@@ -6427,6 +6444,65 @@ $y(t)=x(t)+n(t)$ $n\sim\mathcal{N}(0,\sigma_n^2)$
     const cleared = wired.labels.find((item) => item.id === typoLabelId)!
     check(!cleared.fontSize && !cleared.textAlign, 'A2-P5a: reset label typography')
   }
+
+  // --- A2-P5b: port direction semantics ---
+  const dirDoc = emptyDocument()
+  const dirSym = defineSymbol(dirDoc, { id: 'sym_dir', name: 'Dir', width: 80, height: 40, ports: [] })
+  const pinIn = addSymbolPort(dirDoc, dirSym, { name: 'a', side: 'left', t: 0.4, direction: 'in' })!
+  const pinOut = addSymbolPort(dirDoc, dirSym, { name: 'b', side: 'right', t: 0.5, direction: 'out' })!
+  const pinMut = addSymbolPort(dirDoc, dirSym, { name: 'c', side: 'top', t: 0.5 })!
+  check(Boolean(pinIn && pinOut && pinMut), 'A2-P5b: symbol pins with direction')
+  const dirBlk = instantiateSymbol(dirDoc, dirSym, { x: 20, y: 20 }, 'U')!
+  const portsDir = dirDoc.ports.filter((port) => port.blockId === dirBlk)
+  check(portsDir.length === 3, 'A2-P5b: instantiate creates ports')
+  const portA = portsDir.find((port) => port.symbolPortId === pinIn)!
+  const portB = portsDir.find((port) => port.symbolPortId === pinOut)!
+  check(resolvePortDirection(dirDoc, portA.id) === 'in', 'A2-P5b: inherit symbol in')
+  check(resolvePortDirection(dirDoc, portB.id) === 'out', 'A2-P5b: inherit symbol out')
+  check(resolvePortDirection(dirDoc, portsDir.find((port) => port.symbolPortId === pinMut)!.id) === 'unspecified', 'A2-P5b: unspecified default')
+  const segBefore = dirDoc.segments.length
+  const netBefore = dirDoc.nets.length
+  check(setPortDirection(dirDoc, portA.id, 'out'), 'A2-P5b: instance override out')
+  check(portA.direction === 'out' && resolvePortDirection(dirDoc, portA.id) === 'out', 'A2-P5b: override resolves')
+  check(setPortDirection(dirDoc, portA.id, 'in'), 'A2-P5b: revert to symbol default clears override')
+  check(portA.direction === undefined && resolvePortDirection(dirDoc, portA.id) === 'in', 'A2-P5b: canonical inherit after clear')
+  check(dirDoc.segments.length === segBefore && dirDoc.nets.length === netBefore, 'A2-P5b: direction does not touch nets')
+  const dirRound = parseDocument(serialize(dirDoc))
+  const loadedA = dirRound.ports.find((port) => port.symbolPortId === pinIn && dirRound.blocks.some((b) => b.id === port.blockId))!
+  const loadedSym = dirRound.symbols.find((item) => item.id === dirSym)!
+  check(loadedSym.ports.find((p) => p.id === pinOut)?.direction === 'out', 'A2-P5b: symbol direction save/load')
+  check(resolvePortDirection(dirRound, loadedA.id) === 'in', 'A2-P5b: effective direction after load')
+  const legacyDir = emptyDocument()
+  legacyDir.ports.push({
+    id: 'legacy_p',
+    blockId: legacyDir.blocks[0]?.id ?? 'b',
+    name: 'p1',
+    side: 'left',
+    t: 0.5,
+    placed: true,
+  })
+  if (!legacyDir.blocks.length) {
+    legacyDir.blocks.push({ id: 'b', name: 'B', x: 0, y: 0, width: 60, height: 40 })
+    legacyDir.ports[0]!.blockId = 'b'
+  }
+  check(resolvePortDirection(legacyDir, 'legacy_p') === 'unspecified', 'A2-P5b: legacy port unspecified')
+  duplicateBlocks(dirDoc, [dirBlk], DUPLICATE_OFFSET, 0)
+  const dirSess = new EditSession(
+    () => dirDoc,
+    (next) => {
+      dirDoc.blocks = next.blocks
+      dirDoc.ports = next.ports
+      dirDoc.segments = next.segments
+      dirDoc.nets = next.nets
+      dirDoc.symbols = next.symbols
+    },
+  )
+  dirSess.execute((draft) => setPortDirection(draft, portB.id, 'inout'))
+  check(dirDoc.ports.find((item) => item.id === portB.id)?.direction === 'inout', 'A2-P5b: inout stored')
+  dirSess.undo()
+  check(dirDoc.ports.find((item) => item.id === portB.id)?.direction === undefined, 'A2-P5b: undo direction')
+  check(setSymbolPortDirection(dirDoc, dirSym, pinMut, 'inout'), 'A2-P5b: symbol pin inout')
+  check(dirDoc.symbols.find((item) => item.id === dirSym)!.ports.find((p) => p.id === pinMut)!.direction === 'inout', 'A2-P5b: symbol direction on pin')
 }
 
 function measureProseWidthGuess(text: string, em: number): number {

@@ -1,6 +1,6 @@
 # A2-P5 roadmap — BPSK follow-on packages (specification)
 
-**Status:** **P5a closed** — [pilot doc](diagram-lab-pilot-a2-p5a-text-typography.md). **P5b–P5d:** specification only (next: **P5b** freigabe).  
+**Status:** **P5a–P5b closed** — [p5a](diagram-lab-pilot-a2-p5a-text-typography.md), [p5b](diagram-lab-pilot-a2-p5b-port-direction.md). **Next:** **P5c** freigabe. **P5d:** specification.  
 **Trigger:** [BPSK demonstrator accepted](diagram-lab-pilot-a2-bpsk-demonstrator.md).  
 **Recommended order:** **P5a → P5b → P5c → P5d** (user); P5a first for immediate scientific-diagram value.
 
@@ -35,6 +35,8 @@
 ---
 
 ## 2. A2-P5b — Port direction semantics
+
+**Implementation:** [diagram-lab-pilot-a2-p5b-port-direction.md](diagram-lab-pilot-a2-p5b-port-direction.md).
 
 **Goal:** optional metadata for teaching / HDL / Python signals **without** changing net algebra.
 
@@ -155,4 +157,4 @@ Inspected 28 Nov 2026 — implementers must **extend** these surfaces, not dupli
 - No Symbol Designer, Library Manager, or full CommonMark in P5a–P5d.  
 - No commit/push from this roadmap doc.
 
-**Next freigabe:** **A2-P5b** (port direction), unless user reprioritises.
+**Next freigabe:** **A2-P5c** (wire arrowheads).

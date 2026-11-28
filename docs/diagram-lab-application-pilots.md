@@ -182,4 +182,4 @@ Preserve S-series gates and D5d priorities.
 
 ## 10. Stop for review
 
-**A2-P1 → P5a closed**; **BPSK application demonstrator accepted** (Nov 2026). **Next freigabe:** [A2-P5b port direction](diagram-lab-pilot-a2-p5-roadmap.md#2-a2-p5b--port-direction-semantics). Keep **D5d** independent.
+**A2-P1 → P5b closed**; **BPSK application demonstrator accepted** (Nov 2026). **Next freigabe:** [A2-P5c wire arrowheads](diagram-lab-pilot-a2-p5-roadmap.md#3-a2-p5c--wire-arrowheads). Keep **D5d** independent.

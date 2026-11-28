@@ -212,7 +212,7 @@ No speculative optimisation now; D5d remains independent.
 | 3 | **A2-P3** | LaTeX wire labels | **Closed** — [p3](diagram-lab-pilot-a2-p3-latex-labels.md) |
 | 3a | **A2-P3a** | LaTeX block display text | **Closed** — [p3a](diagram-lab-pilot-a2-p3a-block-latex.md) |
 | 4 | **A2-P4** | Restricted Markdown + inline math | **Closed** — [p4](diagram-lab-pilot-a2-p4-markdown-math.md) |
-| 5 | **A2-P5a–P5d** | Typography, port direction, arrows, generic circle | **P5a closed** — [p5a](diagram-lab-pilot-a2-p5a-text-typography.md); [roadmap](diagram-lab-pilot-a2-p5-roadmap.md); next P5b |
+| 5 | **A2-P5a–P5d** | Typography, port direction, arrows, generic circle | **P5a–P5b closed** — [p5a](diagram-lab-pilot-a2-p5a-text-typography.md), [p5b](diagram-lab-pilot-a2-p5b-port-direction.md); next **P5c** |
 | 5x | **A2-P5 (legacy)** | Formatted text on symbol labels | Optional after P5a |
 
 Suggested acceptance tests (when released):

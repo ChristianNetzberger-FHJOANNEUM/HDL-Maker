@@ -17,7 +17,7 @@
 | Signal labels on wires | Good |
 | Wire routing | Good |
 | Typography controls | Still limited (expected) |
-| Obvious signal-flow direction | Needs improvement → [P5b/P5c](diagram-lab-pilot-a2-p5-roadmap.md) |
+| Obvious signal-flow direction | **P5b closed** metadata; **P5c** arrowheads next → [roadmap](diagram-lab-pilot-a2-p5-roadmap.md) |
 | Symbol variety | Expandable → [P5d](diagram-lab-pilot-a2-p5-roadmap.md) |
 | Suitability for scientific scriptum | Already good; clear upside |
 
@@ -69,7 +69,7 @@ Derived from demonstrator pain points — **spec + preflight only** until separa
 | ID | Topic | Priority after accept |
 | --- | --- | --- |
 | [A2-P5a](diagram-lab-pilot-a2-p5a-text-typography.md) | Text alignment + font size (plain / LaTeX / Markdown; block + wire) | **Closed** |
-| [A2-P5b](diagram-lab-pilot-a2-p5-roadmap.md#2-a2-p5b--port-direction-semantics) | Port `direction` metadata (not HDL semantics) | Next |
+| [A2-P5b](diagram-lab-pilot-a2-p5b-port-direction.md) | Port `direction` metadata (not HDL semantics) | **Closed** |
 | [A2-P5c](diagram-lab-pilot-a2-p5-roadmap.md#3-a2-p5c--wire-arrowheads) | Manual + automatic arrowheads from topology | Next |
 | [A2-P5d](diagram-lab-pilot-a2-p5-roadmap.md#4-a2-p5d--generic-circle-block) | Circle primitive + guided ports | Next |
 
@@ -96,7 +96,7 @@ Both pilots pressure-test **one** Diagram-Lab editor without forking per product
 
 ## 6. Handoff
 
-1. ~~**Freigabe A2-P5a** (typography)~~ — **closed** — [p5a](diagram-lab-pilot-a2-p5a-text-typography.md). **Freigabe A2-P5b** (port direction) when ready.  
+1. ~~P5a / P5b~~ — **closed** — [p5a](diagram-lab-pilot-a2-p5a-text-typography.md), [p5b](diagram-lab-pilot-a2-p5b-port-direction.md). **Freigabe A2-P5c** (wire arrowheads) when ready.  
 2. Continue platform roadmap in parallel: **S5b**, **D5d**, **D5e**, **D5f** (unchanged gates).  
 3. Optionally check in BPSK `.diagram.json` under `docs/examples/`.  
 4. B2–B3 pilot diagrams when A2 follow-on packages stabilise.

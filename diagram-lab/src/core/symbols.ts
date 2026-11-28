@@ -3,6 +3,7 @@ import { symbolFingerprint } from './compare'
 import { createId, type DiagramDocument, type Point, type SymbolDefinition, type SymbolPort, type SymbolShape } from './document'
 import { portIsWired } from './edit'
 import { refreshAll } from './geometry'
+import { setSymbolPortDirection as applySymbolPortDirection, type PortDirection } from './portDirection'
 
 export type SymbolDiagnostic = {
   instanceId: string
@@ -244,6 +245,16 @@ export function renameSymbolPort(doc: DiagramDocument, symbolId: string, symbolP
   return true
 }
 
+/** A2-P5b — symbol pin default direction (instances without override inherit). */
+export function setSymbolPortDirection(
+  doc: DiagramDocument,
+  symbolId: string,
+  symbolPortId: string,
+  direction: PortDirection,
+): boolean {
+  return applySymbolPortDirection(doc, symbolId, symbolPortId, direction)
+}
+
 export function translatedShape(origin: SymbolShape, dx: number, dy: number): SymbolShape {
   if (origin.kind === 'line') {
     return { ...origin, x1: origin.x1 + dx, y1: origin.y1 + dy, x2: origin.x2 + dx, y2: origin.y2 + dy }
@@ -265,6 +276,7 @@ export function addSymbolPort(doc: DiagramDocument, symbolId: string, port: Omit
     side: port.side,
     t: port.t,
     ...(typeof port.x === 'number' && typeof port.y === 'number' ? { x: port.x, y: port.y } : {}),
+    ...(port.direction ? { direction: port.direction } : {}),
   })
   applySymbol(doc, symbolId)
   return id

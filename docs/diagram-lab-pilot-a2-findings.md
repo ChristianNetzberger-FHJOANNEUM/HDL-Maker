@@ -216,4 +216,4 @@ A2 execution kit + **A2-P1…P4 closed**. Library Manager, Symbol Designer, poly
 
 ## 9. Stop
 
-**A2-P1…P5a closed**; **BPSK demonstrator accepted.** Next: freigabe **[A2-P5b](diagram-lab-pilot-a2-p5-roadmap.md#2-a2-p5b--port-direction-semantics)**; parallel S5b, D5d, D5e, D5f. Object Snap deferred.
+**A2-P1…P5b closed**; **BPSK demonstrator accepted.** Next: freigabe **[A2-P5c](diagram-lab-pilot-a2-p5-roadmap.md#3-a2-p5c--wire-arrowheads)**; parallel S5b, D5d, D5e, D5f. Object Snap deferred.
